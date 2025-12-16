@@ -68,4 +68,11 @@ declare module 'osu-parser' {
 
   export function parseReplay(buffer: Buffer): Replay;
   export function parseBeatmap(content: string): Beatmap;
+
+  // CommonJS default export interop (module.exports = { parseReplay, parseBeatmap, ... })
+  const _default: {
+    parseReplay: typeof parseReplay;
+    parseBeatmap: typeof parseBeatmap;
+  };
+  export default _default;
 }

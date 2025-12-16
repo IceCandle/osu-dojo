@@ -6,18 +6,13 @@ import { redis } from '@/lib/redis';
  * Store live gameplay statistics from overlay (sliderbreaks, combo, etc.)
  * Bot will read this when saving scores to database
  */
-export async function POST(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const attemptId = parseInt(params.id, 10);
+    const { id } = await params;
+    const attemptId = parseInt(id, 10);
 
     if (isNaN(attemptId)) {
-      return NextResponse.json(
-        { error: 'Invalid attempt ID' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'Invalid attempt ID' }, { status: 400 });
     }
 
     const body = await request.json();
@@ -27,7 +22,7 @@ export async function POST(
     if (beatmapId === undefined || sliderbreaks === undefined) {
       return NextResponse.json(
         { error: 'Missing required fields: beatmapId, sliderbreaks' },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -45,7 +40,7 @@ export async function POST(
         count50,
         countMiss,
         timestamp: Date.now(),
-      })
+      }),
     );
 
     console.log(`[LiveStats] Stored for attempt ${attemptId}, beatmap ${beatmapId}:`, {
@@ -57,7 +52,6 @@ export async function POST(
       success: true,
       stored: { beatmapId, sliderbreaks },
     });
-
   } catch (error) {
     console.error('[LiveStats] API error:', error);
     return NextResponse.json(
@@ -65,7 +59,7 @@ export async function POST(
         error: 'Internal server error',
         message: error instanceof Error ? error.message : 'Unknown error',
       },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
@@ -75,19 +69,17 @@ export async function POST(
  * Retrieve stored live stats for a specific beatmap
  * Used by bot when saving scores
  */
-export async function GET(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const attemptId = parseInt(params.id, 10);
+    const { id } = await params;
+    const attemptId = parseInt(id, 10);
     const url = new URL(request.url);
     const beatmapId = url.searchParams.get('beatmapId');
 
     if (isNaN(attemptId) || !beatmapId) {
       return NextResponse.json(
         { error: 'Invalid attempt ID or missing beatmapId' },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -98,12 +90,11 @@ export async function GET(
     if (!data) {
       return NextResponse.json(
         { error: 'Live stats not found (overlay may not be running)' },
-        { status: 404 }
+        { status: 404 },
       );
     }
 
     return NextResponse.json(JSON.parse(data));
-
   } catch (error) {
     console.error('[LiveStats] GET error:', error);
     return NextResponse.json(
@@ -111,7 +102,7 @@ export async function GET(
         error: 'Internal server error',
         message: error instanceof Error ? error.message : 'Unknown error',
       },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

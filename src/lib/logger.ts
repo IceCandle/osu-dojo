@@ -41,7 +41,7 @@ function log(
   component: string,
   message: string,
   context?: LogContext,
-  baseContext?: LogContext
+  baseContext?: LogContext,
 ): void {
   const timestamp = formatTimestamp();
   const levelStr = level.toUpperCase().padEnd(5);
@@ -52,11 +52,7 @@ function log(
   const contextStr = formatContext(mergedContext);
 
   // Format: [TIMESTAMP] [LEVEL] [COMPONENT] {context} message
-  const parts = [
-    `[${timestamp}]`,
-    `[${levelStr}]`,
-    `[${componentStr}]`,
-  ];
+  const parts = [`[${timestamp}]`, `[${levelStr}]`, `[${componentStr}]`];
 
   if (contextStr) {
     parts.push(contextStr);

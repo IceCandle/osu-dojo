@@ -82,11 +82,7 @@ class OsuApiClient {
 
       const { clientId, clientSecret } = this.getClientCredentials();
 
-      this.botApi = await API.createAsync(
-        clientId,
-        clientSecret,
-        undefined
-      );
+      this.botApi = await API.createAsync(clientId, clientSecret, undefined);
 
       // Enable auto-refresh on 401
       this.botApi.refresh_token_on_401 = true;
@@ -160,7 +156,12 @@ class OsuApiClient {
       data: {
         accessToken: api.access_token,
         refreshToken: api.refresh_token,
-        tokenExpiry: api.expires instanceof Date ? api.expires : (api.expires ? new Date(api.expires * 1000) : null),
+        tokenExpiry:
+          api.expires instanceof Date
+            ? api.expires
+            : api.expires
+              ? new Date(api.expires * 1000)
+              : null,
       },
     });
   }
@@ -206,7 +207,7 @@ class OsuApiClient {
    */
   async getUser(
     username: string,
-    mode: 'osu' | 'taiko' | 'fruits' | 'mania' = 'osu'
+    mode: 'osu' | 'taiko' | 'fruits' | 'mania' = 'osu',
   ): Promise<unknown | null> {
     await this.rateLimiter.wait();
     const api = await this.getBotApi();

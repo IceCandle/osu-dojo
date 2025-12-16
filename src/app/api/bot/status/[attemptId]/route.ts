@@ -10,16 +10,14 @@ import { prisma } from '@/lib/prisma';
  */
 export async function GET(
   request: NextRequest,
-  { params }: { params: { attemptId: string } }
+  { params }: { params: Promise<{ attemptId: string }> },
 ) {
   try {
-    const attemptId = parseInt(params.attemptId, 10);
+    const { attemptId: attemptIdParam } = await params;
+    const attemptId = parseInt(attemptIdParam, 10);
 
     if (isNaN(attemptId)) {
-      return NextResponse.json(
-        { error: 'Invalid attempt ID' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'Invalid attempt ID' }, { status: 400 });
     }
 
     // Get attempt and associated match ID
@@ -28,10 +26,7 @@ export async function GET(
     });
 
     if (!attempt) {
-      return NextResponse.json(
-        { error: 'Attempt not found' },
-        { status: 404 }
-      );
+      return NextResponse.json({ error: 'Attempt not found' }, { status: 404 });
     }
 
     // If no multiplayer ID, bot hasn't started yet
@@ -67,7 +62,6 @@ export async function GET(
       recovering: status === 'PAUSED',
       message: status === 'PAUSED' ? 'Bot is recovering, please wait...' : undefined,
     });
-
   } catch (error) {
     console.error('[BotStatus] API error:', error);
     return NextResponse.json(
@@ -75,7 +69,7 @@ export async function GET(
         error: 'Internal server error',
         message: error instanceof Error ? error.message : 'Unknown error',
       },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

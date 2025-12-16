@@ -1,4 +1,4 @@
-import BanchoJs from "bancho.js";
+import BanchoJs from 'bancho.js';
 
 /**
  * Simplified wrapper around BanchoClient
@@ -21,16 +21,16 @@ export class BotClient {
   }
 
   private setupEventHandlers() {
-    this.client.on("connected", () => {
-      console.log("✓ Connected to Bancho IRC");
+    this.client.on('connected', () => {
+      console.log('✓ Connected to Bancho IRC');
     });
 
-    this.client.on("disconnected", () => {
-      console.log("✗ Disconnected from Bancho IRC");
+    this.client.on('disconnected', () => {
+      console.log('✗ Disconnected from Bancho IRC');
     });
 
-    this.client.on("error", (error: Error) => {
-      console.error("IRC Error:", error.message);
+    this.client.on('error', (error: Error) => {
+      console.error('IRC Error:', error.message);
     });
 
     // Note: Bancho.js automatically reconnects on disconnect

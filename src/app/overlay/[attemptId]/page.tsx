@@ -1,8 +1,8 @@
 'use client';
 
 import { useEffect, useState, useRef } from 'react';
-import { useParams, useSearchParams } from 'next/navigation';
-import { getScoreAtTime, type ScoreTimestamp } from '@/lib/replay-parser';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
+import { getScoreAtTime, type ScoreTimestamp } from '@/lib/time-series';
 import { F2Notification, useF2Notification } from '@/components/F2Notification';
 
 /**
@@ -76,6 +76,20 @@ interface TosuData {
 
 type RivalMode = 'clear' | 'gold-clear' | 'national' | 'friends' | 'same-rank' | 'rotate';
 
+const RIVAL_MODE_OPTIONS = [
+  { value: 'clear', label: 'Clear' },
+  { value: 'gold-clear', label: 'Gold' },
+  { value: 'national', label: 'National' },
+] as const;
+
+const CYCLEABLE_RIVAL_MODES = RIVAL_MODE_OPTIONS.map((o) => o.value);
+
+function getNextRivalMode(current: RivalMode): RivalMode {
+  const index = CYCLEABLE_RIVAL_MODES.indexOf(current as (typeof CYCLEABLE_RIVAL_MODES)[number]);
+  if (index === -1) return CYCLEABLE_RIVAL_MODES[0] as RivalMode;
+  return CYCLEABLE_RIVAL_MODES[(index + 1) % CYCLEABLE_RIVAL_MODES.length] as RivalMode;
+}
+
 /**
  * 3-Bar Pacemaker Overlay
  * YOU (blue) | MY-BEST (green) | RIVAL (red)
@@ -83,6 +97,7 @@ type RivalMode = 'clear' | 'gold-clear' | 'national' | 'friends' | 'same-rank' |
 export default function OverlayPage() {
   const { attemptId } = useParams();
   const searchParams = useSearchParams();
+  const router = useRouter();
 
   // State
   const [myBest, setMyBest] = useState<TimeSeriesData | null>(null);
@@ -91,11 +106,15 @@ export default function OverlayPage() {
   const [wsConnected, setWsConnected] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [mapValidationError, setMapValidationError] = useState<string | null>(null);
-  const [lastState, setLastState] = useState<number>(0);
   const [clearThreshold, setClearThreshold] = useState<number>(0);
   const [goldThreshold, setGoldThreshold] = useState<number>(0);
 
   const wsRef = useRef<WebSocket | null>(null);
+  const lastStateRef = useRef<number>(0);
+  const liveScoreRef = useRef<LiveScore | null>(null);
+  const rivalRef = useRef<TimeSeriesData | null>(null);
+  const mapValidationErrorRef = useRef<string | null>(null);
+  const clearThresholdRef = useRef<number>(0);
 
   // F2 Notification (for replay saving)
   const { showNotification, countdown, triggerF2Notification } = useF2Notification();
@@ -107,28 +126,47 @@ export default function OverlayPage() {
   const [modeChangeNotification, setModeChangeNotification] = useState<string | null>(null);
   const f2CountdownDuration = parseInt(searchParams.get('f2Countdown') || '5', 10); // Adjustable countdown (default: 5s)
 
-  /**
-   * 0. Keyboard Controls - Cycle Rival Mode
-   */
+  const rivalModeRef = useRef<RivalMode>(initialRivalMode);
+
+  const setRivalModeWithNotice = (nextMode: RivalMode) => {
+    setRivalMode(nextMode);
+    setModeChangeNotification(`Rival: ${nextMode}`);
+    window.setTimeout(() => setModeChangeNotification(null), 2000);
+  };
+
+  const [tosuHostInput, setTosuHostInput] = useState<string>(tosuIP);
+
   useEffect(() => {
-    const handleKeyPress = (e: KeyboardEvent) => {
+    setTosuHostInput(tosuIP);
+  }, [tosuIP]);
+
+  useEffect(() => {
+    rivalRef.current = rival;
+  }, [rival]);
+
+  useEffect(() => {
+    mapValidationErrorRef.current = mapValidationError;
+  }, [mapValidationError]);
+
+  useEffect(() => {
+    clearThresholdRef.current = clearThreshold;
+  }, [clearThreshold]);
+
+  useEffect(() => {
+    rivalModeRef.current = rivalMode;
+  }, [rivalMode]);
+
+  // Hotkey: press R to cycle rival mode (kept as a shortcut; select remains visible)
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'r' || e.key === 'R') {
-        setRivalMode(prev => {
-          const modes: RivalMode[] = ['clear', 'gold-clear'];
-          const currentIndex = modes.indexOf(prev);
-          const nextMode = modes[(currentIndex + 1) % modes.length];
-
-          // Show notification
-          setModeChangeNotification(`Rival: ${nextMode}`);
-          setTimeout(() => setModeChangeNotification(null), 2000);
-
-          return nextMode;
-        });
+        e.preventDefault();
+        setRivalModeWithNotice(getNextRivalMode(rivalModeRef.current));
       }
     };
 
-    window.addEventListener('keydown', handleKeyPress);
-    return () => window.removeEventListener('keydown', handleKeyPress);
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
   }, []);
 
   /**
@@ -203,12 +241,14 @@ export default function OverlayPage() {
         const data: TosuData = JSON.parse(event.data);
 
         // Detect map completion
-        if (lastState === 2 && data.gameplay.state === 7) {
+        if (lastStateRef.current === 2 && data.gameplay.state === 7) {
           console.log('[Overlay] Map completed, sending live stats');
 
-          if (liveScore) {
+          const latestLive = liveScoreRef.current;
+          if (latestLive) {
             // Check if player passed (score >= clear threshold)
-            const passed = clearThreshold > 0 && liveScore.score >= clearThreshold;
+            const threshold = clearThresholdRef.current;
+            const passed = threshold > 0 && latestLive.score >= threshold;
 
             if (passed) {
               console.log('[Overlay] PASS detected! Showing F2 notification');
@@ -221,18 +261,18 @@ export default function OverlayPage() {
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
                 beatmapId: data.menu.bm.id,
-                sliderbreaks: liveScore.sliderbreaks,
-                maxCombo: liveScore.maxCombo,
-                count300: liveScore.count300,
-                count100: liveScore.count100,
-                count50: liveScore.count50,
-                countMiss: liveScore.countMiss,
+                sliderbreaks: latestLive.sliderbreaks,
+                maxCombo: latestLive.maxCombo,
+                count300: latestLive.count300,
+                count100: latestLive.count100,
+                count50: latestLive.count50,
+                countMiss: latestLive.countMiss,
               }),
-            }).catch(err => console.error('[Overlay] Error posting live stats:', err));
+            }).catch((err) => console.error('[Overlay] Error posting live stats:', err));
           }
         }
 
-        setLastState(data.gameplay.state);
+        lastStateRef.current = data.gameplay.state;
 
         // Only process when playing
         if (data.gameplay.state !== 2) {
@@ -243,19 +283,20 @@ export default function OverlayPage() {
         setIsPlaying(true);
 
         // Beatmap ID validation
-        if (rival && data.menu.bm.id !== rival.beatmapId) {
+        const currentRival = rivalRef.current;
+        if (currentRival && data.menu.bm.id !== currentRival.beatmapId) {
           setMapValidationError(
-            `Wrong map! Expected: ${rival.beatmapId}, Got: ${data.menu.bm.id}`
+            `Wrong map! Expected: ${currentRival.beatmapId}, Got: ${data.menu.bm.id}`,
           );
           return;
         }
 
-        if (mapValidationError) {
+        if (mapValidationErrorRef.current) {
           setMapValidationError(null);
         }
 
         // Update live score
-        setLiveScore({
+        const nextLive: LiveScore = {
           score: data.gameplay.score,
           accuracy: data.gameplay.accuracy,
           combo: data.gameplay.combo.current,
@@ -267,7 +308,9 @@ export default function OverlayPage() {
           countMiss: data.gameplay.hits[0],
           sliderbreaks: data.gameplay.hits.sliderBreaks || 0,
           hp: data.gameplay.hp.smooth,
-        });
+        };
+        liveScoreRef.current = nextLive;
+        setLiveScore(nextLive);
       } catch (error) {
         console.error('[tosu] Parse error:', error);
       }
@@ -277,8 +320,7 @@ export default function OverlayPage() {
     ws.onclose = () => setWsConnected(false);
 
     return () => ws.close();
-  }, [rival, mapValidationError, tosuIP, lastState, liveScore, attemptId, clearThreshold, triggerF2Notification, f2CountdownDuration]);
-
+  }, [tosuIP, attemptId, triggerF2Notification, f2CountdownDuration]);
 
   /**
    * 4. Calculate interpolated scores at current timestamp
@@ -289,14 +331,12 @@ export default function OverlayPage() {
     const currentTime = liveScore.time;
 
     // MY-BEST score at current time
-    const myBestAtTime = myBest && !myBest.isThresholdOnly
-      ? getScoreAtTime(myBest.timeSeries, currentTime)
-      : null;
+    const myBestAtTime =
+      myBest && !myBest.isThresholdOnly ? getScoreAtTime(myBest.timeSeries, currentTime) : null;
 
     // RIVAL score at current time
-    const rivalAtTime = rival && !rival.isThresholdOnly
-      ? getScoreAtTime(rival.timeSeries, currentTime)
-      : null;
+    const rivalAtTime =
+      rival && !rival.isThresholdOnly ? getScoreAtTime(rival.timeSeries, currentTime) : null;
 
     // Score differences
     const myBestDiff = myBestAtTime ? liveScore.score - myBestAtTime.score : 0;
@@ -334,9 +374,25 @@ export default function OverlayPage() {
       {/* Connection Status */}
       <div className="absolute top-4 left-4 z-50 flex items-center gap-2">
         <div className={`w-3 h-3 rounded-full ${wsConnected ? 'bg-green-500' : 'bg-red-500'}`} />
-        <span className="text-white text-sm">
-          {wsConnected ? 'tosu ✓' : 'tosu ✗'}
-        </span>
+        <span className="text-white text-sm">{wsConnected ? 'tosu ✓' : 'tosu ✗'}</span>
+        <div className="ml-4 flex items-center gap-2">
+          <label className="text-white text-xs" htmlFor="rival-mode">
+            Mode
+          </label>
+          <select
+            id="rival-mode"
+            className="px-2 py-1 text-xs rounded bg-black/40 text-white outline-none"
+            value={rivalMode}
+            onChange={(e) => setRivalModeWithNotice(e.target.value as RivalMode)}
+          >
+            {RIVAL_MODE_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+          <span className="text-[10px] text-gray-400">(R)</span>
+        </div>
       </div>
 
       {/* Top-Right Scores */}
@@ -372,7 +428,36 @@ export default function OverlayPage() {
               {wsConnected ? 'Start playing...' : 'Start tosu to begin'}
             </p>
             <p className="text-sm text-gray-500 mt-4">Mode: {rivalMode}</p>
-            <p className="text-xs text-gray-600 mt-2">Press 'R' to cycle rival mode</p>
+            <p className="text-xs text-gray-600 mt-2">Press &apos;R&apos; to cycle mode</p>
+
+            {!wsConnected && (
+              <div className="mt-6 flex flex-col items-center gap-3">
+                <div className="text-xs text-gray-500">Enter Tosu host/IP (default: localhost)</div>
+                <div className="flex items-center gap-2">
+                  <input
+                    className="px-3 py-2 rounded bg-black/40 text-white text-sm w-56 outline-none"
+                    value={tosuHostInput}
+                    onChange={(e) => setTosuHostInput(e.target.value)}
+                    placeholder="localhost"
+                  />
+                  <button
+                    className="px-3 py-2 rounded bg-white text-black text-sm"
+                    type="button"
+                    onClick={() => {
+                      const trimmed = tosuHostInput.trim() || 'localhost';
+                      const next = new URLSearchParams(searchParams.toString());
+                      next.set('ip', trimmed);
+                      router.replace(`/overlay/${String(attemptId)}?${next.toString()}`);
+                    }}
+                  >
+                    Connect
+                  </button>
+                </div>
+                <div className="text-[10px] text-gray-600">
+                  WebSocket: ws://&lt;host&gt;:24050/ws
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -410,7 +495,6 @@ export default function OverlayPage() {
 
           {/* 3 Vertical Bars Container */}
           <div className="absolute bottom-0 left-0 right-0 h-4/5 flex justify-center items-end gap-12 z-20">
-
             {/* Bar 1: YOU (Blue, filled only) */}
             <div className="relative w-32 h-full flex flex-col justify-end">
               <div
@@ -456,12 +540,14 @@ export default function OverlayPage() {
           <div className="absolute bottom-8 right-4 z-40 text-right text-xl font-bold">
             {/* TARGET (vs RIVAL) */}
             <div className={comparison.rivalDiff >= 0 ? 'text-white' : 'text-red-500'}>
-              TARGET: {comparison.rivalDiff >= 0 ? '+' : ''}{comparison.rivalDiff.toLocaleString()}
+              TARGET: {comparison.rivalDiff >= 0 ? '+' : ''}
+              {comparison.rivalDiff.toLocaleString()}
             </div>
             {/* MYBEST */}
             {myBest && (
               <div className={comparison.myBestDiff >= 0 ? 'text-white' : 'text-red-500'}>
-                MYBEST: {comparison.myBestDiff >= 0 ? '+' : ''}{comparison.myBestDiff.toLocaleString()}
+                MYBEST: {comparison.myBestDiff >= 0 ? '+' : ''}
+                {comparison.myBestDiff.toLocaleString()}
               </div>
             )}
           </div>

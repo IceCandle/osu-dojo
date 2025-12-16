@@ -20,7 +20,7 @@ export interface ValidationResult {
 export function validateReplayFile(file: File): ValidationResult {
   // Check file extension
   const fileName = file.name.toLowerCase();
-  const hasValidExtension = ALLOWED_EXTENSIONS.some(ext => fileName.endsWith(ext));
+  const hasValidExtension = ALLOWED_EXTENSIONS.some((ext) => fileName.endsWith(ext));
 
   if (!hasValidExtension) {
     return {
@@ -70,7 +70,7 @@ export function validateFilePath(filePath: string): ValidationResult {
   }
 
   // Check extension
-  const hasValidExtension = ALLOWED_EXTENSIONS.some(ext => filePath.toLowerCase().endsWith(ext));
+  const hasValidExtension = ALLOWED_EXTENSIONS.some((ext) => filePath.toLowerCase().endsWith(ext));
 
   if (!hasValidExtension) {
     return {

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { parseReplayToTimeSeries } from '@/lib/replay-parser';
-import { existsSync } from 'fs';
+import { getStorage } from '@/lib/storage';
 
 /**
  * GET /api/attempts/[id]/my-best
@@ -15,18 +15,13 @@ import { existsSync } from 'fs';
  *   finalScore: number       // Final score for hollow bar display
  * }
  */
-export async function GET(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const attemptId = parseInt(params.id, 10);
+    const { id } = await params;
+    const attemptId = parseInt(id, 10);
 
     if (isNaN(attemptId)) {
-      return NextResponse.json(
-        { error: 'Invalid attempt ID' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'Invalid attempt ID' }, { status: 400 });
     }
 
     // Fetch current attempt with dan and beatmaps
@@ -46,20 +41,14 @@ export async function GET(
     });
 
     if (!currentAttempt) {
-      return NextResponse.json(
-        { error: 'Attempt not found' },
-        { status: 404 }
-      );
+      return NextResponse.json({ error: 'Attempt not found' }, { status: 404 });
     }
 
     // Get the current map being played
     const currentBeatmap = currentAttempt.dan.beatmaps[currentAttempt.currentMapIndex];
 
     if (!currentBeatmap) {
-      return NextResponse.json(
-        { error: 'Current beatmap not found' },
-        { status: 404 }
-      );
+      return NextResponse.json({ error: 'Current beatmap not found' }, { status: 404 });
     }
 
     // Query for user's previous best attempts on this dan
@@ -91,7 +80,7 @@ export async function GET(
     if (previousAttempts.length === 0 || !previousAttempts[0].scores[0]) {
       return NextResponse.json(
         { error: 'No previous attempts found for this beatmap' },
-        { status: 404 }
+        { status: 404 },
       );
     }
 
@@ -99,20 +88,21 @@ export async function GET(
     const bestScore = bestAttempt.scores[0];
 
     // Parse replay file - required for pacemaker
-    const replayFilePath = bestAttempt.replay?.filePath;
+    const replayKey = bestAttempt.replay?.filePath;
+    const storage = getStorage();
 
-    if (!replayFilePath || !existsSync(replayFilePath)) {
+    if (!replayKey || !(await storage.exists(replayKey))) {
       return NextResponse.json(
         { error: 'Replay file not found for best attempt' },
-        { status: 404 }
+        { status: 404 },
       );
     }
 
     let timeSeries;
     try {
       // Parse actual replay file for accurate time-series data
-      console.log(`[MyBest] Parsing replay file: ${replayFilePath}`);
-      timeSeries = await parseReplayToTimeSeries(replayFilePath, currentBeatmap.beatmapId);
+      console.log(`[MyBest] Parsing replay key: ${replayKey}`);
+      timeSeries = await parseReplayToTimeSeries(replayKey, currentBeatmap.beatmapId);
     } catch (error) {
       console.error('[MyBest] Replay parsing failed:', error);
       return NextResponse.json(
@@ -120,7 +110,7 @@ export async function GET(
           error: 'Failed to parse replay file',
           message: error instanceof Error ? error.message : 'Unknown error',
         },
-        { status: 500 }
+        { status: 500 },
       );
     }
 
@@ -149,7 +139,7 @@ export async function GET(
         error: 'Internal server error',
         message: error instanceof Error ? error.message : 'Unknown error',
       },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

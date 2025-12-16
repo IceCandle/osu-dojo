@@ -14,9 +14,7 @@ export function registerCommands(bot: BanchoClient): void {
       await handleCommand(message);
     } catch (error) {
       logger.error('Command handling error', { error });
-      await message.user.sendMessage(
-        'Sorry, an error occurred processing your command.'
-      );
+      await message.user.sendMessage('Sorry, an error occurred processing your command.');
     }
   });
 
@@ -65,9 +63,7 @@ async function handleCommand(message: BanchoMessage): Promise<void> {
   }
 
   // Unknown command - send help
-  await message.user.sendMessage(
-    `Unknown command. Type "!dojo" for help.`
-  );
+  await message.user.sendMessage(`Unknown command. Type "!dojo" for help.`);
 }
 
 /**
@@ -89,11 +85,7 @@ async function sendHelp(user: BanchoDmUser): Promise<void> {
 /**
  * Handle: !dojo start <danId>
  */
-async function handleStart(
-  user: BanchoDmUser,
-  username: string,
-  danId: number
-): Promise<void> {
+async function handleStart(user: BanchoDmUser, username: string, danId: number): Promise<void> {
   logger.info('Start command received', { username, danId });
 
   // Verify user exists via osu! API
@@ -104,16 +96,12 @@ async function handleStart(
     osuUser = await osuApi.getUser(username);
 
     if (!osuUser) {
-      await user.sendMessage(
-        `User "${username}" not found on osu!. Please check your username.`
-      );
+      await user.sendMessage(`User "${username}" not found on osu!. Please check your username.`);
       return;
     }
   } catch (error) {
     logger.error('User verification failed', { username, error });
-    await user.sendMessage(
-      'Failed to verify your osu! account. Please try again later.'
-    );
+    await user.sendMessage('Failed to verify your osu! account. Please try again later.');
     return;
   }
 
@@ -128,9 +116,7 @@ async function handleStart(
   const osuUserData = osuUser as unknown as Partial<OsuUserData>;
   if (typeof osuUserData.id !== 'number' || typeof osuUserData.username !== 'string') {
     logger.error('Unexpected osu! API user response shape', { username });
-    await user.sendMessage(
-      'Failed to verify your osu! account. Please try again later.'
-    );
+    await user.sendMessage('Failed to verify your osu! account. Please try again later.');
     return;
   }
 
@@ -141,7 +127,6 @@ async function handleStart(
 
   // Auto-create user if not exists
   if (!dbUser) {
-
     dbUser = await prisma.user.create({
       data: {
         osuId: osuUserData.id,
@@ -156,9 +141,7 @@ async function handleStart(
       osuId: osuUserData.id,
     });
 
-    await user.sendMessage(
-      `Welcome to osu!dojo! Account created for ${osuUserData.username}.`
-    );
+    await user.sendMessage(`Welcome to osu!dojo! Account created for ${osuUserData.username}.`);
   }
 
   // Verify dan exists
@@ -167,9 +150,7 @@ async function handleStart(
   });
 
   if (!dan) {
-    await user.sendMessage(
-      `Dan #${danId} not found. Use "!dojo list" to see available dans.`
-    );
+    await user.sendMessage(`Dan #${danId} not found. Use "!dojo list" to see available dans.`);
     return;
   }
 
@@ -183,7 +164,7 @@ async function handleStart(
 
   if (activeAttempt) {
     await user.sendMessage(
-      `You already have an active attempt (#${activeAttempt.id}). Complete it first.`
+      `You already have an active attempt (#${activeAttempt.id}). Complete it first.`,
     );
     return;
   }
@@ -202,7 +183,7 @@ async function handleStart(
   await enqueueAttempt(attempt.id);
 
   await user.sendMessage(
-    `Attempt #${attempt.id} created for "${dan.name}"! You'll be invited to the lobby shortly.`
+    `Attempt #${attempt.id} created for "${dan.name}"! You'll be invited to the lobby shortly.`,
   );
 
   logger.info('Attempt created via DM', {
@@ -228,7 +209,7 @@ async function handleList(user: BanchoDmUser): Promise<void> {
   }
 
   const lines = ['Available Dans:'];
-  dans.forEach(dan => {
+  dans.forEach((dan) => {
     lines.push(`  #${dan.id} - ${dan.name} (Tier ${dan.difficultyTier})`);
   });
   lines.push('');
@@ -244,18 +225,15 @@ async function handleList(user: BanchoDmUser): Promise<void> {
  * The queue processor creates a short-lived ban session in Redis.
  * This command records the user's selection into Redis for the processor to consume.
  */
-async function handleBan(
-  user: BanchoDmUser,
-  username: string,
-  indices: number[]
-): Promise<void> {
+async function handleBan(user: BanchoDmUser, username: string, indices: number[]): Promise<void> {
   if (indices.length === 0) {
     await user.sendMessage('Usage: !dojo ban <index...> (example: !dojo ban 1 3)');
     return;
   }
 
   const { osuApi } = await import('@/lib/osu-api');
-  const { getPendingBanAttemptIdForOsuId, getBanSession, recordBanSelection } = await import('@/lib/redis');
+  const { getPendingBanAttemptIdForOsuId, getBanSession, recordBanSelection } =
+    await import('@/lib/redis');
 
   // Identify the user (osuId) so we can find the correct ban session.
   let osuUser: unknown | null;
@@ -298,7 +276,7 @@ async function handleBan(
 
   if (uniqueIndices.length === 0) {
     await user.sendMessage(
-      `No valid indices. Please pick 1-${candidateCount}. Example: !dojo ban 1 3`
+      `No valid indices. Please pick 1-${candidateCount}. Example: !dojo ban 1 3`,
     );
     return;
   }
@@ -315,12 +293,10 @@ async function handleBan(
       indices: uniqueIndices,
       bannedBeatmapDbIds,
     },
-    120
+    120,
   );
 
-  await user.sendMessage(
-    `Recorded bans: ${uniqueIndices.join(', ')} (max ${session.maxBans}).`
-  );
+  await user.sendMessage(`Recorded bans: ${uniqueIndices.join(', ')} (max ${session.maxBans}).`);
 
   logger.info('Ban selection recorded', {
     username,

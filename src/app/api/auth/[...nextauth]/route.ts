@@ -20,7 +20,7 @@ type OsuUser = {
   osuId?: number;
 };
 
-export const authOptions: AuthOptions = {
+const authOptions: AuthOptions = {
   adapter: PrismaAdapter(prisma) as unknown as AuthOptions['adapter'],
   providers: [
     {
@@ -78,9 +78,7 @@ export const authOptions: AuthOptions = {
           data: {
             accessToken: accountData.access_token,
             refreshToken: accountData.refresh_token,
-            tokenExpiry: accountData.expires_at
-              ? new Date(accountData.expires_at * 1000)
-              : null,
+            tokenExpiry: accountData.expires_at ? new Date(accountData.expires_at * 1000) : null,
             lastLoginAt: new Date(),
           },
         });

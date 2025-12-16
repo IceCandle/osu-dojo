@@ -9,9 +9,9 @@ const globalForRedis = globalThis as unknown as {
   redis: Redis | undefined;
 };
 
-export const redis = globalForRedis.redis ?? new Redis(
-  process.env.REDIS_URL || 'redis://localhost:6379',
-  {
+export const redis =
+  globalForRedis.redis ??
+  new Redis(process.env.REDIS_URL || 'redis://localhost:6379', {
     maxRetriesPerRequest: 3,
     enableReadyCheck: true,
     retryStrategy(times) {
@@ -20,10 +20,9 @@ export const redis = globalForRedis.redis ?? new Redis(
     },
     reconnectOnError(err) {
       const targetErrors = ['READONLY', 'ECONNRESET', 'ETIMEDOUT'];
-      return targetErrors.some(targetError => err.message.includes(targetError));
+      return targetErrors.some((targetError) => err.message.includes(targetError));
     },
-  }
-);
+  });
 
 if (process.env.NODE_ENV !== 'production') {
   globalForRedis.redis = redis;
@@ -132,12 +131,15 @@ export async function getPendingBanAttemptIdForOsuId(osuId: number): Promise<num
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-export async function recordBanSelection(selection: BanSelection, ttlSeconds: number): Promise<void> {
+export async function recordBanSelection(
+  selection: BanSelection,
+  ttlSeconds: number,
+): Promise<void> {
   await redis.set(
     REDIS_BAN_KEYS.SELECTION(selection.attemptId),
     JSON.stringify(selection),
     'EX',
-    ttlSeconds
+    ttlSeconds,
   );
 }
 
@@ -165,7 +167,7 @@ export async function closeBanSession(attemptId: number, osuId: number): Promise
 export async function publishAttemptEvent(
   attemptId: number,
   event: keyof typeof REDIS_CHANNELS,
-  data: Record<string, unknown>
+  data: Record<string, unknown>,
 ): Promise<void> {
   const channel = REDIS_CHANNELS[event](attemptId);
   await redis.publish(channel, JSON.stringify(data));
@@ -191,7 +193,7 @@ export async function dequeueAttempt(timeoutSeconds: number = 0): Promise<number
  */
 export async function cacheLeaderboard(
   danId: number,
-  attempts: Array<{ attemptId: number; totalScore: number }>
+  attempts: Array<{ attemptId: number; totalScore: number }>,
 ): Promise<void> {
   const key = REDIS_KEYS.LEADERBOARD(danId);
 
@@ -211,7 +213,7 @@ export async function cacheLeaderboard(
  */
 export async function getLeaderboard(
   danId: number,
-  limit: number = 100
+  limit: number = 100,
 ): Promise<Array<{ attemptId: number; totalScore: number }> | null> {
   const key = REDIS_KEYS.LEADERBOARD(danId);
 

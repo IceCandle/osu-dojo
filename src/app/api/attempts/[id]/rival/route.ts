@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { parseReplayToTimeSeries } from '@/lib/replay-parser';
-import { existsSync } from 'fs';
+import { getStorage } from '@/lib/storage';
 
 type RivalMode = 'clear' | 'gold-clear' | 'national' | 'friends' | 'same-rank' | 'rotate';
 
@@ -21,20 +21,15 @@ type RivalMode = 'clear' | 'gold-clear' | 'national' | 'friends' | 'same-rank' |
  *   rivalName: string
  * }
  */
-export async function GET(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const attemptId = parseInt(params.id, 10);
+    const { id } = await params;
+    const attemptId = parseInt(id, 10);
     const searchParams = request.nextUrl.searchParams;
     const mode = (searchParams.get('mode') || 'clear') as RivalMode;
 
     if (isNaN(attemptId)) {
-      return NextResponse.json(
-        { error: 'Invalid attempt ID' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'Invalid attempt ID' }, { status: 400 });
     }
 
     // Fetch current attempt with dan and beatmaps
@@ -67,23 +62,18 @@ export async function GET(
     });
 
     if (!currentAttempt) {
-      return NextResponse.json(
-        { error: 'Attempt not found' },
-        { status: 404 }
-      );
+      return NextResponse.json({ error: 'Attempt not found' }, { status: 404 });
     }
 
     // Get the current map being played
     const currentBeatmap = currentAttempt.dan.beatmaps[currentAttempt.currentMapIndex];
 
     if (!currentBeatmap) {
-      return NextResponse.json(
-        { error: 'Current beatmap not found' },
-        { status: 404 }
-      );
+      return NextResponse.json({ error: 'Current beatmap not found' }, { status: 404 });
     }
 
     const duration = (currentBeatmap.length || 180) * 1000;
+    const storage = getStorage();
 
     // Handle different rival modes
     switch (mode) {
@@ -95,9 +85,9 @@ export async function GET(
           beatmapId: currentBeatmap.beatmapId,
           duration,
           finalScore: clearScore,
-          timeSeries: [],  // No time-series for threshold-only mode
+          timeSeries: [], // No time-series for threshold-only mode
           rivalName: 'Clear Threshold',
-          isThresholdOnly: true,  // Flag to indicate this is just a score line, not a replay
+          isThresholdOnly: true, // Flag to indicate this is just a score line, not a replay
         });
       }
 
@@ -106,23 +96,20 @@ export async function GET(
         if (!currentAttempt.dan.goldClearReplay) {
           return NextResponse.json(
             { error: 'No gold clear replay available for this dan' },
-            { status: 404 }
+            { status: 404 },
           );
         }
 
-        const replayFilePath = currentAttempt.dan.goldClearReplay.filePath;
+        const replayKey = currentAttempt.dan.goldClearReplay.filePath;
 
-        if (!replayFilePath || !existsSync(replayFilePath)) {
-          return NextResponse.json(
-            { error: 'Gold clear replay file not found' },
-            { status: 404 }
-          );
+        if (!replayKey || !(await storage.exists(replayKey))) {
+          return NextResponse.json({ error: 'Gold clear replay file not found' }, { status: 404 });
         }
 
         let timeSeries;
         try {
-          console.log(`[Rival:GoldClear] Parsing replay file: ${replayFilePath}`);
-          timeSeries = await parseReplayToTimeSeries(replayFilePath, currentBeatmap.beatmapId);
+          console.log(`[Rival:GoldClear] Parsing replay key: ${replayKey}`);
+          timeSeries = await parseReplayToTimeSeries(replayKey, currentBeatmap.beatmapId);
         } catch (error) {
           console.error('[Rival:GoldClear] Replay parsing failed:', error);
           return NextResponse.json(
@@ -130,7 +117,7 @@ export async function GET(
               error: 'Failed to parse gold clear replay',
               message: error instanceof Error ? error.message : 'Unknown error',
             },
-            { status: 500 }
+            { status: 500 },
           );
         }
 
@@ -176,24 +163,24 @@ export async function GET(
         if (!topAttempt || !topAttempt.scores[0]) {
           return NextResponse.json(
             { error: 'No national scores found for this beatmap' },
-            { status: 404 }
+            { status: 404 },
           );
         }
 
         const topScore = topAttempt.scores[0];
-        const replayFilePath = topAttempt.replay?.filePath;
+        const replayKey = topAttempt.replay?.filePath;
 
-        if (!replayFilePath || !existsSync(replayFilePath)) {
+        if (!replayKey || !(await storage.exists(replayKey))) {
           return NextResponse.json(
             { error: 'Replay file not found for national best attempt' },
-            { status: 404 }
+            { status: 404 },
           );
         }
 
         let timeSeries;
         try {
-          console.log(`[Rival:National] Parsing replay file: ${replayFilePath}`);
-          timeSeries = await parseReplayToTimeSeries(replayFilePath, currentBeatmap.beatmapId);
+          console.log(`[Rival:National] Parsing replay key: ${replayKey}`);
+          timeSeries = await parseReplayToTimeSeries(replayKey, currentBeatmap.beatmapId);
         } catch (error) {
           console.error('[Rival:National] Replay parsing failed:', error);
           return NextResponse.json(
@@ -201,7 +188,7 @@ export async function GET(
               error: 'Failed to parse national best replay',
               message: error instanceof Error ? error.message : 'Unknown error',
             },
-            { status: 500 }
+            { status: 500 },
           );
         }
 
@@ -228,7 +215,7 @@ export async function GET(
             error: `Rival mode '${mode}' not yet implemented`,
             message: 'Friend system is coming in a future update',
           },
-          { status: 501 }
+          { status: 501 },
         );
       }
 
@@ -238,7 +225,7 @@ export async function GET(
             error: 'Invalid rival mode',
             validModes: ['clear', 'gold-clear', 'national', 'friends', 'same-rank', 'rotate'],
           },
-          { status: 400 }
+          { status: 400 },
         );
       }
     }
@@ -249,7 +236,7 @@ export async function GET(
         error: 'Internal server error',
         message: error instanceof Error ? error.message : 'Unknown error',
       },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

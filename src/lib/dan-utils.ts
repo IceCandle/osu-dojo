@@ -20,21 +20,16 @@ import { Beatmap } from '@prisma/client';
  * // Attempt with 1 banned map
  * const mapsRequired = getMapsRequired(dan.beatmaps, attempt.bannedMapIds);
  */
-export function getMapsRequired(
-  beatmaps: Beatmap[],
-  bannedIds: number[] = []
-): number {
+export function getMapsRequired(beatmaps: Beatmap[], bannedIds: number[] = []): number {
   // Filter out banned maps
-  const unbanned = beatmaps.filter(b => !bannedIds.includes(b.id));
+  const unbanned = beatmaps.filter((b) => !bannedIds.includes(b.id));
 
   // Count regular (non-candidate) maps
-  const regularMaps = unbanned.filter(b => !b.isCandidate).length;
+  const regularMaps = unbanned.filter((b) => !b.isCandidate).length;
 
   // Count unique candidate groups (each group contributes 1 map)
   const candidateGroups = new Set(
-    unbanned
-      .filter(b => b.isCandidate && b.candidateGroup !== null)
-      .map(b => b.candidateGroup)
+    unbanned.filter((b) => b.isCandidate && b.candidateGroup !== null).map((b) => b.candidateGroup),
   ).size;
 
   return regularMaps + candidateGroups;

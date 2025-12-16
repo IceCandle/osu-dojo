@@ -7,18 +7,13 @@ import { prisma } from '@/lib/prisma';
  * Inspect attempt state for admin oversight
  * Returns DB record + Redis state + diagnostics
  */
-export async function GET(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const attemptId = parseInt(params.id, 10);
+    const { id } = await params;
+    const attemptId = parseInt(id, 10);
 
     if (isNaN(attemptId)) {
-      return NextResponse.json(
-        { error: 'Invalid attempt ID' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'Invalid attempt ID' }, { status: 400 });
     }
 
     // Fetch attempt with scores
@@ -32,10 +27,7 @@ export async function GET(
     });
 
     if (!attempt) {
-      return NextResponse.json(
-        { error: 'Attempt not found' },
-        { status: 404 }
-      );
+      return NextResponse.json({ error: 'Attempt not found' }, { status: 404 });
     }
 
     // Check Redis state
@@ -80,7 +72,7 @@ export async function GET(
       : 0;
 
     const isZombie = heartbeatAge > 300; // 5 minutes
-    const isStuck = lastDbUpdate > 600;  // 10 minutes
+    const isStuck = lastDbUpdate > 600; // 10 minutes
 
     let recommendedAction = 'OK';
     if (isZombie || isStuck) {
@@ -112,7 +104,7 @@ export async function GET(
         lastDbUpdate,
         recommendedAction,
       },
-      scores: attempt.scores.map(s => ({
+      scores: attempt.scores.map((s) => ({
         beatmapId: s.beatmapId,
         score: s.score.toString(),
         accuracy: s.accuracy,
@@ -121,7 +113,6 @@ export async function GET(
         playedAt: s.playedAt.toISOString(),
       })),
     });
-
   } catch (error) {
     console.error('[AdminAPI] Inspection error:', error);
     return NextResponse.json(
@@ -129,7 +120,7 @@ export async function GET(
         error: 'Internal server error',
         message: error instanceof Error ? error.message : 'Unknown error',
       },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
@@ -139,18 +130,13 @@ export async function GET(
  * Manually restart a stuck attempt
  * Cleans up Redis state and re-queues the attempt
  */
-export async function POST(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const attemptId = parseInt(params.id, 10);
+    const { id } = await params;
+    const attemptId = parseInt(id, 10);
 
     if (isNaN(attemptId)) {
-      return NextResponse.json(
-        { error: 'Invalid attempt ID' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'Invalid attempt ID' }, { status: 400 });
     }
 
     // Verify attempt exists
@@ -159,10 +145,7 @@ export async function POST(
     });
 
     if (!attempt) {
-      return NextResponse.json(
-        { error: 'Attempt not found' },
-        { status: 404 }
-      );
+      return NextResponse.json({ error: 'Attempt not found' }, { status: 404 });
     }
 
     // Clean up old Redis state
@@ -189,7 +172,6 @@ export async function POST(
       message: 'Attempt restarted and re-queued',
       attemptId,
     });
-
   } catch (error) {
     console.error('[AdminAPI] Restart error:', error);
     return NextResponse.json(
@@ -197,7 +179,7 @@ export async function POST(
         error: 'Internal server error',
         message: error instanceof Error ? error.message : 'Unknown error',
       },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

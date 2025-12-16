@@ -16,10 +16,7 @@ export async function POST(req: NextRequest) {
     const { beatmapId } = await req.json();
 
     if (!beatmapId || typeof beatmapId !== 'number') {
-      return NextResponse.json(
-        { error: 'beatmapId (number) is required' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'beatmapId (number) is required' }, { status: 400 });
     }
 
     const beatmap = await osuApi.getBeatmap(beatmapId);
@@ -27,7 +24,7 @@ export async function POST(req: NextRequest) {
     if (!beatmap) {
       return NextResponse.json(
         { error: `Beatmap ${beatmapId} not found on osu!` },
-        { status: 404 }
+        { status: 404 },
       );
     }
 
@@ -51,10 +48,7 @@ export async function POST(req: NextRequest) {
 
     const beatmapData = beatmap as unknown as Partial<Beatmap>;
     if (typeof beatmapData.id !== 'number') {
-      return NextResponse.json(
-        { error: 'Unexpected osu! API response shape' },
-        { status: 502 }
-      );
+      return NextResponse.json({ error: 'Unexpected osu! API response shape' }, { status: 502 });
     }
 
     const beatmapset = beatmapData.beatmapset ?? {};
@@ -77,7 +71,7 @@ export async function POST(req: NextRequest) {
     console.error('Failed to fetch beatmap metadata:', error);
     return NextResponse.json(
       { error: 'Failed to fetch beatmap metadata. osu! API may be unavailable.' },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

@@ -1,57 +1,8 @@
-import BanchoJs from "bancho.js";
+import BanchoJs from 'bancho.js';
 import { createLogger } from '@/lib/logger';
-
-// Type definitions for bancho.js events (library has incomplete TypeScript types)
-interface MatchScore {
-  player: {
-    user: {
-      username: string;
-      id: number;
-    };
-  };
-  score: number;
-  pass: boolean;
-  accuracy: number;
-  maxCombo: number;
-  count300?: number;
-  count100?: number;
-  count50?: number;
-  countMiss?: number;
-}
-
-interface MapConfig {
-  id: number; // Beatmap.id (DB primary key)
-  beatmapId: number; // osu! beatmap ID
-  mods: string[]; // e.g., ["HD", "HR"]
-  name?: string; // Display name for the map
-  requiredScore: bigint; // Normal clear (pass) requirement
-  goldClearScore: bigint; // Gold clear requirement
-  skillFocus?: string; // e.g., "Jump", "Stream", "Tech", "Reading"
-  gameMode?: string; // OSU, TAIKO, CATCH, MANIA
-}
-
-interface AttemptConfig {
-  attemptId: number; // Database attempt ID
-  multiplayerId: string | null; // osu! multiplayer match ID
-  username: string;
-  danName: string;
-  maps: MapConfig[]; // Final map list AFTER bans and candidate selection
-  startMapIndex?: number; // 0-based map index for crash recovery
-  onDone?: () => void;
-}
-
-interface MapScore {
-  beatmapId: number; // Beatmap.id (DB primary key)
-  score: bigint;
-  passed: boolean;
-  accuracy: number;
-  combo: number;
-  count300: number;
-  count100: number;
-  count50: number;
-  countMiss: number;
-  metRequirement: boolean;
-}
+import type { MatchScore } from '@/types/bancho-overrides';
+import type { AttemptConfig, MapScore } from '@/types/bot-types';
+import { LOBBY_MESSAGES } from '@/bot/messages';
 
 /**
  * Manages a single dan attempt in a multiplayer room
@@ -75,19 +26,10 @@ export class MultiplayerManager {
   }
 
   private setupEventHandlers() {
-    // bancho.js ships incomplete TypeScript event typings for BanchoLobby.
-    // Use a narrow `any` escape hatch for event names while keeping handler args typed.
-    type OnLobby = <TArgs extends unknown[]>(
-      event: string,
-      listener: (...args: TArgs) => void
-    ) => void;
-
-    const onLobby = (this.lobby as unknown as { on: OnLobby }).on.bind(this.lobby) as OnLobby;
-
     // Player joined event
-    onLobby("playerJoined", async (obj: { player: { user: { username: string } } }) => {
+    this.lobby.on('playerJoined', async (obj: { player: { user: { username: string } } }) => {
       const joinedUsername = obj.player.user.username;
-      console.log(`Player joined: ${joinedUsername}`);
+      console.log(LOBBY_MESSAGES.playerJoined(joinedUsername));
 
       if (joinedUsername === this.config.username) {
         this.playerJoined = true;
@@ -96,17 +38,17 @@ export class MultiplayerManager {
     });
 
     // Match finished event - automatic progression to next map
-    onLobby("matchFinished", async (scores: MatchScore[]) => {
+    this.lobby.on('matchFinished', async (scores: MatchScore[]) => {
       await this.onMatchFinished(scores);
     });
 
     // Player left event
-    onLobby("playerLeft", (obj: { user: { username: string } }) => {
+    this.lobby.on('playerLeft', (obj: { user: { username: string } }) => {
       const leftUsername = obj.user.username;
-      console.log(`Player left: ${leftUsername}`);
+      console.log(LOBBY_MESSAGES.playerLeft(leftUsername));
 
       if (leftUsername === this.config.username) {
-        console.log("Target player left. Aborting attempt.");
+        console.log(LOBBY_MESSAGES.targetPlayerLeft);
         // TODO: Handle player disconnect gracefully
       }
     });
@@ -124,16 +66,19 @@ export class MultiplayerManager {
     await this.lobby.invitePlayer(this.config.username);
 
     // Set a timeout for player to join (5 minutes)
-    setTimeout(() => {
-      if (!this.playerJoined) {
-        console.log("Player did not join in time. Closing lobby.");
-        this.lobby.closeLobby();
-      }
-    }, 5 * 60 * 1000);
+    setTimeout(
+      () => {
+        if (!this.playerJoined) {
+          console.log(LOBBY_MESSAGES.playerDidNotJoin);
+          this.lobby.closeLobby();
+        }
+      },
+      5 * 60 * 1000,
+    );
   }
 
   private async onPlayerReady(): Promise<void> {
-    console.log("Player is ready. Starting attempt flow.");
+    console.log('Player is ready. Starting attempt flow.');
 
     // Maps have already been selected and bans handled in processAttempt
     // Just start playing the first map
@@ -196,14 +141,16 @@ export class MultiplayerManager {
     await this.syncLobbyProgress();
 
     const map = this.config.maps[this.currentMapIndex];
-    console.log(`Playing map ${this.currentMapIndex + 1}/${this.config.maps.length}: ${map.beatmapId}`);
+    console.log(
+      `Playing map ${this.currentMapIndex + 1}/${this.config.maps.length}: ${map.beatmapId}`,
+    );
 
     // Set beatmap
     await this.lobby.setMap(map.beatmapId);
 
     // Set mods
     if (map.mods.length > 0) {
-      await this.lobby.setMods(map.mods.join(""), false); // false = not freemod
+      await this.lobby.setMods(map.mods.join(''), false); // false = not freemod
     }
 
     // Start match immediately (minimal rest time as requested)
@@ -214,9 +161,7 @@ export class MultiplayerManager {
     this.logger.info('Match finished, processing scores');
 
     // Find the player's score
-    const playerScore = scores.find(
-      (s) => s.player.user.username === this.config.username
-    );
+    const playerScore = scores.find((s) => s.player.user.username === this.config.username);
 
     if (playerScore) {
       const currentMap = this.config.maps[this.currentMapIndex];
@@ -251,14 +196,13 @@ export class MultiplayerManager {
       // Check if player failed the map OR didn't meet score requirement
       if (!mapScore.passed || !metRequirement) {
         const failReason = !mapScore.passed
-          ? "Map failed (did not complete)"
-          : `Score too low (${score} < ${currentMap.requiredScore})`;
+          ? LOBBY_MESSAGES.failureReason.didNotComplete
+          : LOBBY_MESSAGES.failureReason.scoreTooLow(score, currentMap.requiredScore);
 
         const mapName = currentMap.name || `Map ${this.currentMapIndex + 1}`;
-        const skillInfo = currentMap.skillFocus ? ` [${currentMap.skillFocus}]` : "";
 
         await this.lobby.channel.sendMessage(
-          `${mapName}${skillInfo}: ${failReason}. Attempt ended.`
+          LOBBY_MESSAGES.mapFailed(mapName, currentMap.skillFocus ?? undefined, failReason),
         );
         await this.finishAttempt();
         return;
@@ -266,7 +210,7 @@ export class MultiplayerManager {
 
       // Passed this map! Show feedback
       await this.lobby.channel.sendMessage(
-        `Map ${this.currentMapIndex + 1}/${this.config.maps.length} cleared! Score: ${score}`
+        LOBBY_MESSAGES.mapCleared(this.currentMapIndex, this.config.maps.length, score),
       );
     }
 
@@ -286,9 +230,10 @@ export class MultiplayerManager {
 
     let sliderbreaks = 0;
     let effectiveMisses = mapScore.countMiss;
+    let sliderbreaksSource: 'TOSU_OVERLAY' | 'UNKNOWN' = 'UNKNOWN';
 
     // Try to get sliderbreak data from overlay
-    const beatmap = this.config.maps.find(m => m.id === mapScore.beatmapId);
+    const beatmap = this.config.maps.find((m) => m.id === mapScore.beatmapId);
 
     if (beatmap?.gameMode === 'OSU') {
       const liveStatsKey = `attempt:${this.config.attemptId}:live-stats:${beatmap.beatmapId}`;
@@ -298,6 +243,7 @@ export class MultiplayerManager {
         const liveStats = JSON.parse(liveStatsData);
         sliderbreaks = liveStats.sliderbreaks || 0;
         effectiveMisses = mapScore.countMiss + sliderbreaks;
+        sliderbreaksSource = 'TOSU_OVERLAY';
 
         this.logger.info('Sliderbreak data retrieved from overlay', {
           beatmapId: beatmap.beatmapId,
@@ -308,9 +254,9 @@ export class MultiplayerManager {
         // Clean up after reading
         await redis.del(liveStatsKey);
       } else {
-        this.logger.warn('No sliderbreak data from overlay - defaulting to 0', {
+        this.logger.warn('No sliderbreak data from overlay - recording as UNKNOWN', {
           beatmapId: beatmap.beatmapId,
-          note: 'Player may not be using overlay, or tosu not running',
+          note: 'AttemptScore.sliderbreaksSource=UNKNOWN; sliderbreaks default to 0',
         });
       }
     }
@@ -329,6 +275,7 @@ export class MultiplayerManager {
         countMiss: mapScore.countMiss,
         sliderbreaks,
         effectiveMisses,
+        sliderbreaksSource,
         passed: mapScore.passed,
         metRequirement: mapScore.metRequirement,
         modsUsed: beatmap?.mods || [],
@@ -366,19 +313,20 @@ export class MultiplayerManager {
     const totalScore = this.getTotalScore();
 
     // Calculate average accuracy
-    const avgAccuracy = this.scores.length > 0
-      ? this.scores.reduce((sum, s) => sum + s.accuracy, 0) / this.scores.length
-      : 0;
+    const avgAccuracy =
+      this.scores.length > 0
+        ? this.scores.reduce((sum, s) => sum + s.accuracy, 0) / this.scores.length
+        : 0;
 
     // Two-tier clear calculation
     const allMapsCompleted = mapsCompleted === totalMaps;
 
     // Check if all maps met requiredScore (Normal Pass)
-    const isNormalPass = allMapsCompleted &&
-      this.scores.every(s => s.metRequirement);
+    const isNormalPass = allMapsCompleted && this.scores.every((s) => s.metRequirement);
 
     // Check if all maps met goldClearScore (Gold Pass)
-    const isGoldPass = allMapsCompleted &&
+    const isGoldPass =
+      allMapsCompleted &&
       this.scores.every((s, index) => {
         const map = this.config.maps[index];
         return s.score >= map.goldClearScore;
@@ -416,16 +364,12 @@ export class MultiplayerManager {
 
     // Send completion message
     if (isGoldPass) {
-      await this.lobby.channel.sendMessage(
-        `🏆 GOLD CLEAR! All maps cleared with gold requirements. Total: ${totalScore}`
-      );
+      await this.lobby.channel.sendMessage(LOBBY_MESSAGES.goldClear(totalScore));
     } else if (isNormalPass) {
-      await this.lobby.channel.sendMessage(
-        `🎉 NORMAL CLEAR! All maps passed. Total: ${totalScore}`
-      );
+      await this.lobby.channel.sendMessage(LOBBY_MESSAGES.normalClear(totalScore));
     } else {
       await this.lobby.channel.sendMessage(
-        `Attempt finished. Completed ${mapsCompleted}/${totalMaps} maps. Total: ${totalScore}`
+        LOBBY_MESSAGES.attemptFinished(mapsCompleted, totalMaps, totalScore),
       );
     }
 

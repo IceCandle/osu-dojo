@@ -20,14 +20,14 @@ export interface LobbyState {
   danName: string;
   status: 'PLAYING' | 'COMPLETED' | 'ABANDONED';
   currentMapIndex: number;
-  matchId: string;           // osu! official match ID (e.g., "11223344")
-  channelName: string;        // IRC channel (e.g., "#mp_11223344")
-  botOsuId: number;           // Bot's osu! ID (for host verification)
-  startedAt: number;          // Unix timestamp
-  lastHeartbeat: number;      // Last activity timestamp
+  matchId: string; // osu! official match ID (e.g., "11223344")
+  channelName: string; // IRC channel (e.g., "#mp_11223344")
+  botOsuId: number; // Bot's osu! ID (for host verification)
+  startedAt: number; // Unix timestamp
+  lastHeartbeat: number; // Last activity timestamp
   mapsCompleted: number;
   bannedMapIndices: number[];
-  mapDbIds: number[];         // Ordered Beatmap.id list used for resume
+  mapDbIds: number[]; // Ordered Beatmap.id list used for resume
 }
 
 /**
@@ -144,95 +144,7 @@ export async function findZombieLobbies(): Promise<LobbyState[]> {
 /**
  * Reconcile match history with database
  *
- * NOTE: This is a stub for Phase 1. Full implementation requires osu! API v2 integration.
- *
- * Phase 1.5 Implementation Plan:
- * ================================
- *
- * 1. Fetch match history from osu! API v2:
- *    Endpoint: GET /api/v2/matches/{matchId}
- *    Authentication: OAuth token (requires user consent)
- *    Response includes: match.events[] with all games played
- *
- * 2. Extract game events:
- *    Filter: match.events.filter(e => e.detail.type === 'other')
- *    Each event has: event.game.scores[] with player scores
- *
- * 3. Get existing AttemptScore records from database:
- *    Query: prisma.attemptScore.findMany({ where: { attemptId }, orderBy: { playedAt: 'asc' } })
- *
- * 4. Compare API scores with DB records:
- *    Match by: beatmap_id and timestamp
- *    Find missing: matchScores.filter(ms => !dbScores.find(ds => ds.beatmapId === ms.beatmap_id))
- *
- * 5. Return missing scores for backfilling:
- *    Structure: { beatmapId, score, accuracy, combo, passed, count300, count100, count50, countMiss }
- *    These will be inserted into AttemptScore table
- *
- * Algorithm Details:
- * ------------------
- * ```typescript
- * // Fetch from osu! API
- * const matchHistory = await osuApi.getMatch(matchId);
- * const apiGames = matchHistory.events
- *   .filter(e => e.detail.type === 'other')
- *   .map(e => e.game);
- *
- * // Get DB records
- * const dbScores = await prisma.attemptScore.findMany({
- *   where: { attemptId },
- *   orderBy: { playedAt: 'asc' },
- * });
- *
- * // Find missing scores
- * const missingScores = [];
- * for (const game of apiGames) {
- *   const playerScore = game.scores.find(s => s.user_id === userId);
- *   if (!playerScore) continue;
- *
- *   const existsInDb = dbScores.find(
- *     ds => ds.beatmapId === game.beatmap_id &&
- *           Math.abs(new Date(ds.playedAt).getTime() - new Date(game.end_time).getTime()) < 60000
- *   );
- *
- *   if (!existsInDb) {
- *     missingScores.push({
- *       beatmapId: game.beatmap_id,
- *       score: playerScore.score,
- *       accuracy: playerScore.accuracy,
- *       combo: playerScore.max_combo,
- *       passed: playerScore.passed,
- *       count300: playerScore.statistics.count_300,
- *       count100: playerScore.statistics.count_100,
- *       count50: playerScore.statistics.count_50,
- *       countMiss: playerScore.statistics.count_miss,
- *     });
- *   }
- * }
- *
- * return {
- *   newMapIndex: dbScores.length + missingScores.length,
- *   missingScores,
- * };
- * ```
- *
- * Dependencies Required:
- * ----------------------
- * - osu! API v2 client (@/lib/osu-api.ts) - OAuth2 wrapper with token refresh
- * - User OAuth token with 'public' scope
- * - Match ID tracking (stored in Attempt.multiplayerId)
- *
- * Error Handling:
- * ---------------
- * - 404: Match not found → Mark attempt as ABANDONED
- * - 401: Unauthorized → Require user re-authentication
- * - Rate limit: Exponential backoff with retry
- *
- * Limitations:
- * ------------
- * - Match history only available for ~24 hours via API
- * - Cannot recover scores from matches older than API retention
- * - Requires bot to have stored multiplayerId before crash
+ * Design notes live in docs/recovery-strategy.md.
  *
  * @param matchId - osu! multiplayer match ID
  * @param attemptId - Database attempt ID
@@ -242,7 +154,7 @@ export async function findZombieLobbies(): Promise<LobbyState[]> {
 export async function reconcileMatchHistory(
   matchId: string,
   attemptId: number,
-  expectedMapIndex: number
+  expectedMapIndex: number,
 ): Promise<{
   newMapIndex: number;
   missingScores: Array<{
@@ -306,7 +218,9 @@ export async function reconcileMatchHistory(
       .filter((e) => e.detail?.type === 'other' && !!e.game)
       .map((e) => e.game as OsuMatchGame);
 
-    console.log(`[Recovery] Match history fetched: ${apiGames.length} games found, ${attempt.scores.length} in DB`);
+    console.log(
+      `[Recovery] Match history fetched: ${apiGames.length} games found, ${attempt.scores.length} in DB`,
+    );
 
     // Find missing scores
     const missingScores: Array<{
@@ -324,9 +238,7 @@ export async function reconcileMatchHistory(
       const existsInDb = attempt.scores.find(
         (ds) =>
           ds.beatmapId === game.beatmap_id &&
-          Math.abs(
-            new Date(ds.playedAt).getTime() - new Date(game.end_time).getTime()
-          ) < 60000 // 1 minute tolerance
+          Math.abs(new Date(ds.playedAt).getTime() - new Date(game.end_time).getTime()) < 60000, // 1 minute tolerance
       );
 
       if (!existsInDb) {
@@ -340,7 +252,9 @@ export async function reconcileMatchHistory(
 
     const newMapIndex = attempt.scores.length + missingScores.length;
 
-    console.log(`[Recovery] Reconciliation complete: ${missingScores.length} missing scores found, new map index: ${newMapIndex}`);
+    console.log(
+      `[Recovery] Reconciliation complete: ${missingScores.length} missing scores found, new map index: ${newMapIndex}`,
+    );
 
     return { newMapIndex, missingScores };
   } catch (error) {

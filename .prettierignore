@@ -1,0 +1,21 @@
+# dependencies
+node_modules
+
+# build output
+.next
+out
+
+# logs
+*.log
+
+# caches / runtime data
+.cache
+.cache/**
+cache
+cache/**
+
+# prisma generated
+prisma/generated
+
+# misc
+.DS_Store

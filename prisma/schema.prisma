@@ -15,36 +15,36 @@ datasource db {
 // ============================================
 
 model User {
-  id            Int       @id @default(autoincrement())
+  id Int @id @default(autoincrement())
 
   // osu! profile data (from OAuth)
-  osuId         Int       @unique                      // osu! user ID
-  osuUsername   String                                  // Current osu! username
-  avatarUrl     String?                                 // Profile avatar URL
-  countryCode   String?                                 // ISO country code (e.g., "US")
+  osuId       Int     @unique // osu! user ID
+  osuUsername String // Current osu! username
+  avatarUrl   String? // Profile avatar URL
+  countryCode String? // ISO country code (e.g., "US")
 
   // OAuth tokens for osu! API access
-  accessToken   String?                                 // Current OAuth access token
-  refreshToken  String?                                 // OAuth refresh token
-  tokenExpiry   DateTime?                               // When access token expires
+  accessToken  String? // Current OAuth access token
+  refreshToken String? // OAuth refresh token
+  tokenExpiry  DateTime? // When access token expires
 
   // User preferences
-  isActive      Boolean   @default(true)                // Account status
-  role          UserRole  @default(PLAYER)              // User role in platform
+  isActive Boolean  @default(true) // Account status
+  role     UserRole @default(PLAYER) // User role in platform
 
   // Dan progression
-  currentDanRank Int?                                    // Their highest achieved dan level (for Dan Best calculation)
+  currentDanRank Int? // Their highest achieved dan level (for Dan Best calculation)
 
   // Timestamps
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  lastLoginAt   DateTime?                               // Last login timestamp
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  lastLoginAt DateTime? // Last login timestamp
 
   // Relations
   createdDanSystems DanSystem[] @relation("DanSystemCreator") // Dan systems created by this user
-  createdDans       Dan[]       @relation("DanCreator")       // Dans created by this user
-  attempts          Attempt[]                                  // User's dan attempts
-  replays           Replay[]    @relation("ReplayUser")       // All replays by this user (filter by isGoldClear)
+  createdDans       Dan[]       @relation("DanCreator") // Dans created by this user
+  attempts          Attempt[] // User's dan attempts
+  replays           Replay[]    @relation("ReplayUser") // All replays by this user (filter by isGoldClear)
 
   @@index([osuId])
   @@index([osuUsername])
@@ -52,21 +52,21 @@ model User {
 }
 
 enum UserRole {
-  PLAYER      // Regular player
-  MODERATOR   // Can moderate dans/content
-  ADMIN       // Full platform access
+  PLAYER // Regular player
+  MODERATOR // Can moderate dans/content
+  ADMIN // Full platform access
 }
 
 enum ScoringSystem {
-  SCORE_V2    // Tournament standard (1M base)
-  LAZER       // New client (1M base, different formula)
+  SCORE_V2 // Tournament standard (1M base)
+  LAZER // New client (1M base, different formula)
 }
 
 enum GameMode {
-  OSU         // osu!standard (circles, sliders, spinners)
-  TAIKO       // Taiko (drums)
-  CATCH       // Catch the Beat (fruits)
-  MANIA       // osu!mania (keys)
+  OSU // osu!standard (circles, sliders, spinners)
+  TAIKO // Taiko (drums)
+  CATCH // Catch the Beat (fruits)
+  MANIA // osu!mania (keys)
 }
 
 // ============================================
@@ -74,27 +74,27 @@ enum GameMode {
 // ============================================
 
 model DanSystem {
-  id              Int       @id @default(autoincrement())
+  id Int @id @default(autoincrement())
 
   // System identity
-  key             String    @unique                       // Short code (e.g., "4ln2", "rf", "7ln")
-  name            String                                  // Display name (e.g., "DDMythical Reform", "LN v2")
-  description     String?   @db.Text                      // System overview
+  key         String  @unique // Short code (e.g., "4ln2", "rf", "7ln")
+  name        String // Display name (e.g., "DDMythical Reform", "LN v2")
+  description String? @db.Text // System overview
 
   // Configuration
-  gameMode        GameMode                                // Game mode for this system
-  isOfficial      Boolean   @default(false)              // Official vs community system
+  gameMode   GameMode // Game mode for this system
+  isOfficial Boolean  @default(false) // Official vs community system
 
   // Creator
-  creatorId       Int                                     // User who created/maintains system
-  creator         User      @relation("DanSystemCreator", fields: [creatorId], references: [id], onDelete: Cascade)
+  creatorId Int // User who created/maintains system
+  creator   User @relation("DanSystemCreator", fields: [creatorId], references: [id], onDelete: Cascade)
 
   // Timestamps
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // Relations
-  dans            Dan[]                                   // All dans in this system
+  dans Dan[] // All dans in this system
 
   @@index([gameMode, isOfficial])
   @@index([creatorId])
@@ -106,70 +106,70 @@ model DanSystem {
 // ============================================
 
 model Dan {
-  id              Int       @id @default(autoincrement())
+  id Int @id @default(autoincrement())
 
   // Basic info
-  name            String                                  // Dan name (e.g., "Gamma Dan")
-  description     String?   @db.Text                      // Detailed description
-  gameMode        GameMode  @default(OSU)                 // Which game mode this dan is for
+  name        String // Dan name (e.g., "Gamma Dan")
+  description String?  @db.Text // Detailed description
+  gameMode    GameMode @default(OSU) // Which game mode this dan is for
 
   // Dan system relationship (for organized dans like mania systems)
-  danSystemId     Int?                                    // Parent system (null for standalone dans)
-  danSystem       DanSystem? @relation(fields: [danSystemId], references: [id], onDelete: SetNull)
-  tierInSystem    Int?                                    // Tier within system (1-10, 11=Extra, 12=Final, 13=Kaiden)
+  danSystemId  Int? // Parent system (null for standalone dans)
+  danSystem    DanSystem? @relation(fields: [danSystemId], references: [id], onDelete: SetNull)
+  tierInSystem Int? // Tier within system (1-10, 11=Extra, 12=Final, 13=Kaiden)
 
   // Legacy difficulty (for standalone/custom dans)
-  difficultyTier  Int                                     // Relative difficulty rating (lower = easier) - used when danSystemId is null
+  difficultyTier Int // Relative difficulty rating (lower = easier) - used when danSystemId is null
 
   // Creator info
-  creatorId       Int                                     // User who created this dan
-  creator         User      @relation("DanCreator", fields: [creatorId], references: [id], onDelete: Cascade)
+  creatorId Int // User who created this dan
+  creator   User @relation("DanCreator", fields: [creatorId], references: [id], onDelete: Cascade)
 
   // Configuration
-  allowedBans     Int       @default(0)                   // Total ban budget - users distribute across slots at runtime
+  allowedBans Int @default(0) // Total ban budget - users distribute across slots at runtime
 
   // Status
-  status          DanStatus @default(DRAFT)              // Publication status
-  isOfficial      Boolean   @default(false)              // Official vs community dan
-  isFeatured      Boolean   @default(false)              // Featured on homepage
+  status     DanStatus @default(DRAFT) // Publication status
+  isOfficial Boolean   @default(false) // Official vs community dan
+  isFeatured Boolean   @default(false) // Featured on homepage
 
   // Validation requirements (anti-cheat for high-tier dans)
-  requiresReplay  Boolean   @default(false)              // Replay required to complete (Extra/Final dans)
+  requiresReplay Boolean @default(false) // Replay required to complete (Extra/Final dans)
 
   // Stats (denormalized for performance)
-  totalAttempts   Int       @default(0)                   // Total attempts started
-  totalPasses     Int       @default(0)                   // Total successful completions
-  uniquePlayers   Int       @default(0)                   // Unique users who attempted
+  totalAttempts Int @default(0) // Total attempts started
+  totalPasses   Int @default(0) // Total successful completions
+  uniquePlayers Int @default(0) // Unique users who attempted
 
   // Two reference replays (for two-tier clear system)
-  passReplayId       Int?      @unique                    // Normal clear reference replay
-  goldClearReplayId  Int?      @unique                    // Gold clear reference replay
+  passReplayId      Int? @unique // Normal clear reference replay
+  goldClearReplayId Int? @unique // Gold clear reference replay
 
-  passReplay         Replay?   @relation("DanPassReplay", fields: [passReplayId], references: [id], onDelete: SetNull)
-  goldClearReplay    Replay?   @relation("DanGoldClearReplay", fields: [goldClearReplayId], references: [id], onDelete: SetNull)
+  passReplay      Replay? @relation("DanPassReplay", fields: [passReplayId], references: [id], onDelete: SetNull)
+  goldClearReplay Replay? @relation("DanGoldClearReplay", fields: [goldClearReplayId], references: [id], onDelete: SetNull)
 
   // Timestamps
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
-  publishedAt     DateTime?                               // When dan was published
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  publishedAt DateTime? // When dan was published
 
   // Relations
-  beatmaps        Beatmap[]                               // Maps in this dan
-  attempts        Attempt[]                                // All attempts on this dan
+  beatmaps Beatmap[] // Maps in this dan
+  attempts Attempt[] // All attempts on this dan
 
   @@index([creatorId])
   @@index([status, difficultyTier])
   @@index([isFeatured, status])
   @@index([publishedAt])
-  @@index([danSystemId, tierInSystem])                   // Query dans in same system by tier
-  @@index([gameMode, danSystemId])                       // Filter by game mode and system
+  @@index([danSystemId, tierInSystem]) // Query dans in same system by tier
+  @@index([gameMode, danSystemId]) // Filter by game mode and system
   @@map("dans")
 }
 
 enum DanStatus {
-  DRAFT       // Being created/edited
-  PUBLISHED   // Live and playable
-  ARCHIVED    // No longer active
+  DRAFT // Being created/edited
+  PUBLISHED // Live and playable
+  ARCHIVED // No longer active
 }
 
 // ============================================
@@ -177,61 +177,61 @@ enum DanStatus {
 // ============================================
 
 model Beatmap {
-  id              Int       @id @default(autoincrement()) // DB primary key (internal)
+  id Int @id @default(autoincrement()) // DB primary key (internal)
 
   // Dan relationship
-  danId           Int                                     // Parent dan (references Dan.id)
-  dan             Dan       @relation(fields: [danId], references: [id], onDelete: Cascade)
-  orderIndex      Int                                     // Position in dan (0-based)
+  danId      Int // Parent dan (references Dan.id)
+  dan        Dan @relation(fields: [danId], references: [id], onDelete: Cascade)
+  orderIndex Int // Position in dan (0-based)
 
   // osu! beatmap data
-  beatmapId       Int                                     // osu! beatmap ID (external, from osu! API)
-  beatmapTitle    String?                                 // Cached title (e.g., "Hitorigoto")
-  beatmapArtist   String?                                 // Cached artist
-  difficultyName  String?                                 // Difficulty name (e.g., "Extra")
-  beatmapCreator  String?                                 // Mapper name
+  beatmapId      Int // osu! beatmap ID (external, from osu! API)
+  beatmapTitle   String? // Cached title (e.g., "Hitorigoto")
+  beatmapArtist  String? // Cached artist
+  difficultyName String? // Difficulty name (e.g., "Extra")
+  beatmapCreator String? // Mapper name
 
   // Game mode (inherited from dan)
-  gameMode        GameMode  @default(OSU)                // Game mode for this beatmap
+  gameMode GameMode @default(OSU) // Game mode for this beatmap
 
   // Modifiers
-  mods            String[]  @default([])                  // Required mods (e.g., ["HD", "HR"])
+  mods String[] @default([]) // Required mods (e.g., ["HD", "HR"])
 
   // Two-tier clear requirements (separate for ScoreV2 and Lazer)
-  scoringSystem   ScoringSystem @default(SCORE_V2)        // SCORE_V2 | LAZER
-  requiredScore   BigInt                                  // Normal clear (pass) requirement
-  goldClearScore  BigInt                                  // Gold clear (hard) requirement - higher than requiredScore
+  scoringSystem  ScoringSystem @default(SCORE_V2) // SCORE_V2 | LAZER
+  requiredScore  BigInt // Normal clear (pass) requirement
+  goldClearScore BigInt // Gold clear (hard) requirement - higher than requiredScore
 
   // Candidate map system for random selection
-  isCandidate     Boolean   @default(false)              // Maps with same candidateGroup are alternatives for same slot
-  candidateGroup  Int?                                   // Candidate group number (null if not a candidate)
+  isCandidate    Boolean @default(false) // Maps with same candidateGroup are alternatives for same slot
+  candidateGroup Int? // Candidate group number (null if not a candidate)
 
   // Metadata
-  skillFocus      String?                                 // Primary skill (e.g., "Jump", "Stream", "Tech", "Reading")
-  starRating      Float?                                  // Star rating with mods applied (cached from osu! API)
+  skillFocus String? // Primary skill (e.g., "Jump", "Stream", "Tech", "Reading")
+  starRating Float? // Star rating with mods applied (cached from osu! API)
 
   // Stats (optional, cached from osu! API)
-  length          Int?                                    // Map length in seconds
-  bpm             Float?                                  // Beats per minute
-  ar              Float?                                  // Approach rate
-  cs              Float?                                  // Circle size
-  od              Float?                                  // Overall difficulty
-  hp              Float?                                  // HP drain
+  length Int? // Map length in seconds
+  bpm    Float? // Beats per minute
+  ar     Float? // Approach rate
+  cs     Float? // Circle size
+  od     Float? // Overall difficulty
+  hp     Float? // HP drain
 
   // osu!mania specific: Section-based accuracy tracking
   // For mania dans, a single beatmap contains multiple sections (typically 4)
   // Each section tests different skills (e.g., LN, jack, stream, tech)
-  hasSections     Boolean   @default(false)               // Whether this beatmap uses section-based scoring
+  hasSections Boolean @default(false) // Whether this beatmap uses section-based scoring
 
   // Timestamps
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // Relations
-  attemptScores   AttemptScore[]                          // All scores on this map
-  sections        BeatmapSection[]                        // Mania: sections within this beatmap (metadata)
+  attemptScores AttemptScore[] // All scores on this map
+  sections      BeatmapSection[] // Mania: sections within this beatmap (metadata)
 
-  @@unique([danId, orderIndex])                          // Each position must be unique per dan
+  @@unique([danId, orderIndex]) // Each position must be unique per dan
   @@index([danId])
   @@index([beatmapId])
   @@index([skillFocus])
@@ -243,61 +243,66 @@ model Beatmap {
 // ============================================
 
 model Attempt {
-  id              Int           @id @default(autoincrement())
+  id Int @id @default(autoincrement())
 
   // User and dan
-  userId          Int                                     // Player attempting
-  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  danId           Int                                     // Dan being attempted
-  dan             Dan           @relation(fields: [danId], references: [id], onDelete: Cascade)
+  userId Int // Player attempting
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  danId  Int // Dan being attempted
+  dan    Dan  @relation(fields: [danId], references: [id], onDelete: Cascade)
 
   // Status
-  status          AttemptStatus @default(IN_PROGRESS)    // Current status
+  status AttemptStatus @default(IN_PROGRESS) // Current status
 
   // Ban tracking
-  bannedMapIds    Int[]         @default([])             // IDs of beatmaps banned for this attempt
-  bannedCount     Int           @default(0)              // Number of maps banned (denormalized)
+  bannedMapIds Int[] @default([]) // IDs of beatmaps banned for this attempt
+  bannedCount  Int   @default(0) // Number of maps banned (denormalized)
 
   // Progress tracking
-  currentMapIndex Int           @default(0)              // Current map being played (0-based)
-  mapsCompleted   Int           @default(0)              // Maps successfully completed
+  currentMapIndex Int @default(0) // Current map being played (0-based)
+  mapsCompleted   Int @default(0) // Maps successfully completed
   // Note: mapsRequired is calculated dynamically via getMapsRequired() helper
 
   // Results (calculated after completion/failure)
-  totalScore      BigInt        @default(0)              // Sum of all map scores
-  averageAccuracy Float?                                 // Average accuracy as percentage (0-100)
-  isPassed        Boolean       @default(false)          // Whether attempt was successful (deprecated - use isNormalPass)
-  failedMapId     Int?                                   // Beatmap ID where attempt failed (if applicable)
+  totalScore      BigInt @default(0) // Sum of all map scores
+  averageAccuracy Float? // Average accuracy as percentage (0-100)
+  failedMapId     Int? // Beatmap ID where attempt failed (if applicable)
 
   // Two-tier clear system
-  isNormalPass    Boolean       @default(false)          // Met requiredScore for all maps
-  isGoldPass      Boolean       @default(false)          // Met goldClearScore for all maps
+  isNormalPass Boolean @default(false) // Met requiredScore for all maps
+  isGoldPass   Boolean @default(false) // Met goldClearScore for all maps
 
   // Multiplayer room info
-  multiplayerId   String?                                // osu! multiplayer room ID (e.g., "12345678")
-  multiplayerUrl  String?                                // Full URL to mp history
+  multiplayerId  String? // osu! multiplayer room ID (e.g., "12345678")
+  multiplayerUrl String? // Full URL to mp history
 
   // Timestamps
-  createdAt       DateTime      @default(now())          // When attempt started
-  updatedAt       DateTime      @updatedAt
-  completedAt     DateTime?                              // When attempt finished (pass or fail)
+  createdAt   DateTime  @default(now()) // When attempt started
+  updatedAt   DateTime  @updatedAt
+  completedAt DateTime? // When attempt finished (pass or fail)
 
   // Relations
-  scores          AttemptScore[]                         // Individual map scores
-  replay          Replay?                                // Optional replay if gold clear
+  scores AttemptScore[] // Individual map scores
+  replay Replay? // Optional replay if gold clear
 
   @@index([userId, danId])
   @@index([danId, status])
   @@index([userId, status])
-  @@index([danId, isPassed, totalScore])                // For leaderboards
+  @@index([danId, isNormalPass, totalScore]) // Normal clear leaderboard
+  @@index([danId, isGoldPass, totalScore]) // Gold clear leaderboard
   @@index([createdAt])
   @@map("attempts")
 }
 
 enum AttemptStatus {
-  IN_PROGRESS     // Currently playing
-  COMPLETED       // Finished (passed or failed)
-  ABANDONED       // Player left/disconnected
+  IN_PROGRESS // Currently playing
+  COMPLETED // Finished (passed or failed)
+  ABANDONED // Player left/disconnected
+}
+
+enum SliderbreaksSource {
+  TOSU_OVERLAY // Reported by overlay (tosu)
+  UNKNOWN // Overlay data missing/unavailable
 }
 
 // ============================================
@@ -305,46 +310,47 @@ enum AttemptStatus {
 // ============================================
 
 model AttemptScore {
-  id              Int       @id @default(autoincrement())
+  id Int @id @default(autoincrement())
 
   // Relationships
-  attemptId       Int                                     // Parent attempt
-  attempt         Attempt   @relation(fields: [attemptId], references: [id], onDelete: Cascade)
-  beatmapId       Int                                     // Beatmap DB primary key (Beatmap.id, NOT Beatmap.beatmapId)
-  beatmap         Beatmap   @relation(fields: [beatmapId], references: [id], onDelete: Cascade)
+  attemptId Int // Parent attempt
+  attempt   Attempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  beatmapId Int // Beatmap DB primary key (Beatmap.id, NOT Beatmap.beatmapId)
+  beatmap   Beatmap @relation(fields: [beatmapId], references: [id], onDelete: Cascade)
 
   // Score data (from osu! match results)
-  score           BigInt                                  // Total score achieved
-  accuracy        Float                                   // Accuracy as percentage (0-100, e.g. 98.50)
-  combo           Int                                     // Max combo achieved
+  score    BigInt // Total score achieved
+  accuracy Float // Accuracy as percentage (0-100, e.g. 98.50)
+  combo    Int // Max combo achieved
 
   // Hit counts
-  count300        Int       @default(0)                   // Perfect hits
-  count100        Int       @default(0)                   // Good hits
-  count50         Int       @default(0)                   // Meh hits
-  countMiss       Int       @default(0)                   // Misses
-  countGeki       Int       @default(0)                   // Elite beats (osu!taiko/mania)
-  countKatu       Int       @default(0)                   // Regular beats (osu!taiko/mania)
+  count300  Int @default(0) // Perfect hits
+  count100  Int @default(0) // Good hits
+  count50   Int @default(0) // Meh hits
+  countMiss Int @default(0) // Misses
+  countGeki Int @default(0) // Elite beats (osu!taiko/mania)
+  countKatu Int @default(0) // Regular beats (osu!taiko/mania)
 
   // osu!standard specific: sliderbreaks count as misses
-  sliderbreaks    Int       @default(0)                   // Only for gameMode=OSU, tracked from replay
-  effectiveMisses Int       @default(0)                   // misses + sliderbreaks (for osu!standard)
+  sliderbreaks       Int                @default(0) // Only for gameMode=OSU, tracked from replay
+  effectiveMisses    Int                @default(0) // misses + sliderbreaks (for osu!standard)
+  sliderbreaksSource SliderbreaksSource @default(UNKNOWN) // Whether overlay provided sliderbreaks
 
   // Pass/fail status
-  passed          Boolean                                 // Whether player completed the map
-  metRequirement  Boolean                                 // Whether score met required threshold
+  passed         Boolean // Whether player completed the map
+  metRequirement Boolean // Whether score met required threshold
 
   // Mods used (cached from beatmap)
-  modsUsed        String[]  @default([])                 // Mods for this play
+  modsUsed String[] @default([]) // Mods for this play
 
   // Timestamps
-  createdAt       DateTime  @default(now())
-  playedAt        DateTime  @default(now())              // When map was played
+  createdAt DateTime @default(now())
+  playedAt  DateTime @default(now()) // When map was played
 
   // Relations
-  sectionScores   SectionScore[]                          // Mania: accuracy breakdown per section
+  sectionScores SectionScore[] // Mania: accuracy breakdown per section
 
-  @@unique([attemptId, beatmapId])                       // One score per map per attempt
+  @@unique([attemptId, beatmapId]) // One score per map per attempt
   @@index([attemptId])
   @@index([beatmapId])
   @@index([passed, metRequirement])
@@ -356,36 +362,36 @@ model AttemptScore {
 // ============================================
 
 model Replay {
-  id              Int       @id @default(autoincrement())
+  id Int @id @default(autoincrement())
 
   // Relationships
-  attemptId       Int       @unique                       // The attempt this replay is from
-  attempt         Attempt   @relation(fields: [attemptId], references: [id], onDelete: Cascade)
-  userId          Int                                     // Player (denormalized for queries)
-  user            User      @relation("ReplayUser", fields: [userId], references: [id], onDelete: Cascade)
-  danId           Int                                     // Dan (denormalized for queries)
+  attemptId Int     @unique // The attempt this replay is from
+  attempt   Attempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  userId    Int // Player (denormalized for queries)
+  user      User    @relation("ReplayUser", fields: [userId], references: [id], onDelete: Cascade)
+  danId     Int // Dan (denormalized for queries)
 
   // Replay file storage
-  fileName        String                                  // Original filename (e.g., "replay_123.osr")
-  filePath        String?                                 // Storage path (S3, local, etc.)
-  fileUrl         String?                                 // Public URL if applicable
-  fileSize        Int?                                    // File size in bytes
+  fileName String // Original filename (e.g., "replay_123.osr")
+  filePath String? // Storage path (S3, local, etc.)
+  fileUrl  String? // Public URL if applicable
+  fileSize Int? // File size in bytes
 
   // Metadata
-  isGoldClear     Boolean   @default(false)              // Is this the best clear for this dan?
-  isPacemaker     Boolean   @default(false)              // Used as reference pace
+  isGoldClear Boolean @default(false) // Is this the best clear for this dan?
+  isPacemaker Boolean @default(false) // Used as reference pace
 
   // Stats (denormalized from attempt)
-  totalScore      BigInt                                  // Total score for quick lookup
-  averageAccuracy Float?                                  // Average accuracy as percentage (0-100)
+  totalScore      BigInt // Total score for quick lookup
+  averageAccuracy Float? // Average accuracy as percentage (0-100)
 
   // Timestamps
-  createdAt       DateTime  @default(now())
-  uploadedAt      DateTime  @default(now())
+  createdAt  DateTime @default(now())
+  uploadedAt DateTime @default(now())
 
   // Relations
-  danPassReplay        Dan?      @relation("DanPassReplay")       // If this is a dan's pass reference replay
-  danGoldClearReplay   Dan?      @relation("DanGoldClearReplay")  // If this is a dan's gold clear reference replay
+  danPassReplay      Dan? @relation("DanPassReplay") // If this is a dan's pass reference replay
+  danGoldClearReplay Dan? @relation("DanGoldClearReplay") // If this is a dan's gold clear reference replay
 
   @@index([userId])
   @@index([danId, isGoldClear])
@@ -398,46 +404,46 @@ model Replay {
 // ============================================
 
 enum SectionAccuracySource {
-  MANUAL          // User manually entered section accuracies
-  TOSU_OVERLAY    // Captured from tosu overlay (not verified)
-  REPLAY_PARSED   // Extracted from uploaded .osr file (verified)
+  MANUAL // User manually entered section accuracies
+  TOSU_OVERLAY // Captured from tosu overlay (not verified)
+  REPLAY_PARSED // Extracted from uploaded .osr file (verified)
 }
 
 // BeatmapSection: Individual sections within a mania beatmap
 // Mania dans compile 4 different charts into a single .osz file
 // Each section has its own note count and accuracy requirement
 model BeatmapSection {
-  id              Int       @id @default(autoincrement())
+  id Int @id @default(autoincrement())
 
   // Parent beatmap
-  beatmapId       Int                                     // References Beatmap.id
-  beatmap         Beatmap   @relation(fields: [beatmapId], references: [id], onDelete: Cascade)
+  beatmapId Int // References Beatmap.id
+  beatmap   Beatmap @relation(fields: [beatmapId], references: [id], onDelete: Cascade)
 
   // Section metadata
-  sectionIndex    Int                                     // 0-based index (0, 1, 2, 3 for typical 4-section dan)
-  title           String                                  // Song title (e.g., "ClariS - Hitorigoto -TV MIX-")
-  mapper          String?                                 // Charter/mapper name (e.g., "Tofu1222")
-  difficultyName  String?                                 // Difficulty version (e.g., "Hard", "Insane")
+  sectionIndex   Int // 0-based index (0, 1, 2, 3 for typical 4-section dan)
+  title          String // Song title (e.g., "ClariS - Hitorigoto -TV MIX-")
+  mapper         String? // Charter/mapper name (e.g., "Tofu1222")
+  difficultyName String? // Difficulty version (e.g., "Hard", "Insane")
 
   // Note count data (for accuracy calculation weighting)
-  noteCount       Int                                     // Total notes in this section
-  lnCount         Int       @default(0)                   // Long notes in this section (0 for non-LN dans)
+  noteCount Int // Total notes in this section
+  lnCount   Int @default(0) // Long notes in this section (0 for non-LN dans)
 
   // Timing (optional, for future pacemaker support)
-  startTime       Int?                                    // ms from beatmap start
-  endTime         Int?                                    // ms from beatmap end
+  startTime Int? // ms from beatmap start
+  endTime   Int? // ms from beatmap end
 
   // Skill focus
-  skillFocus      String?                                 // "LN", "Jack", "Stream", "Tech", etc.
+  skillFocus String? // "LN", "Jack", "Stream", "Tech", etc.
 
   // Timestamps
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // Relations
-  sectionScores   SectionScore[]                          // Individual scores for this section
+  sectionScores SectionScore[] // Individual scores for this section
 
-  @@unique([beatmapId, sectionIndex])                    // Each section index unique per beatmap
+  @@unique([beatmapId, sectionIndex]) // Each section index unique per beatmap
   @@index([beatmapId])
   @@map("beatmap_sections")
 }
@@ -445,25 +451,25 @@ model BeatmapSection {
 // SectionScore: Tracks accuracy per section for mania dans
 // Uses weighted average formula to calculate section accuracy from overall accuracy
 model SectionScore {
-  id              Int       @id @default(autoincrement())
+  id Int @id @default(autoincrement())
 
   // Relationships
-  attemptScoreId  Int                                     // Parent attempt score
-  attemptScore    AttemptScore @relation(fields: [attemptScoreId], references: [id], onDelete: Cascade)
-  sectionId       Int                                     // References BeatmapSection.id
-  section         BeatmapSection @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  attemptScoreId Int // Parent attempt score
+  attemptScore   AttemptScore   @relation(fields: [attemptScoreId], references: [id], onDelete: Cascade)
+  sectionId      Int // References BeatmapSection.id
+  section        BeatmapSection @relation(fields: [sectionId], references: [id], onDelete: Cascade)
 
   // Section-specific accuracy (calculated via weighted average)
-  accuracy        Float                                   // Section accuracy as percentage (0-100)
+  accuracy Float // Section accuracy as percentage (0-100)
 
   // Verification metadata
-  source          SectionAccuracySource @default(MANUAL) // How this accuracy was obtained
-  verified        Boolean   @default(false)              // Whether verified against replay (for high-tier dans)
+  source   SectionAccuracySource @default(MANUAL) // How this accuracy was obtained
+  verified Boolean               @default(false) // Whether verified against replay (for high-tier dans)
 
   // Timestamps
-  createdAt       DateTime  @default(now())
+  createdAt DateTime @default(now())
 
-  @@unique([attemptScoreId, sectionId])                  // One score per section per attempt
+  @@unique([attemptScoreId, sectionId]) // One score per section per attempt
   @@index([attemptScoreId])
   @@index([sectionId])
   @@map("section_scores")

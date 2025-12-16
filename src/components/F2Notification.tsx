@@ -1,12 +1,12 @@
-'use client'
+'use client';
 
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
-import { useEffect, useState } from 'react'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { useEffect, useState } from 'react';
 
 interface F2NotificationProps {
-  show: boolean
-  countdown: number
-  onComplete?: () => void
+  show: boolean;
+  countdown: number;
+  onComplete?: () => void;
 }
 
 /**
@@ -30,25 +30,25 @@ interface F2NotificationProps {
  * ```
  */
 export function F2Notification({ show, countdown, onComplete }: F2NotificationProps) {
-  const [visible, setVisible] = useState(false)
+  const [visible, setVisible] = useState(false);
 
   useEffect(() => {
     if (show) {
-      setVisible(true)
+      setVisible(true);
     } else {
       // Delay hiding to allow fade-out animation
-      const timer = setTimeout(() => setVisible(false), 300)
-      return () => clearTimeout(timer)
+      const timer = setTimeout(() => setVisible(false), 300);
+      return () => clearTimeout(timer);
     }
-  }, [show])
+  }, [show]);
 
   useEffect(() => {
     if (countdown <= 0 && onComplete) {
-      onComplete()
+      onComplete();
     }
-  }, [countdown, onComplete])
+  }, [countdown, onComplete]);
 
-  if (!visible) return null
+  if (!visible) return null;
 
   return (
     <div
@@ -57,12 +57,11 @@ export function F2Notification({ show, countdown, onComplete }: F2NotificationPr
       }`}
     >
       <Alert className="w-96 bg-green-500/95 border-green-600 border-4 text-white shadow-2xl animate-pulse backdrop-blur-sm">
-        <AlertTitle className="text-3xl font-bold text-center mb-2">
-          ✅ PASS DETECTED!
-        </AlertTitle>
+        <AlertTitle className="text-3xl font-bold text-center mb-2">✅ PASS DETECTED!</AlertTitle>
         <AlertDescription className="space-y-2">
           <div className="text-2xl font-semibold text-center">
-            Press <kbd className="px-3 py-1 bg-white text-green-600 rounded font-mono">F2</kbd> to save replay
+            Press <kbd className="px-3 py-1 bg-white text-green-600 rounded font-mono">F2</kbd> to
+            save replay
           </div>
           <div className="text-xl text-center font-mono">
             {countdown > 0 ? `${countdown}s remaining` : 'Starting next map...'}
@@ -70,7 +69,7 @@ export function F2Notification({ show, countdown, onComplete }: F2NotificationPr
         </AlertDescription>
       </Alert>
     </div>
-  )
+  );
 }
 
 /**
@@ -89,30 +88,30 @@ export function F2Notification({ show, countdown, onComplete }: F2NotificationPr
  * ```
  */
 export function useF2Notification() {
-  const [showNotification, setShowNotification] = useState(false)
-  const [countdown, setCountdown] = useState(5)
+  const [showNotification, setShowNotification] = useState(false);
+  const [countdown, setCountdown] = useState(5);
 
   const triggerF2Notification = (initialCountdown: number = 5) => {
-    setCountdown(initialCountdown)
-    setShowNotification(true)
+    setCountdown(initialCountdown);
+    setShowNotification(true);
 
     const interval = setInterval(() => {
       setCountdown((prev) => {
         if (prev <= 1) {
-          clearInterval(interval)
-          setShowNotification(false)
-          return 0
+          clearInterval(interval);
+          setShowNotification(false);
+          return 0;
         }
-        return prev - 1
-      })
-    }, 1000)
+        return prev - 1;
+      });
+    }, 1000);
 
-    return () => clearInterval(interval)
-  }
+    return () => clearInterval(interval);
+  };
 
   return {
     showNotification,
     countdown,
     triggerF2Notification,
-  }
+  };
 }

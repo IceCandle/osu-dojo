@@ -12,10 +12,10 @@
  * Base score values for hit judgements
  */
 export const HIT_VALUES = {
-  GREAT: 300,    // Perfect hit (300)
-  OK: 100,       // Good hit (100)
-  MEH: 50,       // Meh hit (50)
-  MISS: 0,       // Miss
+  GREAT: 300, // Perfect hit (300)
+  OK: 100, // Good hit (100)
+  MEH: 50, // Meh hit (50)
+  MISS: 0, // Miss
 } as const;
 
 /**
@@ -27,25 +27,25 @@ export const HIT_VALUES = {
  */
 export const SCOREV2_MOD_MULTIPLIERS: Record<string, number> = {
   // Difficulty increasing
-  'HD': 1.06,   // Hidden
-  'HR': 1.10,   // Hard Rock
-  'DT': 1.20,   // Double Time
-  'NC': 1.20,   // Nightcore (same as DT)
-  'FL': 1.12,   // Flashlight
+  HD: 1.06, // Hidden
+  HR: 1.1, // Hard Rock
+  DT: 1.2, // Double Time
+  NC: 1.2, // Nightcore (same as DT)
+  FL: 1.12, // Flashlight
 
   // Difficulty decreasing
-  'NF': 1.00,   // No Fail (no penalty in V2!)
-  'EZ': 0.50,   // Easy
-  'HT': 0.30,   // Half Time
-  'SO': 0.95,   // Spun Out
+  NF: 1.0, // No Fail (no penalty in V2!)
+  EZ: 0.5, // Easy
+  HT: 0.3, // Half Time
+  SO: 0.95, // Spun Out
 
   // No multiplier
-  'NM': 1.00,   // No Mod
-  'SD': 1.00,   // Sudden Death
-  'PF': 1.00,   // Perfect
-  'RX': 1.00,   // Relax
-  'AP': 1.00,   // Auto Pilot
-  'Auto': 1.00, // Auto
+  NM: 1.0, // No Mod
+  SD: 1.0, // Sudden Death
+  PF: 1.0, // Perfect
+  RX: 1.0, // Relax
+  AP: 1.0, // Auto Pilot
+  Auto: 1.0, // Auto
 };
 
 /**
@@ -55,12 +55,12 @@ export function calculateAccuracy(
   count300: number,
   count100: number,
   count50: number,
-  countMiss: number
+  countMiss: number,
 ): number {
   const totalHits = count300 + count100 + count50 + countMiss;
   if (totalHits === 0) return 1.0;
 
-  const points = (count300 * 300) + (count100 * 100) + (count50 * 50);
+  const points = count300 * 300 + count100 * 100 + count50 * 50;
   const maxPoints = totalHits * 300;
 
   return points / maxPoints; // Returns 0-1 decimal
@@ -141,7 +141,7 @@ export class ScoreV2Calculator {
     count100: number,
     count50: number,
     countMiss: number,
-    modMultiplier: number = 1.0
+    modMultiplier: number = 1.0,
   ): number {
     let currentCombo = 0;
     let comboPortion = 0;
@@ -207,7 +207,7 @@ export class ScoreV2Calculator {
     count100: number,
     count50: number,
     countMiss: number,
-    modMultiplier: number = 1.0
+    modMultiplier: number = 1.0,
   ): number {
     let comboPortion = 0;
     let currentBaseScore = 0;
@@ -274,15 +274,14 @@ export class LazerScoreCalculator {
     accuracy: number,
     currentComboPortion: number,
     currentAccuracyJudgementCount: number,
-    bonusPortion: number = 0
+    bonusPortion: number = 0,
   ): number {
-    const comboProgress = this.maxComboPortion > 0
-      ? currentComboPortion / this.maxComboPortion
-      : 1;
+    const comboProgress = this.maxComboPortion > 0 ? currentComboPortion / this.maxComboPortion : 1;
 
-    const accuracyProgress = this.maxAccuracyJudgementCount > 0
-      ? currentAccuracyJudgementCount / this.maxAccuracyJudgementCount
-      : 1;
+    const accuracyProgress =
+      this.maxAccuracyJudgementCount > 0
+        ? currentAccuracyJudgementCount / this.maxAccuracyJudgementCount
+        : 1;
 
     const comboPart = 500000 * accuracy * comboProgress;
     const accuracyPart = 500000 * Math.pow(accuracy, 5) * accuracyProgress;
@@ -302,13 +301,7 @@ export class LazerScoreCalculator {
 export class ScoreV1Calculator {
   private difficultyMultiplier: number;
 
-  constructor(
-    hp: number,
-    cs: number,
-    od: number,
-    objectCount: number,
-    drainTimeSeconds: number
-  ) {
+  constructor(hp: number, cs: number, od: number, objectCount: number, drainTimeSeconds: number) {
     // Calculate difficulty multiplier
     // Formula: Round((HP + CS + OD + Clamp(ObjectCount / DrainTime * 8, 0, 16)) / 38 * 5)
     const densityFactor = Math.min(Math.max((objectCount / drainTimeSeconds) * 8, 0), 16);
@@ -320,7 +313,8 @@ export class ScoreV1Calculator {
    */
   calculateHitScore(hitValue: number, comboBeforeHit: number, modMultiplier: number = 1.0): number {
     const comboMultiplier = Math.max(comboBeforeHit - 1, 0);
-    const score = hitValue * (1 + (comboMultiplier * this.difficultyMultiplier * modMultiplier / 25));
+    const score =
+      hitValue * (1 + (comboMultiplier * this.difficultyMultiplier * modMultiplier) / 25);
     return Math.floor(score);
   }
 }
