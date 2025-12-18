@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
-import { requireAdminSession } from '@/lib/admin-auth';
+import { prisma } from '@/lib/core/prisma';
+import { requireAdminSession } from '@/lib/auth/admin-auth';
 
 type AttachKind = 'PASS' | 'GOLD';
 

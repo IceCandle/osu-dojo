@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
-import { getScoreAtTime, type ScoreTimestamp } from '@/lib/time-series';
+import { getScoreAtTime, type ScoreTimestamp } from '@/lib/utils/time-series';
 import { F2Notification, useF2Notification } from '@/components/F2Notification';
 
 /**

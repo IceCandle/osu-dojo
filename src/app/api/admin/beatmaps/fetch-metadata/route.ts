@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { osuApi } from '@/lib/osu-api';
-import { requireAdminSession } from '@/lib/admin-auth';
+import { requireAdminSession } from '@/lib/auth/admin-auth';
 
 /**
  * POST /api/admin/beatmaps/fetch-metadata

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
+import { prisma } from '@/lib/core/prisma';
 import { parseReplayToTimeSeries } from '@/lib/replay-parser';
-import { getStorage } from '@/lib/storage';
+import { getStorage } from '@/lib/core/storage';
 
 type RivalMode = 'clear' | 'gold-clear' | 'national' | 'friends' | 'same-rank' | 'rotate';
 

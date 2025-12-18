@@ -10,7 +10,7 @@
  */
 
 import type BanchoJs from 'bancho.js';
-import { createLogger } from '@/lib/logger';
+import { createLogger } from '@/lib/core/logger';
 
 const logger = createLogger('MatchGenerator');
 

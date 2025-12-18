@@ -1,14 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
-import { getStorage } from '@/lib/storage';
+import { prisma } from '@/lib/core/prisma';
+import { getStorage } from '@/lib/core/storage';
 import { getServerSession } from 'next-auth/next';
-import { authOptions } from '@/lib/auth-options';
+import { authOptions } from '@/lib/auth/auth-options';
 import {
   validateReplayFile as validateReplayFileBasic,
   sanitizeFilename,
   generateReplayPath,
-} from '@/lib/file-validation';
-import { validateReplayFile } from '@/lib/replay-validation';
+} from '@/lib/utils/file-validation';
+import { validateReplayFile } from '@/lib/utils/replay-validation';
 
 /**
  * POST /api/replays/upload

@@ -1,5 +1,5 @@
 import BanchoJs from 'bancho.js';
-import { createLogger } from '@/lib/logger';
+import { createLogger } from '@/lib/core/logger';
 import type { MatchScore } from '@/types/bancho-overrides';
 import type { AttemptConfig, MapScore } from '@/types/bot-types';
 import { LOBBY_MESSAGES } from '@/bot/messages';
@@ -63,7 +63,7 @@ export class MultiplayerManager {
 
         // Publish disconnect event (if Pub/Sub implemented)
         try {
-          const { publishAttemptEvent } = await import('@/lib/redis');
+          const { publishAttemptEvent } = await import('@/lib/core/redis');
           await publishAttemptEvent(this.config.attemptId, 'ATTEMPT_FAILED', {
             attemptId: this.config.attemptId,
             reason: 'player_disconnected',
@@ -146,7 +146,7 @@ export class MultiplayerManager {
     });
 
     try {
-      const { prisma } = await import('@/lib/prisma');
+      const { prisma } = await import('@/lib/core/prisma');
       await prisma.attempt.update({
         where: { id: this.config.attemptId },
         data: {
@@ -175,7 +175,7 @@ export class MultiplayerManager {
     // ATTEMPT_STARTED semantics: publish exactly when the first map begins.
     if (this.currentMapIndex === 0) {
       try {
-        const { publishAttemptEvent } = await import('@/lib/redis');
+        const { publishAttemptEvent } = await import('@/lib/core/redis');
         await publishAttemptEvent(this.config.attemptId, 'ATTEMPT_STARTED', {
           attemptId: this.config.attemptId,
           multiplayerId: this.config.multiplayerId,
@@ -192,7 +192,7 @@ export class MultiplayerManager {
 
     // Publish map changed event
     try {
-      const { publishAttemptEvent } = await import('@/lib/redis');
+      const { publishAttemptEvent } = await import('@/lib/core/redis');
       await publishAttemptEvent(this.config.attemptId, 'MAP_CHANGED', {
         attemptId: this.config.attemptId,
         currentMapIndex: this.currentMapIndex,
@@ -272,7 +272,7 @@ export class MultiplayerManager {
 
         // Publish attempt failed event
         try {
-          const { publishAttemptEvent } = await import('@/lib/redis');
+          const { publishAttemptEvent } = await import('@/lib/core/redis');
           await publishAttemptEvent(this.config.attemptId, 'ATTEMPT_FAILED', {
             attemptId: this.config.attemptId,
             failedAtMapIndex: this.currentMapIndex,
@@ -327,8 +327,8 @@ export class MultiplayerManager {
     effectiveMisses: number;
     failed: Array<'score' | 'accuracy' | 'misses' | 'combo'>;
   }> {
-    const { prisma } = await import('@/lib/prisma');
-    const { redis } = await import('@/lib/redis');
+    const { prisma } = await import('@/lib/core/prisma');
+    const { redis } = await import('@/lib/core/redis');
 
     let sliderbreaks = 0;
     let effectiveMisses = mapScore.countMiss;
@@ -416,7 +416,7 @@ export class MultiplayerManager {
 
     // Publish score update event
     try {
-      const { publishAttemptEvent } = await import('@/lib/redis');
+      const { publishAttemptEvent } = await import('@/lib/core/redis');
       await publishAttemptEvent(this.config.attemptId, 'SCORE_UPDATE', {
         attemptId: this.config.attemptId,
         beatmapId: mapScore.beatmapId,
@@ -445,7 +445,7 @@ export class MultiplayerManager {
    * Called when all maps are completed or attempt is abandoned
    */
   private async finishAttempt(): Promise<void> {
-    const { prisma } = await import('@/lib/prisma');
+    const { prisma } = await import('@/lib/core/prisma');
     const { deleteLobbyState } = await import('./recovery');
 
     this.stopHeartbeat();
@@ -528,7 +528,7 @@ export class MultiplayerManager {
 
     // Publish attempt completed event
     try {
-      const { publishAttemptEvent } = await import('@/lib/redis');
+      const { publishAttemptEvent } = await import('@/lib/core/redis');
       await publishAttemptEvent(this.config.attemptId, 'ATTEMPT_COMPLETED', {
         attemptId: this.config.attemptId,
         status,
@@ -580,7 +580,7 @@ export class MultiplayerManager {
     try {
       // Publish abandonment event if still in progress
       try {
-        const { publishAttemptEvent } = await import('@/lib/redis');
+        const { publishAttemptEvent } = await import('@/lib/core/redis');
         await publishAttemptEvent(this.config.attemptId, 'ATTEMPT_FAILED', {
           attemptId: this.config.attemptId,
           reason: 'graceful_shutdown',

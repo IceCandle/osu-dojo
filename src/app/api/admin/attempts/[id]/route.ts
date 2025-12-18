@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { redis } from '@/lib/redis';
-import { prisma } from '@/lib/prisma';
-import { requireAdminSession } from '@/lib/admin-auth';
+import { redis } from '@/lib/core/redis';
+import { prisma } from '@/lib/core/prisma';
+import { requireAdminSession } from '@/lib/auth/admin-auth';
 
 /**
  * GET /api/admin/attempts/:id
@@ -160,7 +160,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     });
 
     // Re-enqueue
-    const { enqueueAttempt } = await import('@/lib/redis');
+    const { enqueueAttempt } = await import('@/lib/core/redis');
     await enqueueAttempt(attemptId);
 
     return NextResponse.json({

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { redis } from '@/lib/redis';
-import { prisma } from '@/lib/prisma';
+import { redis } from '@/lib/core/redis';
+import { prisma } from '@/lib/core/prisma';
 
 /**
  * GET /api/bot/status/:attemptId

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
-import { redis } from '@/lib/redis';
+import { prisma } from '@/lib/core/prisma';
+import { redis, scanKeys } from '@/lib/core/redis';
 
 /**
  * Health check endpoint for monitoring system status
@@ -41,6 +41,14 @@ export async function GET() {
     },
   };
 
+  let lobbyKeys: string[] = [];
+
+  try {
+    lobbyKeys = await scanKeys('lobby:*', { count: 500, maxKeys: 25_000 });
+  } catch {
+    lobbyKeys = [];
+  }
+
   // 1. Check PostgreSQL
   try {
     const start = Date.now();
@@ -61,7 +69,6 @@ export async function GET() {
   try {
     await redis.ping();
     const queueDepth = await redis.llen('queue:attempts');
-    const lobbyKeys = await redis.keys('lobby:*');
     const activeLobbies = lobbyKeys.length;
 
     health.services.redis = {
@@ -79,8 +86,6 @@ export async function GET() {
 
   // 3. Check Bot (via Redis heartbeat)
   try {
-    const lobbyKeys = await redis.keys('lobby:*');
-
     if (lobbyKeys.length === 0) {
       // No active lobbies - bot is idle but healthy
       health.services.bot = {
@@ -90,11 +95,17 @@ export async function GET() {
       };
     } else {
       // Check most recent heartbeat across all lobbies
-      let mostRecentHeartbeat = 0;
+      const pipeline = redis.pipeline();
       for (const key of lobbyKeys) {
-        const data = await redis.hgetall(key);
-        const heartbeat = parseInt(data.lastHeartbeat || '0');
-        if (heartbeat > mostRecentHeartbeat) {
+        pipeline.hget(key, 'lastHeartbeat');
+      }
+      const results = await pipeline.exec();
+
+      let mostRecentHeartbeat = 0;
+      for (const [err, value] of results ?? []) {
+        if (err) continue;
+        const heartbeat = parseInt(String(value ?? '0'), 10);
+        if (Number.isFinite(heartbeat) && heartbeat > mostRecentHeartbeat) {
           mostRecentHeartbeat = heartbeat;
         }
       }

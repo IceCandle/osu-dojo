@@ -1,6 +1,6 @@
 import { BanchoClient, BanchoMessage } from 'bancho.js';
-import { prisma } from '@/lib/prisma';
-import { createLogger } from '@/lib/logger';
+import { prisma } from '@/lib/core/prisma';
+import { createLogger } from '@/lib/core/logger';
 
 const logger = createLogger('BotCommands');
 
@@ -226,7 +226,7 @@ async function handleStart(user: BanchoDmUser, username: string, danId: number):
   });
 
   // Enqueue for processing
-  const { enqueueAttempt } = await import('@/lib/redis');
+  const { enqueueAttempt } = await import('@/lib/core/redis');
   await enqueueAttempt(attempt.id);
 
   await user.sendMessage(

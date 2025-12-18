@@ -1,6 +1,6 @@
 import { API, Ruleset } from 'osu-api-v2-js';
-import { prisma } from '@/lib/prisma';
-import { createLogger } from '@/lib/logger';
+import { prisma } from '@/lib/core/prisma';
+import { createLogger } from '@/lib/core/logger';
 
 const logger = createLogger('OsuApi');
 

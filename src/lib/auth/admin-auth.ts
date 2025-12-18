@@ -2,8 +2,8 @@ import 'server-only';
 
 import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth/next';
-import { prisma } from '@/lib/prisma';
-import { authOptions } from '@/lib/auth-options';
+import { prisma } from '@/lib/core/prisma';
+import { authOptions } from '@/lib/auth/auth-options';
 
 export type AdminSessionResult =
   | { ok: true; user: { id: number; osuId: number } }

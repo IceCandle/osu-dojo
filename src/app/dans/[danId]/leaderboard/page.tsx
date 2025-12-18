@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { prisma } from '@/lib/prisma';
-import { removeScoreV2ModMultiplier } from '@/lib/score-normalization';
+import { prisma } from '@/lib/core/prisma';
+import { removeScoreV2ModMultiplier } from '@/lib/utils/score-normalization';
 
 type PageProps = {
   params: Promise<{ danId: string }>;
