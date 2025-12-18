@@ -37,6 +37,27 @@ redis.on('connect', () => {
   console.log('Redis connected successfully');
 });
 
+export async function scanKeys(
+  pattern: string,
+  options?: { count?: number; maxKeys?: number },
+): Promise<string[]> {
+  const count = options?.count ?? 500;
+  const maxKeys = options?.maxKeys ?? 25_000;
+
+  let cursor = '0';
+  const keys: string[] = [];
+
+  do {
+    const [nextCursor, batch] = await redis.scan(cursor, 'MATCH', pattern, 'COUNT', count);
+    cursor = nextCursor;
+    if (Array.isArray(batch) && batch.length > 0) {
+      keys.push(...batch);
+    }
+  } while (cursor !== '0' && keys.length < maxKeys);
+
+  return keys.slice(0, maxKeys);
+}
+
 /**
  * Redis Pub/Sub Channels
  * Used for real-time lobby updates

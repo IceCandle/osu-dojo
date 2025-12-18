@@ -1,7 +1,8 @@
 import 'server-only';
-import { getBeatmapMD5 } from './replay-parser';
+import { getBeatmapMD5 } from '@/lib/replay-parser';
 import type { Replay } from 'osu-parser';
 import type { Beatmap, AttemptScore, User } from '@prisma/client';
+import { REPLAY_VALIDATION, GAME_MODE_MAP } from './constants';
 
 /**
  * Replay validation result
@@ -47,23 +48,43 @@ export async function validateReplayFile(
 
   // Step 2: Timestamp validation (CRITICAL - can't be faked)
   // This proves the replay is from the exact multiplayer session
-  if (replay.timestamp && attemptScore.playedAt) {
-    const replayTime = new Date(replay.timestamp).getTime();
-    const dbPlayTime = attemptScore.playedAt.getTime();
-    const timeDiff = Math.abs(replayTime - dbPlayTime);
+  if (!replay.timestamp) {
+    return {
+      valid: false,
+      error: 'Replay missing timestamp; cannot verify against multiplayer session',
+    };
+  }
 
-    // Allow 5 second tolerance for client/server clock differences
-    if (timeDiff > 5000) {
-      return {
-        valid: false,
-        error: `Replay timestamp mismatch: replay was played at ${new Date(replayTime).toISOString()}, but multiplayer score was at ${attemptScore.playedAt.toISOString()} (${Math.floor(timeDiff / 1000)}s difference)`,
-      };
-    }
+  if (!attemptScore.playedAt) {
+    return {
+      valid: false,
+      error: 'Server missing multiplayer playedAt timestamp; cannot validate replay timing',
+    };
+  }
+
+  const replayTime = new Date(replay.timestamp).getTime();
+  const dbPlayTime = attemptScore.playedAt.getTime();
+  const timeDiff = Math.abs(replayTime - dbPlayTime);
+
+  // Allow 5 second tolerance for client/server clock differences
+  if (timeDiff > REPLAY_VALIDATION.TIMESTAMP_TOLERANCE_MS) {
+    return {
+      valid: false,
+      error: `Replay timestamp mismatch: replay was played at ${new Date(replayTime).toISOString()}, but multiplayer score was at ${attemptScore.playedAt.toISOString()} (${Math.floor(timeDiff / 1000)}s difference)`,
+    };
   }
 
   // Step 3: Beatmap MD5 verification
   const expectedMD5 = await getBeatmapMD5(beatmap.beatmapId);
-  if (expectedMD5 && replay.beatmap_md5 !== expectedMD5) {
+  if (!expectedMD5) {
+    return {
+      valid: false,
+      error:
+        'Unable to compute expected beatmap MD5 on server (beatmap file not cached); cannot validate replay',
+    };
+  }
+
+  if (replay.beatmap_md5 !== expectedMD5) {
     return {
       valid: false,
       error: `Beatmap MD5 mismatch: replay is for a different beatmap or modified beatmap file`,
@@ -71,7 +92,9 @@ export async function validateReplayFile(
   }
 
   // Step 4: Player name verification
-  if (replay.player_name !== user.osuUsername) {
+  const replayPlayer = String(replay.player_name ?? '').trim().toLowerCase();
+  const expectedPlayer = String(user.osuUsername ?? '').trim().toLowerCase();
+  if (!replayPlayer || !expectedPlayer || replayPlayer !== expectedPlayer) {
     return {
       valid: false,
       error: `Player name mismatch: replay is by "${replay.player_name}", but attempt is by "${user.osuUsername}"`,
@@ -79,13 +102,15 @@ export async function validateReplayFile(
   }
 
   // Step 5: Game mode verification
-  const gameModeMap: Record<string, number> = {
-    OSU: 0,
-    TAIKO: 1,
-    CATCH: 2,
-    MANIA: 3,
-  };
-  const expectedMode = gameModeMap[beatmap.gameMode];
+  const modeKey = String(beatmap.gameMode ?? '').toUpperCase();
+  const expectedMode = GAME_MODE_MAP[modeKey];
+  if (typeof expectedMode !== 'number') {
+    return {
+      valid: false,
+      error: `Unknown beatmap gameMode "${beatmap.gameMode}"; cannot validate replay mode`,
+    };
+  }
+
   if (replay.mode !== expectedMode) {
     return {
       valid: false,

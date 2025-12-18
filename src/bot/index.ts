@@ -4,9 +4,9 @@ import { BotClient } from './client';
 import { MultiplayerManager } from './multiplayer';
 import { findZombieLobbies, reconcileMatchHistory, checkStuckLobbies } from './recovery';
 import { registerCommands } from './commands';
-import { dequeueAttempt, enqueueAttempt } from '../lib/redis';
-import { createLogger } from '../lib/logger';
-import { prisma } from '../lib/prisma';
+import { dequeueAttempt, enqueueAttempt } from '../lib/core/redis';
+import { createLogger } from '../lib/core/logger';
+import { prisma } from '../lib/core/prisma';
 import { MatchGenerator } from '../lib/match-generator';
 
 /**

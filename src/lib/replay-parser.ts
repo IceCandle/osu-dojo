@@ -1,7 +1,7 @@
 import 'server-only';
 import { calculateAccuracy as calculateAccuracyDecimal } from './scoring';
-import { getStorage } from './storage';
-import type { ScoreTimestamp } from './time-series';
+import { getStorage } from './core/storage';
+import type { ScoreTimestamp } from './utils/time-series';
 import type { Beatmap, Replay } from 'osu-parser';
 
 type OsuParserModule = {

@@ -1,9 +1,12 @@
 import { describe, it, expect } from 'vitest';
 
-import { evaluateBeatmapRequirements } from './beatmap-requirements';
+import {
+  evaluateBeatmapRequirements,
+  type BeatmapRequirementConfig,
+} from './beatmap-requirements';
 
 describe('Beatmap Requirements', () => {
-  const standardMap = {
+  const standardMap: BeatmapRequirementConfig = {
     requiredScore: BigInt(700000),
     goldClearScore: BigInt(900000),
     requiredAccuracy: 95.0,
@@ -18,7 +21,7 @@ describe('Beatmap Requirements', () => {
       countMiss: 5,
     };
 
-    const result = evaluateBeatmapRequirements(standardMap as any, play, 'normal');
+    const result = evaluateBeatmapRequirements(standardMap, play, 'normal');
     expect(result.met).toBe(true);
     expect(result.failed).toHaveLength(0);
   });
@@ -31,7 +34,7 @@ describe('Beatmap Requirements', () => {
       countMiss: 0,
     };
 
-    const result = evaluateBeatmapRequirements(standardMap as any, play, 'normal');
+    const result = evaluateBeatmapRequirements(standardMap, play, 'normal');
     expect(result.met).toBe(false);
     expect(result.failed).toContain('accuracy');
   });
@@ -45,10 +48,10 @@ describe('Beatmap Requirements', () => {
     };
 
     // Should pass normal
-    expect(evaluateBeatmapRequirements(standardMap as any, play, 'normal').met).toBe(true);
+    expect(evaluateBeatmapRequirements(standardMap, play, 'normal').met).toBe(true);
 
     // Should fail gold (score too low)
-    const goldResult = evaluateBeatmapRequirements(standardMap as any, play, 'gold');
+    const goldResult = evaluateBeatmapRequirements(standardMap, play, 'gold');
     expect(goldResult.met).toBe(false);
     expect(goldResult.failed).toContain('score');
   });

@@ -5,9 +5,9 @@
  * Strategy: "Redis remembers everything, API reconciles the past"
  */
 
-import { redis } from '../lib/redis';
-import { prisma } from '../lib/prisma';
-import { evaluateBeatmapRequirements } from '../lib/beatmap-requirements';
+import { redis, scanKeys } from '@/lib/core/redis';
+import { prisma } from '@/lib/core/prisma';
+import { evaluateBeatmapRequirements } from '@/lib/beatmap-requirements';
 
 /**
  * Lobby state stored in Redis
@@ -108,7 +108,7 @@ export async function updateHeartbeat(matchId: string): Promise<void> {
  * Returns lobbies that were active when bot crashed
  */
 export async function findZombieLobbies(): Promise<LobbyState[]> {
-  const keys = await redis.keys('lobby:*');
+  const keys = await scanKeys('lobby:*', { count: 500, maxKeys: 25_000 });
   const zombieLobbies: LobbyState[] = [];
 
   for (const key of keys) {
@@ -303,7 +303,10 @@ export async function reconcileMatchHistory(
       where: { id: attemptId },
       include: {
         user: true,
-        scores: { orderBy: { playedAt: 'asc' } },
+        scores: {
+          orderBy: { playedAt: 'asc' },
+          include: { beatmap: true },
+        },
       },
     });
 
@@ -381,10 +384,9 @@ export async function reconcileMatchHistory(
       if (!playerScore) continue;
 
       // Check if score already exists in DB (within 1 minute tolerance)
-      const existsInDb = attempt.scores.find(
-        (ds) =>
-          ds.beatmapId === game.beatmap_id &&
-          Math.abs(new Date(ds.playedAt).getTime() - new Date(game.end_time).getTime()) < 60000, // 1 minute tolerance
+      const existsInDb = attempt.scores.find((ds: { beatmap: { beatmapId: number }; playedAt: Date }) =>
+        ds.beatmap.beatmapId === game.beatmap_id &&
+        Math.abs(new Date(ds.playedAt).getTime() - new Date(game.end_time).getTime()) < 60000, // 1 minute tolerance
       );
 
       if (!existsInDb) {
@@ -452,7 +454,7 @@ export async function abandonAttempt(attemptId: number, currentMapIndex: number)
  * Detects stuck lobbies and marks them for recovery
  */
 export async function checkStuckLobbies(): Promise<void> {
-  const keys = await redis.keys('lobby:*');
+  const keys = await scanKeys('lobby:*', { count: 500, maxKeys: 25_000 });
   const now = Date.now();
   const HEARTBEAT_TIMEOUT = 5 * 60 * 1000; // 5 minutes
 

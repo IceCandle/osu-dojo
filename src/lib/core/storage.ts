@@ -63,9 +63,19 @@ export class LocalStorageProvider implements StorageProvider {
    * Get full absolute path for a storage key
    */
   private getFullPath(key: string): string {
-    // Security: prevent directory traversal
-    const normalizedKey = path.normalize(key).replace(/^(\.\.(\/|\\|$))+/, '');
-    return path.join(this.basePath, normalizedKey);
+    const normalizedKey = path.normalize(key).replace(/^([/\\])+/, '');
+
+    // Resolve under basePath and verify the result stays within basePath.
+    const resolved = path.resolve(this.basePath, normalizedKey);
+    const basePrefix = this.basePath.endsWith(path.sep)
+      ? this.basePath
+      : this.basePath + path.sep;
+
+    if (resolved !== this.basePath && !resolved.startsWith(basePrefix)) {
+      throw new Error('Invalid storage key (path traversal detected)');
+    }
+
+    return resolved;
   }
 
   async read(key: string): Promise<Buffer> {
@@ -80,6 +90,7 @@ export class LocalStorageProvider implements StorageProvider {
 
   async write(key: string, data: Buffer | string): Promise<void> {
     const fullPath = this.getFullPath(key);
+    await fs.mkdir(path.dirname(fullPath), { recursive: true });
     await fs.writeFile(fullPath, data, typeof data === 'string' ? 'utf-8' : undefined);
   }
 

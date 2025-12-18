@@ -3,8 +3,10 @@
  * Prevents security issues from malicious file uploads
  */
 
-const ALLOWED_EXTENSIONS = ['.osr'] as const;
-const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+import { REPLAY_VALIDATION } from './constants';
+
+const ALLOWED_EXTENSIONS = REPLAY_VALIDATION.ALLOWED_EXTENSIONS;
+const MAX_FILE_SIZE = REPLAY_VALIDATION.MAX_FILE_SIZE_BYTES;
 
 export interface ValidationResult {
   valid: boolean;
@@ -97,7 +99,7 @@ export function sanitizeFilename(filename: string): string {
     .toLowerCase();
 
   // Limit length (preserve extension)
-  const maxLength = 100;
+  const maxLength = REPLAY_VALIDATION.MAX_FILENAME_LENGTH;
   if (sanitized.length <= maxLength) {
     return sanitized;
   }

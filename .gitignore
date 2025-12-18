@@ -55,11 +55,12 @@ prisma/*.db
 prisma/*.db-journal
 *.sqlite
 *.sqlite3
-
-# LLM
-CLAUDE.md
+prisma/seed.ts
 
 # local tools
 .claude/
 repomix-output.txt
 .repomixignore
+CLAUDE.md
+docs/REFACTORING_PLAN.md
+docs/REFACTORING_PROGRESS.md
