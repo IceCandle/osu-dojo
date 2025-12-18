@@ -76,6 +76,8 @@ interface TosuData {
 
 type RivalMode = 'clear' | 'gold-clear' | 'national' | 'friends' | 'same-rank' | 'rotate';
 
+type OverlayView = 'full' | 'bars' | 'delta';
+
 const RIVAL_MODE_OPTIONS = [
   { value: 'clear', label: 'Clear' },
   { value: 'gold-clear', label: 'Gold' },
@@ -99,6 +101,9 @@ export default function OverlayPage() {
   const searchParams = useSearchParams();
   const router = useRouter();
 
+  const viewParam = searchParams.get('view');
+  const view: OverlayView = viewParam === 'bars' || viewParam === 'delta' ? viewParam : 'full';
+
   // State
   const [myBest, setMyBest] = useState<TimeSeriesData | null>(null);
   const [rival, setRival] = useState<TimeSeriesData | null>(null);
@@ -120,8 +125,11 @@ export default function OverlayPage() {
   const { showNotification, countdown, triggerF2Notification } = useF2Notification();
 
   // Config
-  const tosuIP = searchParams.get('ip') || 'localhost';
-  const initialRivalMode = (searchParams.get('mode') || 'clear') as RivalMode;
+  const ipParam = searchParams.get('ip');
+  const modeParam = searchParams.get('mode');
+
+  const [tosuHost, setTosuHost] = useState<string>(ipParam || 'localhost');
+  const initialRivalMode = (modeParam || 'clear') as RivalMode;
   const [rivalMode, setRivalMode] = useState<RivalMode>(initialRivalMode);
   const [modeChangeNotification, setModeChangeNotification] = useState<string | null>(null);
   const f2CountdownDuration = parseInt(searchParams.get('f2Countdown') || '5', 10); // Adjustable countdown (default: 5s)
@@ -134,11 +142,52 @@ export default function OverlayPage() {
     window.setTimeout(() => setModeChangeNotification(null), 2000);
   };
 
-  const [tosuHostInput, setTosuHostInput] = useState<string>(tosuIP);
+  const [tosuHostInput, setTosuHostInput] = useState<string>(tosuHost);
 
   useEffect(() => {
-    setTosuHostInput(tosuIP);
-  }, [tosuIP]);
+    // Keep local state aligned with URL changes (e.g., Connect button)
+    setTosuHost(ipParam || 'localhost');
+    setTosuHostInput(ipParam || 'localhost');
+  }, [ipParam]);
+
+  useEffect(() => {
+    // Apply persisted settings only when URL params don't explicitly override.
+    try {
+      if (!modeParam) {
+        const storedMode = window.localStorage.getItem('osu-dojo:overlay:mode') as RivalMode | null;
+        if (storedMode && (CYCLEABLE_RIVAL_MODES as readonly string[]).includes(storedMode)) {
+          setRivalMode(storedMode);
+        }
+      }
+
+      if (!ipParam) {
+        const storedIp = window.localStorage.getItem('osu-dojo:overlay:ip');
+        if (storedIp && storedIp.trim()) {
+          setTosuHost(storedIp.trim());
+          setTosuHostInput(storedIp.trim());
+        }
+      }
+    } catch {
+      // localStorage may be unavailable in some embedded contexts
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem('osu-dojo:overlay:mode', rivalMode);
+    } catch {
+      // ignore
+    }
+  }, [rivalMode]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem('osu-dojo:overlay:ip', tosuHost);
+    } catch {
+      // ignore
+    }
+  }, [tosuHost]);
 
   useEffect(() => {
     rivalRef.current = rival;
@@ -228,7 +277,7 @@ export default function OverlayPage() {
    * 3. Connect to tosu WebSocket
    */
   useEffect(() => {
-    const ws = new WebSocket(`ws://${tosuIP}:24050/ws`);
+    const ws = new WebSocket(`ws://${tosuHost}:24050/ws`);
     wsRef.current = ws;
 
     ws.onopen = () => {
@@ -320,7 +369,7 @@ export default function OverlayPage() {
     ws.onclose = () => setWsConnected(false);
 
     return () => ws.close();
-  }, [tosuIP, attemptId, triggerF2Notification, f2CountdownDuration]);
+  }, [tosuHost, attemptId, triggerF2Notification, f2CountdownDuration]);
 
   /**
    * 4. Calculate interpolated scores at current timestamp
@@ -369,31 +418,51 @@ export default function OverlayPage() {
   /**
    * Render
    */
+  if (view !== 'full' && !isPlaying) {
+    // Multi-source OBS mode: render nothing while idle.
+    return <div className="h-screen w-screen bg-transparent" />;
+  }
+
+  const showHud = view === 'full';
+  const showBars = view === 'full' || view === 'bars';
+  const showDelta = view === 'full' || view === 'delta';
+
   return (
     <div className="relative h-screen w-screen bg-transparent overflow-hidden">
       {/* Connection Status */}
-      <div className="absolute top-4 left-4 z-50 flex items-center gap-2">
-        <div className={`w-3 h-3 rounded-full ${wsConnected ? 'bg-green-500' : 'bg-red-500'}`} />
-        <span className="text-white text-sm">{wsConnected ? 'tosu ✓' : 'tosu ✗'}</span>
-        <div className="ml-4 flex items-center gap-2">
-          <label className="text-white text-xs" htmlFor="rival-mode">
-            Mode
-          </label>
-          <select
-            id="rival-mode"
-            className="px-2 py-1 text-xs rounded bg-black/40 text-white outline-none"
-            value={rivalMode}
-            onChange={(e) => setRivalModeWithNotice(e.target.value as RivalMode)}
+      {showHud && (
+        <div className="absolute top-4 left-4 z-50 flex items-center gap-2">
+          <div className={`w-3 h-3 rounded-full ${wsConnected ? 'bg-green-500' : 'bg-red-500'}`} />
+          <span className="text-white text-sm">{wsConnected ? 'tosu ✓' : 'tosu ✗'}</span>
+          <a
+            className="ml-3 rounded bg-black/40 px-2 py-1 text-xs text-white hover:bg-black/60"
+            href={`/attempts/${String(attemptId)}/stats`}
+            target="_blank"
+            rel="noreferrer"
+            title="Open public pass score statistics"
           >
-            {RIVAL_MODE_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </select>
-          <span className="text-[10px] text-gray-400">(R)</span>
+            Stats
+          </a>
+          <div className="ml-4 flex items-center gap-2">
+            <label className="text-white text-xs" htmlFor="rival-mode">
+              Mode
+            </label>
+            <select
+              id="rival-mode"
+              className="px-2 py-1 text-xs rounded bg-black/40 text-white outline-none"
+              value={rivalMode}
+              onChange={(e) => setRivalModeWithNotice(e.target.value as RivalMode)}
+            >
+              {RIVAL_MODE_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+            <span className="text-[10px] text-gray-400">(R)</span>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Top-Right Scores */}
       {isPlaying && liveScore && rival && (
@@ -445,6 +514,7 @@ export default function OverlayPage() {
                     type="button"
                     onClick={() => {
                       const trimmed = tosuHostInput.trim() || 'localhost';
+                      setTosuHost(trimmed);
                       const next = new URLSearchParams(searchParams.toString());
                       next.set('ip', trimmed);
                       router.replace(`/overlay/${String(attemptId)}?${next.toString()}`);
@@ -465,97 +535,102 @@ export default function OverlayPage() {
       {/* Playing State - 3 Vertical Bars */}
       {isPlaying && liveScore && comparison && (
         <>
-          {/* MAX SCORE Line (1M) */}
-          <div
-            className="absolute w-full border-t-2 border-white opacity-30 z-10"
-            style={{ top: scoreToY(1_000_000) }}
-          >
-            <span className="absolute right-4 -top-3 text-white text-xs">1,000,000</span>
-          </div>
-
-          {/* GOLD Threshold Line */}
-          {goldThreshold > 0 && (
-            <div
-              className="absolute w-full border-t-2 border-yellow-500 opacity-50 z-10"
-              style={{ top: scoreToY(goldThreshold) }}
-            >
-              <span className="absolute right-4 -top-3 text-yellow-500 text-xs">GOLD</span>
-            </div>
-          )}
-
-          {/* CLEAR Threshold Line */}
-          {clearThreshold > 0 && (
-            <div
-              className="absolute w-full border-t-2 border-red-500 opacity-50 z-10"
-              style={{ top: scoreToY(clearThreshold) }}
-            >
-              <span className="absolute right-4 -top-3 text-red-500 text-xs">CLEAR</span>
-            </div>
-          )}
-
-          {/* 3 Vertical Bars Container */}
-          <div className="absolute bottom-0 left-0 right-0 h-4/5 flex justify-center items-end gap-12 z-20">
-            {/* Bar 1: YOU (Blue, filled only) */}
-            <div className="relative w-32 h-full flex flex-col justify-end">
+          {showBars && (
+            <>
+              {/* MAX SCORE Line (1M) */}
               <div
-                className="w-full bg-blue-500 transition-all duration-100"
-                style={{ height: `${scoreToHeight(liveScore.score)}%` }}
-              />
+                className="absolute w-full border-t-2 border-white opacity-30 z-10"
+                style={{ top: scoreToY(1_000_000) }}
+              >
+                <span className="absolute right-4 -top-3 text-white text-xs">1,000,000</span>
+              </div>
+
+              {/* GOLD Threshold Line */}
+              {goldThreshold > 0 && (
+                <div
+                  className="absolute w-full border-t-2 border-yellow-500 opacity-50 z-10"
+                  style={{ top: scoreToY(goldThreshold) }}
+                >
+                  <span className="absolute right-4 -top-3 text-yellow-500 text-xs">GOLD</span>
+                </div>
+              )}
+
+              {/* CLEAR Threshold Line */}
+              {clearThreshold > 0 && (
+                <div
+                  className="absolute w-full border-t-2 border-red-500 opacity-50 z-10"
+                  style={{ top: scoreToY(clearThreshold) }}
+                >
+                  <span className="absolute right-4 -top-3 text-red-500 text-xs">CLEAR</span>
+                </div>
+              )}
+
+              {/* 3 Vertical Bars Container */}
+              <div className="absolute bottom-0 left-0 right-0 h-4/5 flex justify-center items-end gap-12 z-20">
+                {/* Bar 1: YOU (Blue, filled only) */}
+                <div className="relative w-32 h-full flex flex-col justify-end">
+                  <div
+                    className="w-full bg-blue-500 transition-all duration-100"
+                    style={{ height: `${scoreToHeight(liveScore.score)}%` }}
+                  />
+                </div>
+
+                {/* Bar 2: MY-BEST (Green, filled + hollow outline) */}
+                {myBest && !myBest.isThresholdOnly && comparison.myBestAtTime && (
+                  <div className="relative w-32 h-full flex flex-col justify-end">
+                    {/* Hollow outline (static at final score) */}
+                    <div
+                      className="absolute bottom-0 w-full border-4 border-green-500 bg-transparent pointer-events-none"
+                      style={{ height: `${scoreToHeight(myBest.finalScore)}%` }}
+                    />
+                    {/* Filled bar (grows with current timestamp) */}
+                    <div
+                      className="w-full bg-green-500 transition-all duration-100 relative z-10"
+                      style={{ height: `${scoreToHeight(comparison.myBestAtTime.score)}%` }}
+                    />
+                  </div>
+                )}
+
+                {/* Bar 3: RIVAL (Red, filled + hollow outline) */}
+                {rival && !rival.isThresholdOnly && comparison.rivalAtTime && (
+                  <div className="relative w-32 h-full flex flex-col justify-end">
+                    {/* Hollow outline (static at final score) */}
+                    <div
+                      className="absolute bottom-0 w-full border-4 border-red-500 bg-transparent pointer-events-none"
+                      style={{ height: `${scoreToHeight(rival.finalScore)}%` }}
+                    />
+                    {/* Filled bar (grows with current timestamp) */}
+                    <div
+                      className="w-full bg-red-500 transition-all duration-100 relative z-10"
+                      style={{ height: `${scoreToHeight(comparison.rivalAtTime.score)}%` }}
+                    />
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+
+          {showDelta && (
+            <div className="absolute bottom-8 right-4 z-40 text-right text-xl font-bold">
+              {/* TARGET (vs RIVAL) */}
+              <div className={comparison.rivalDiff >= 0 ? 'text-white' : 'text-red-500'}>
+                TARGET: {comparison.rivalDiff >= 0 ? '+' : ''}
+                {comparison.rivalDiff.toLocaleString()}
+              </div>
+              {/* MYBEST */}
+              {myBest && (
+                <div className={comparison.myBestDiff >= 0 ? 'text-white' : 'text-red-500'}>
+                  MYBEST: {comparison.myBestDiff >= 0 ? '+' : ''}
+                  {comparison.myBestDiff.toLocaleString()}
+                </div>
+              )}
             </div>
-
-            {/* Bar 2: MY-BEST (Green, filled + hollow outline) */}
-            {myBest && !myBest.isThresholdOnly && comparison.myBestAtTime && (
-              <div className="relative w-32 h-full flex flex-col justify-end">
-                {/* Hollow outline (static at final score) */}
-                <div
-                  className="absolute bottom-0 w-full border-4 border-green-500 bg-transparent pointer-events-none"
-                  style={{ height: `${scoreToHeight(myBest.finalScore)}%` }}
-                />
-                {/* Filled bar (grows with current timestamp) */}
-                <div
-                  className="w-full bg-green-500 transition-all duration-100 relative z-10"
-                  style={{ height: `${scoreToHeight(comparison.myBestAtTime.score)}%` }}
-                />
-              </div>
-            )}
-
-            {/* Bar 3: RIVAL (Red, filled + hollow outline) */}
-            {rival && !rival.isThresholdOnly && comparison.rivalAtTime && (
-              <div className="relative w-32 h-full flex flex-col justify-end">
-                {/* Hollow outline (static at final score) */}
-                <div
-                  className="absolute bottom-0 w-full border-4 border-red-500 bg-transparent pointer-events-none"
-                  style={{ height: `${scoreToHeight(rival.finalScore)}%` }}
-                />
-                {/* Filled bar (grows with current timestamp) */}
-                <div
-                  className="w-full bg-red-500 transition-all duration-100 relative z-10"
-                  style={{ height: `${scoreToHeight(comparison.rivalAtTime.score)}%` }}
-                />
-              </div>
-            )}
-          </div>
-
-          {/* Score Differences (Right-aligned, above baseline) */}
-          <div className="absolute bottom-8 right-4 z-40 text-right text-xl font-bold">
-            {/* TARGET (vs RIVAL) */}
-            <div className={comparison.rivalDiff >= 0 ? 'text-white' : 'text-red-500'}>
-              TARGET: {comparison.rivalDiff >= 0 ? '+' : ''}
-              {comparison.rivalDiff.toLocaleString()}
-            </div>
-            {/* MYBEST */}
-            {myBest && (
-              <div className={comparison.myBestDiff >= 0 ? 'text-white' : 'text-red-500'}>
-                MYBEST: {comparison.myBestDiff >= 0 ? '+' : ''}
-                {comparison.myBestDiff.toLocaleString()}
-              </div>
-            )}
-          </div>
+          )}
         </>
       )}
 
       {/* F2 Notification (appears when pass detected) */}
-      <F2Notification show={showNotification} countdown={countdown} />
+      {view === 'full' && <F2Notification show={showNotification} countdown={countdown} />}
     </div>
   );
 }

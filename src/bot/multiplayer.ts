@@ -3,6 +3,10 @@ import { createLogger } from '@/lib/logger';
 import type { MatchScore } from '@/types/bancho-overrides';
 import type { AttemptConfig, MapScore } from '@/types/bot-types';
 import { LOBBY_MESSAGES } from '@/bot/messages';
+import {
+  evaluateBeatmapRequirements,
+  formatRequirementFailures,
+} from '@/lib/beatmap-requirements';
 
 /**
  * Manages a single dan attempt in a multiplayer room
@@ -43,13 +47,36 @@ export class MultiplayerManager {
     });
 
     // Player left event
-    this.lobby.on('playerLeft', (obj: { user: { username: string } }) => {
+    this.lobby.on('playerLeft', async (obj: { user: { username: string } }) => {
       const leftUsername = obj.user.username;
       console.log(LOBBY_MESSAGES.playerLeft(leftUsername));
 
       if (leftUsername === this.config.username) {
         console.log(LOBBY_MESSAGES.targetPlayerLeft);
-        // TODO: Handle player disconnect gracefully
+
+        this.logger.warn('Target player disconnected, abandoning attempt', {
+          attemptId: this.config.attemptId,
+          username: this.config.username,
+          currentMapIndex: this.currentMapIndex,
+          mapsCompleted: this.scores.length,
+        });
+
+        // Publish disconnect event (if Pub/Sub implemented)
+        try {
+          const { publishAttemptEvent } = await import('@/lib/redis');
+          await publishAttemptEvent(this.config.attemptId, 'ATTEMPT_FAILED', {
+            attemptId: this.config.attemptId,
+            reason: 'player_disconnected',
+            currentMapIndex: this.currentMapIndex,
+            mapsCompleted: this.scores.length,
+            timestamp: Date.now(),
+          });
+        } catch (error) {
+          this.logger.warn('Failed to publish disconnect event', { error });
+        }
+
+        // Reuse existing cleanup logic via finishAttempt()
+        await this.finishAttempt();
       }
     });
   }
@@ -80,7 +107,7 @@ export class MultiplayerManager {
   private async onPlayerReady(): Promise<void> {
     console.log('Player is ready. Starting attempt flow.');
 
-    // Maps have already been selected and bans handled in processAttempt
+    // Maps have already been selected in processAttempt
     // Just start playing the first map
     await this.playNextMap();
   }
@@ -145,6 +172,44 @@ export class MultiplayerManager {
       `Playing map ${this.currentMapIndex + 1}/${this.config.maps.length}: ${map.beatmapId}`,
     );
 
+    // ATTEMPT_STARTED semantics: publish exactly when the first map begins.
+    if (this.currentMapIndex === 0) {
+      try {
+        const { publishAttemptEvent } = await import('@/lib/redis');
+        await publishAttemptEvent(this.config.attemptId, 'ATTEMPT_STARTED', {
+          attemptId: this.config.attemptId,
+          multiplayerId: this.config.multiplayerId,
+          username: this.config.username,
+          danName: this.config.danName,
+          beatmapId: map.beatmapId,
+          mapIndex: 0,
+          timestamp: Date.now(),
+        });
+      } catch (error) {
+        this.logger.warn('Failed to publish ATTEMPT_STARTED event', { error });
+      }
+    }
+
+    // Publish map changed event
+    try {
+      const { publishAttemptEvent } = await import('@/lib/redis');
+      await publishAttemptEvent(this.config.attemptId, 'MAP_CHANGED', {
+        attemptId: this.config.attemptId,
+        currentMapIndex: this.currentMapIndex,
+        totalMaps: this.config.maps.length,
+        beatmapId: map.beatmapId,
+        beatmapName: map.name || `Map ${this.currentMapIndex + 1}`,
+        mods: map.mods,
+        requiredScore: map.requiredScore.toString(),
+        goldClearScore: map.goldClearScore.toString(),
+        skillFocus: map.skillFocus,
+        gameMode: map.gameMode,
+        timestamp: Date.now(),
+      });
+    } catch (error) {
+      this.logger.warn('Failed to publish MAP_CHANGED event', { error });
+    }
+
     // Set beatmap
     await this.lobby.setMap(map.beatmapId);
 
@@ -166,7 +231,6 @@ export class MultiplayerManager {
     if (playerScore) {
       const currentMap = this.config.maps[this.currentMapIndex];
       const score = BigInt(playerScore.score);
-      const metRequirement = score >= currentMap.requiredScore;
 
       const mapScore: MapScore = {
         beatmapId: currentMap.id, // Use DB primary key
@@ -178,8 +242,13 @@ export class MultiplayerManager {
         count100: playerScore.count100 || 0,
         count50: playerScore.count50 || 0,
         countMiss: playerScore.countMiss || 0,
-        metRequirement,
+        metRequirement: true, // computed in saveScoreToDatabase (may use effective misses)
       };
+
+      // Save score to database (also computes metRequirement using optional metric requirements)
+      const persisted = await this.saveScoreToDatabase(mapScore);
+      mapScore.metRequirement = persisted.metRequirement;
+      mapScore.effectiveMisses = persisted.effectiveMisses;
 
       this.scores.push(mapScore);
 
@@ -187,25 +256,54 @@ export class MultiplayerManager {
         beatmapId: currentMap.beatmapId,
         score: score.toString(),
         passed: mapScore.passed,
-        metRequirement,
+        metRequirement: mapScore.metRequirement,
       });
 
-      // Save score to database
-      await this.saveScoreToDatabase(mapScore);
-
-      // Check if player failed the map OR didn't meet score requirement
-      if (!mapScore.passed || !metRequirement) {
-        const failReason = !mapScore.passed
-          ? LOBBY_MESSAGES.failureReason.didNotComplete
-          : LOBBY_MESSAGES.failureReason.scoreTooLow(score, currentMap.requiredScore);
-
+      // End attempt immediately only on true failure (DNF / did not complete).
+      // Policy: if the player finishes the map but scores below requiredScore,
+      // we continue the course so they can practice the full dan.
+      if (!mapScore.passed) {
+        const failReason = LOBBY_MESSAGES.failureReason.didNotComplete;
         const mapName = currentMap.name || `Map ${this.currentMapIndex + 1}`;
 
         await this.lobby.channel.sendMessage(
           LOBBY_MESSAGES.mapFailed(mapName, currentMap.skillFocus ?? undefined, failReason),
         );
+
+        // Publish attempt failed event
+        try {
+          const { publishAttemptEvent } = await import('@/lib/redis');
+          await publishAttemptEvent(this.config.attemptId, 'ATTEMPT_FAILED', {
+            attemptId: this.config.attemptId,
+            failedAtMapIndex: this.currentMapIndex,
+            totalMaps: this.config.maps.length,
+            failReason: 'did_not_complete',
+            score: score.toString(),
+            requiredScore: currentMap.requiredScore.toString(),
+            timestamp: Date.now(),
+          });
+        } catch (error) {
+          this.logger.warn('Failed to publish ATTEMPT_FAILED event', { error });
+        }
+
         await this.finishAttempt();
         return;
+      }
+
+      if (!mapScore.metRequirement) {
+        const warnReason =
+          persisted.failed.length === 1 && persisted.failed[0] === 'score'
+            ? LOBBY_MESSAGES.failureReason.scoreTooLow(score, currentMap.requiredScore)
+            : LOBBY_MESSAGES.failureReason.requirementsNotMet(
+                formatRequirementFailures(persisted.failed),
+              );
+        const mapName = currentMap.name || `Map ${this.currentMapIndex + 1}`;
+
+        await this.lobby.channel.sendMessage(
+          LOBBY_MESSAGES.mapRequirementMissed(mapName, currentMap.skillFocus ?? undefined, warnReason),
+        );
+
+        // Do NOT publish ATTEMPT_FAILED here; the attempt continues.
       }
 
       // Passed this map! Show feedback
@@ -224,7 +322,11 @@ export class MultiplayerManager {
    * Save individual map score to database
    * Called after each map completion
    */
-  private async saveScoreToDatabase(mapScore: MapScore): Promise<void> {
+  private async saveScoreToDatabase(mapScore: MapScore): Promise<{
+    metRequirement: boolean;
+    effectiveMisses: number;
+    failed: Array<'score' | 'accuracy' | 'misses' | 'combo'>;
+  }> {
     const { prisma } = await import('@/lib/prisma');
     const { redis } = await import('@/lib/redis');
 
@@ -261,6 +363,27 @@ export class MultiplayerManager {
       }
     }
 
+    const requirementEval = evaluateBeatmapRequirements(
+      {
+        requiredScore: beatmap?.requiredScore ?? BigInt(0),
+        goldClearScore: beatmap?.goldClearScore ?? BigInt(0),
+        requiredAccuracy: beatmap?.requiredAccuracy ?? null,
+        maxMisses: beatmap?.maxMisses ?? null,
+        minCombo: beatmap?.minCombo ?? null,
+        goldRequiredAccuracy: beatmap?.goldRequiredAccuracy ?? null,
+        goldMaxMisses: beatmap?.goldMaxMisses ?? null,
+        goldMinCombo: beatmap?.goldMinCombo ?? null,
+      },
+      {
+        score: mapScore.score,
+        accuracy: mapScore.accuracy,
+        combo: mapScore.combo,
+        countMiss: mapScore.countMiss,
+        effectiveMisses,
+      },
+      'normal',
+    );
+
     // Save to database
     await prisma.attemptScore.create({
       data: {
@@ -277,7 +400,7 @@ export class MultiplayerManager {
         effectiveMisses,
         sliderbreaksSource,
         passed: mapScore.passed,
-        metRequirement: mapScore.metRequirement,
+        metRequirement: requirementEval.met,
         modsUsed: beatmap?.mods || [],
         playedAt: new Date(),
       },
@@ -290,6 +413,27 @@ export class MultiplayerManager {
       sliderbreaks,
       passed: mapScore.passed,
     });
+
+    // Publish score update event
+    try {
+      const { publishAttemptEvent } = await import('@/lib/redis');
+      await publishAttemptEvent(this.config.attemptId, 'SCORE_UPDATE', {
+        attemptId: this.config.attemptId,
+        beatmapId: mapScore.beatmapId,
+        score: mapScore.score.toString(),
+        accuracy: mapScore.accuracy,
+        combo: mapScore.combo,
+        passed: mapScore.passed,
+        metRequirement: requirementEval.met,
+        currentMapIndex: this.currentMapIndex,
+        mapsCompleted: this.scores.length,
+        timestamp: Date.now(),
+      });
+    } catch (error) {
+      this.logger.warn('Failed to publish SCORE_UPDATE event', { error });
+    }
+
+    return { metRequirement: requirementEval.met, effectiveMisses, failed: requirementEval.failed };
   }
 
   private getTotalScore(): bigint {
@@ -321,15 +465,40 @@ export class MultiplayerManager {
     // Two-tier clear calculation
     const allMapsCompleted = mapsCompleted === totalMaps;
 
-    // Check if all maps met requiredScore (Normal Pass)
-    const isNormalPass = allMapsCompleted && this.scores.every((s) => s.metRequirement);
+    const isNormalPass =
+      allMapsCompleted &&
+      this.scores.every((s, index) => {
+        const map = this.config.maps[index];
+        const evalNormal = evaluateBeatmapRequirements(
+          map,
+          {
+            score: s.score,
+            accuracy: s.accuracy,
+            combo: s.combo,
+            countMiss: s.countMiss,
+            effectiveMisses: s.effectiveMisses,
+          },
+          'normal',
+        );
+        return evalNormal.met;
+      });
 
-    // Check if all maps met goldClearScore (Gold Pass)
     const isGoldPass =
       allMapsCompleted &&
       this.scores.every((s, index) => {
         const map = this.config.maps[index];
-        return s.score >= map.goldClearScore;
+        const evalGold = evaluateBeatmapRequirements(
+          map,
+          {
+            score: s.score,
+            accuracy: s.accuracy,
+            combo: s.combo,
+            countMiss: s.countMiss,
+            effectiveMisses: s.effectiveMisses,
+          },
+          'gold',
+        );
+        return evalGold.met;
       });
 
     // Determine final status
@@ -356,6 +525,24 @@ export class MultiplayerManager {
         completedAt: new Date(),
       },
     });
+
+    // Publish attempt completed event
+    try {
+      const { publishAttemptEvent } = await import('@/lib/redis');
+      await publishAttemptEvent(this.config.attemptId, 'ATTEMPT_COMPLETED', {
+        attemptId: this.config.attemptId,
+        status,
+        totalScore: totalScore.toString(),
+        averageAccuracy: avgAccuracy,
+        isNormalPass,
+        isGoldPass,
+        mapsCompleted,
+        totalMaps,
+        timestamp: Date.now(),
+      });
+    } catch (error) {
+      this.logger.warn('Failed to publish ATTEMPT_COMPLETED event', { error });
+    }
 
     // Clean up Redis state
     if (this.config.multiplayerId) {
@@ -391,6 +578,20 @@ export class MultiplayerManager {
    */
   async cleanup(): Promise<void> {
     try {
+      // Publish abandonment event if still in progress
+      try {
+        const { publishAttemptEvent } = await import('@/lib/redis');
+        await publishAttemptEvent(this.config.attemptId, 'ATTEMPT_FAILED', {
+          attemptId: this.config.attemptId,
+          reason: 'graceful_shutdown',
+          currentMapIndex: this.currentMapIndex,
+          mapsCompleted: this.scores.length,
+          timestamp: Date.now(),
+        });
+      } catch (error) {
+        this.logger.warn('Failed to publish graceful shutdown event', { error });
+      }
+
       this.stopHeartbeat();
       await this.lobby.closeLobby();
       console.log(`[MultiplayerManager] Lobby closed for: ${this.config.danName}`);

@@ -1,18 +1,18 @@
 # osu!dojo 개발 로드맵
 
-업데이트: 2025-12-16
+업데이트: 2025-12-18
 
 ---
 
 ## 현재 상태 (한 줄 요약)
 
-봇의 핵심 플로우: 시도(Attempt) 큐 → (밴 단계) → 후보맵 랜덤 선택 → 멀티 로비 → 맵 진행 → 점수 저장 → 성공/실패 처리.
+봇의 핵심 플로우: 시도(Attempt) 생성/큐 → 멀티 로비 → 맵 진행 → 점수 저장 → 성공/실패 처리.
 
 ## 이미 구현된 것 (코드 기준)
 
 - queue consumer + attempt 처리: `src/bot/index.ts`
-- DM commands(`!dojo start/list/ban`): `src/bot/commands.ts`
-- ban: `src/bot/index.ts`, `src/lib/redis.ts`
+- DM commands(`!dojo start/list`): `src/bot/commands.ts`
+- (legacy) ban/candidate 런타임 플로우: 제거됨(정적 코스 셔플로 대체)
 - 멀티 진행 + 매 맵 점수 DB 저장 + 합격/금합격 판정: `src/bot/multiplayer.ts`
 - 로비 상태 Redis 저장 + heartbeat + 좀비 로비 탐지: `src/bot/recovery.ts`
 - 구조화 로깅: `src/lib/logger.ts`
@@ -20,7 +20,7 @@
 - osu! API v2 wrapper(레이트리밋/토큰 관리): `src/lib/osu-api.ts`
 - OAuth 로그인(NextAuth + Prisma): `src/app/api/auth/[...nextauth]/route.ts`
 
-## IIDX-ish 오버레이(부분 구현, 사용 가능)
+## 오버레이(부분 구현, 사용 가능)
 
 - 3바 페이스메이커 오버레이: `src/app/overlay/[attemptId]/page.tsx`
 - 라이벌/지코베 API: `src/app/api/attempts/[id]/rival/route.ts`, `src/app/api/attempts/[id]/my-best/route.ts`
@@ -38,10 +38,10 @@
 
 - 2단계 클리어: `Beatmap.requiredScore`, `Beatmap.goldClearScore`, `Attempt.isNormalPass`, `Attempt.isGoldPass`
 - 멀티 게임모드 기반: `GameMode`, `ScoringSystem`, `Dan.gameMode`, `Beatmap.gameMode`
-- 후보맵(랜덤 슬롯) 시스템: `Beatmap.isCandidate`, `Beatmap.candidateGroup`
 - 슬밋 트래킹 필드: `AttemptScore.sliderbreaks`, `AttemptScore.effectiveMisses`
 - 매니아 섹션 시스템: `BeatmapSection`, `SectionScore` (+ `Beatmap.hasSections`)
 - DanSystem(시스템/티어 구조): `DanSystem` (+ `Dan.danSystemId`, `Dan.tierInSystem`)
+- (legacy) 후보맵/밴 시스템 필드: 제거됨(마이그레이션 적용 완료)
 
 ---
 
@@ -52,15 +52,19 @@
 상태: **DONE(핵심 루프)**
 
 - [DONE] 큐 처리/시도 프로세서
-- [DONE] 밴-우선 후보맵 선택
+- [DONE] (legacy) 밴-우선 후보맵 선택 (피벗에서 제거됨)
 - [DONE] 로비 상태 저장/하트비트/좀비 탐지
 - [DONE] 매 맵 점수 DB 저장 + 노멀/골드 판정
 - [DONE] 슬라이더브레이크(오버레이 기반) 저장
 - [DONE] 관리자 점검/재시작
+- [DONE] 크래시 후 매치 히스토리 리컨실(점수 백필) 완성: `src/bot/recovery.ts` ✅
+- [DONE] Redis Pub/Sub 이벤트 발행 (7개 lifecycle 지점) ✅
+- [DONE] 플레이어 연결 끊김 처리 (자동 attempt 종료) ✅
+- [DONE] 헬스체크 엔드포인트: `src/app/api/health/route.ts` ✅
+- [TODO] 데이터베이스 시드 스크립트 follow real-life examples: `prisma/seed.ts` ✅
 
 남은 것
 
-- [TODO] 크래시 후 매치 히스토리 리컨실(점수 백필) 완성: `src/bot/recovery.ts`
 - [TODO] 봇 모듈 `console.log` → `createLogger` 정리(선택)
 
 ### OAuth + osu! API v2
@@ -81,7 +85,19 @@
 
 - [DONE] 오버레이 + (마이베스트/라이벌) 시계열 점수
 - [TODO] friends/same-dan/rotate target
-- [TODO] 실제 스코어 공식 기반 synthetic pacemaker
+- [DONE] OBS multi-source 모드(view=full/bars/delta) + 설정 localStorage 저장
+- [DONE] 오버레이 상단 배너 클릭 → public pass score statistics 페이지로 이동(+ attempt historyLink)
+- [DONE] 리플레이 업로드 API + timestamp/MD5/score 검증(src/app/api/replays/upload, src/lib/replay-validation.ts) ✅
+
+### 정적 코스 피벗 (Static Course System)
+
+상태: **IN PROGRESS(설계/부분 구현)**
+
+- [DONE] public attempt stats 페이지(유저명 포함) + overlay에서 Stats 링크
+- [DONE] OBS multi-source(view 파라미터) + overlay 설정 localStorage
+- [DONE] 시도 제한: 유저+자격증(= danSystemId+tierInSystem) 기준 rolling 24h 카운트(3회/24h, 봇 `!dojo start` 단계에서 차단)
+- [DONE] 후보맵/밴 로직 제거 + 정적 코스 셔플 적용
+- [DONE] 셔플 규칙: 일반 코스는 전체 셔플 / 보스 지정 코스는 마지막 맵 고정(관례)
 
 ### 커스텀 단(MD5/팩)
 

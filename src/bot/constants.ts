@@ -10,12 +10,6 @@ export const BOT_TIMEOUTS = {
   /** Player join timeout (5 minutes) */
   PLAYER_JOIN_MS: 5 * 60 * 1000,
 
-  /** Ban phase user response timeout (30 seconds) */
-  BAN_PHASE_MS: 30_000,
-
-  /** Ban selection poll interval (500ms) */
-  BAN_POLL_INTERVAL_MS: 500,
-
   /** Queue blocking timeout (5 seconds) */
   QUEUE_DEQUEUE_SECONDS: 5,
 
@@ -42,12 +36,6 @@ export const BOT_TIMEOUTS = {
  * Limits and configuration values
  */
 export const BOT_LIMITS = {
-  /** Ban session TTL in Redis (60 seconds) */
-  BAN_SESSION_TTL_SECONDS: 60,
-
-  /** Ban selection TTL in Redis (120 seconds) */
-  BAN_SELECTION_TTL_SECONDS: 120,
-
   /** DM message chunk size (12 lines per message) */
   DM_CHUNK_SIZE: 12,
 

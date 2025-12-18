@@ -23,6 +23,51 @@ export function registerCommands(bot: BanchoClient): void {
 
 type BanchoDmUser = BanchoMessage['user'];
 
+const ATTEMPT_LIMIT_WINDOW_MS = 24 * 60 * 60 * 1000;
+const ATTEMPT_LIMIT_PER_WINDOW = 3;
+
+function formatDuration(ms: number): string {
+  const totalSeconds = Math.max(0, Math.ceil(ms / 1000));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+
+  if (hours <= 0) return `${minutes}m`;
+  if (minutes <= 0) return `${hours}h`;
+  return `${hours}h ${minutes}m`;
+}
+
+async function getAttemptLimitInfo(userId: number, dan: { id: number; danSystemId: number | null; tierInSystem: number | null }) {
+  const windowStart = new Date(Date.now() - ATTEMPT_LIMIT_WINDOW_MS);
+
+  const where =
+    dan.danSystemId !== null && dan.tierInSystem !== null
+      ? {
+          userId,
+          createdAt: { gte: windowStart },
+          dan: { danSystemId: dan.danSystemId, tierInSystem: dan.tierInSystem },
+        }
+      : {
+          userId,
+          createdAt: { gte: windowStart },
+          danId: dan.id,
+        };
+
+  const used = await prisma.attempt.count({ where });
+  if (used < ATTEMPT_LIMIT_PER_WINDOW) return { allowed: true as const, used, remainingMs: 0 };
+
+  const oldestInWindow = await prisma.attempt.findFirst({
+    where,
+    select: { createdAt: true },
+    orderBy: { createdAt: 'asc' },
+  });
+
+  const oldestCreatedAtMs = oldestInWindow?.createdAt?.getTime();
+  const nextAtMs = typeof oldestCreatedAtMs === 'number' ? oldestCreatedAtMs + ATTEMPT_LIMIT_WINDOW_MS : Date.now() + ATTEMPT_LIMIT_WINDOW_MS;
+  const remainingMs = Math.max(0, nextAtMs - Date.now());
+
+  return { allowed: false as const, used, remainingMs };
+}
+
 /**
  * Handle incoming DM command
  */
@@ -50,18 +95,6 @@ async function handleCommand(message: BanchoMessage): Promise<void> {
     return;
   }
 
-  // Ban maps: !dojo ban <1-based index1> <index2> ...
-  const banMatch = command.match(/^!dojo\s+ban\s+(.+)$/);
-  if (banMatch) {
-    const indices = banMatch[1]
-      .split(/\s+/)
-      .map((value) => parseInt(value, 10))
-      .filter((n) => Number.isFinite(n));
-
-    await handleBan(message.user, username, indices);
-    return;
-  }
-
   // Unknown command - send help
   await message.user.sendMessage(`Unknown command. Type "!dojo" for help.`);
 }
@@ -74,7 +107,6 @@ async function sendHelp(user: BanchoDmUser): Promise<void> {
     'osu!dojo Bot Commands:',
     '  !dojo start <danId> - Start a dan attempt',
     '  !dojo list - View available dans',
-    '  !dojo ban <index...> - Ban candidate maps by 1-based index during ban phase',
     '',
     'Example: !dojo start 1',
   ].join('\n');
@@ -169,6 +201,21 @@ async function handleStart(user: BanchoDmUser, username: string, danId: number):
     return;
   }
 
+  // Attempt limit: rolling 24h window per certificate key (danSystemId + tierInSystem).
+  // Starting consumes an attempt immediately.
+  const limitInfo = await getAttemptLimitInfo(dbUser.id, {
+    id: dan.id,
+    danSystemId: dan.danSystemId ?? null,
+    tierInSystem: dan.tierInSystem ?? null,
+  });
+
+  if (!limitInfo.allowed) {
+    await user.sendMessage(
+      `Attempt limit reached for this certificate (3/24h). Try again in ~${formatDuration(limitInfo.remainingMs)}.`,
+    );
+    return;
+  }
+
   // Create attempt
   const attempt = await prisma.attempt.create({
     data: {
@@ -218,90 +265,3 @@ async function handleList(user: BanchoDmUser): Promise<void> {
   await user.sendMessage(lines.join('\n'));
 }
 
-/**
- * Handle: !dojo ban <index1> <index2> ...
- *
- * Phase 1: 1-based index bans during ban phase.
- * The queue processor creates a short-lived ban session in Redis.
- * This command records the user's selection into Redis for the processor to consume.
- */
-async function handleBan(user: BanchoDmUser, username: string, indices: number[]): Promise<void> {
-  if (indices.length === 0) {
-    await user.sendMessage('Usage: !dojo ban <index...> (example: !dojo ban 1 3)');
-    return;
-  }
-
-  const { osuApi } = await import('@/lib/osu-api');
-  const { getPendingBanAttemptIdForOsuId, getBanSession, recordBanSelection } =
-    await import('@/lib/redis');
-
-  // Identify the user (osuId) so we can find the correct ban session.
-  let osuUser: unknown | null;
-  try {
-    osuUser = await osuApi.getUser(username);
-  } catch (error) {
-    logger.error('osu! user lookup failed during ban command', { username, error });
-    await user.sendMessage('Could not verify your osu! account right now. Please try again.');
-    return;
-  }
-
-  if (!osuUser) {
-    await user.sendMessage('Could not verify your osu! account right now. Please try again.');
-    return;
-  }
-
-  type OsuUserData = { id: number };
-  const osuUserData = osuUser as unknown as Partial<OsuUserData>;
-  if (!osuUserData || typeof osuUserData.id !== 'number') {
-    await user.sendMessage('Could not verify your osu! account right now. Please try again.');
-    return;
-  }
-
-  const attemptId = await getPendingBanAttemptIdForOsuId(osuUserData.id);
-  if (!attemptId) {
-    await user.sendMessage('No active ban phase right now.');
-    return;
-  }
-
-  const session = await getBanSession(attemptId);
-  if (!session) {
-    await user.sendMessage('Ban phase expired.');
-    return;
-  }
-
-  const candidateCount = session.candidates.length;
-  const uniqueIndices = Array.from(new Set(indices))
-    .filter((n) => Number.isInteger(n) && n >= 1 && n <= candidateCount)
-    .slice(0, session.maxBans);
-
-  if (uniqueIndices.length === 0) {
-    await user.sendMessage(
-      `No valid indices. Please pick 1-${candidateCount}. Example: !dojo ban 1 3`,
-    );
-    return;
-  }
-
-  const bannedBeatmapDbIds = uniqueIndices
-    .map((idx) => session.candidates[idx - 1])
-    .filter((c): c is (typeof session.candidates)[number] => !!c)
-    .map((c) => c.beatmapDbId);
-
-  await recordBanSelection(
-    {
-      attemptId,
-      selectedAt: Date.now(),
-      indices: uniqueIndices,
-      bannedBeatmapDbIds,
-    },
-    120,
-  );
-
-  await user.sendMessage(`Recorded bans: ${uniqueIndices.join(', ')} (max ${session.maxBans}).`);
-
-  logger.info('Ban selection recorded', {
-    username,
-    attemptId,
-    indices: uniqueIndices,
-    bannedCount: bannedBeatmapDbIds.length,
-  });
-}

@@ -3,35 +3,6 @@
  * All bot messages centralized for easy updates and i18n support
  */
 
-import { BOT_TIMEOUTS } from './constants';
-
-/**
- * Ban phase messages
- */
-export const BAN_PHASE_MESSAGES = {
-  header: (attemptId: number, maxBans: number) => [
-    `Ban phase for attempt #${attemptId}.`,
-    `You may ban up to ${maxBans} map(s).`,
-    `Reply within ${BOT_TIMEOUTS.BAN_PHASE_MS / 1000}s: !dojo ban <indices> (example: !dojo ban 1 3)`,
-    `Candidates:`,
-  ],
-
-  candidateLine: (candidate: {
-    index: number;
-    candidateGroup: number;
-    beatmapId: number;
-    title: string;
-  }) =>
-    `${candidate.index}) [G${candidate.candidateGroup}] ${candidate.beatmapId} - ${candidate.title}`,
-
-  dmFailed: 'Failed to DM ban list; proceeding with no bans',
-
-  timeout: 'Ban phase timeout. Proceeding with no bans.',
-
-  bansRecorded: (indices: number[], maxBans: number) =>
-    `Recorded bans: ${indices.join(', ')} (max ${maxBans}).`,
-} as const;
-
 /**
  * Lobby and attempt messages
  */
@@ -46,10 +17,17 @@ export const LOBBY_MESSAGES = {
     return `${mapName}${skill}: ${reason}. Attempt ended.`;
   },
 
+  /** Map finished but requirement not met (attempt continues) */
+  mapRequirementMissed: (mapName: string, skillFocus: string | undefined, reason: string) => {
+    const skill = skillFocus ? ` [${skillFocus}]` : '';
+    return `${mapName}${skill}: ${reason}. Continuing, but this attempt can no longer PASS/GOLD.`;
+  },
+
   /** Failure reasons */
   failureReason: {
     didNotComplete: 'Map failed (did not complete)',
     scoreTooLow: (score: bigint, required: bigint) => `Score too low (${score} < ${required})`,
+    requirementsNotMet: (details?: string) => details || 'Requirements not met',
   },
 
   /** Gold clear message */
@@ -79,7 +57,6 @@ export const DM_COMMANDS_MESSAGES = {
     'osu!dojo Bot Commands:',
     '  !dojo start <danId> - Start a dan attempt',
     '  !dojo list - View available dans',
-    '  !dojo ban <index...> - Ban candidate maps by 1-based index during ban phase',
     '',
     'Example: !dojo start 1',
   ].join('\n'),
@@ -115,18 +92,6 @@ export const DM_COMMANDS_MESSAGES = {
   /** Welcome message */
   welcome: (username: string) => `Welcome to osu!dojo! Account created for ${username}.`,
 
-  /** Ban command usage */
-  banUsage: 'Usage: !dojo ban <index...> (example: !dojo ban 1 3)',
-
-  /** No active ban phase */
-  banNoActivePhase: 'No active ban phase right now.',
-
-  /** Ban phase expired */
-  banPhaseExpired: 'Ban phase expired.',
-
-  /** Invalid ban indices */
-  banInvalidIndices: (candidateCount: number) =>
-    `No valid indices. Please pick 1-${candidateCount}. Example: !dojo ban 1 3`,
 } as const;
 
 /**

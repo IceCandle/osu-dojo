@@ -153,7 +153,11 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
               },
             },
             user: true,
-            replay: true,
+            replays: {
+              where: {
+                beatmapId: currentBeatmap.id, // Filter to current map's replay
+              },
+            },
           },
           orderBy: {
             totalScore: 'desc',
@@ -168,7 +172,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         }
 
         const topScore = topAttempt.scores[0];
-        const replayKey = topAttempt.replay?.filePath;
+        const replayKey = topAttempt.replays[0]?.filePath;
 
         if (!replayKey || !(await storage.exists(replayKey))) {
           return NextResponse.json(

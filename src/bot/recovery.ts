@@ -7,6 +7,7 @@
 
 import { redis } from '../lib/redis';
 import { prisma } from '../lib/prisma';
+import { evaluateBeatmapRequirements } from '../lib/beatmap-requirements';
 
 /**
  * Lobby state stored in Redis
@@ -26,7 +27,6 @@ export interface LobbyState {
   startedAt: number; // Unix timestamp
   lastHeartbeat: number; // Last activity timestamp
   mapsCompleted: number;
-  bannedMapIndices: number[];
   mapDbIds: number[]; // Ordered Beatmap.id list used for resume
 }
 
@@ -51,7 +51,6 @@ export async function saveLobbyState(matchId: string, state: LobbyState): Promis
     startedAt: state.startedAt.toString(),
     lastHeartbeat: Date.now().toString(),
     mapsCompleted: state.mapsCompleted.toString(),
-    bannedMapIndices: JSON.stringify(state.bannedMapIndices),
     mapDbIds: JSON.stringify(state.mapDbIds), // Added for rejoin+resume recovery
   });
 
@@ -84,7 +83,6 @@ export async function getLobbyState(matchId: string): Promise<LobbyState | null>
     startedAt: parseInt(data.startedAt),
     lastHeartbeat: parseInt(data.lastHeartbeat),
     mapsCompleted: parseInt(data.mapsCompleted),
-    bannedMapIndices: JSON.parse(data.bannedMapIndices),
     mapDbIds: data.mapDbIds ? JSON.parse(data.mapDbIds) : [], // Added for rejoin+resume recovery
   };
 }
@@ -132,13 +130,138 @@ export async function findZombieLobbies(): Promise<LobbyState[]> {
         startedAt: parseInt(data.startedAt),
         lastHeartbeat: parseInt(data.lastHeartbeat),
         mapsCompleted: parseInt(data.mapsCompleted),
-        bannedMapIndices: JSON.parse(data.bannedMapIndices),
         mapDbIds: data.mapDbIds ? JSON.parse(data.mapDbIds) : [], // Added for rejoin+resume recovery
       });
     }
   }
 
   return zombieLobbies;
+}
+
+/**
+ * Backfill missing scores to database
+ * Called during crash recovery to save scores that were played while bot was down
+ *
+ * @param attemptId - Database attempt ID
+ * @param missingScores - Scores from osu! API that aren't in database
+ * @param mapDbIds - Ordered list of Beatmap.id (DB primary keys) for this attempt
+ */
+async function backfillMissingScores(
+  attemptId: number,
+  missingScores: Array<{
+    beatmapId: number;
+    score: number;
+    passed: boolean;
+    accuracy: number; // 0-1 format from API
+    maxCombo: number;
+    count300: number;
+    count100: number;
+    count50: number;
+    countMiss: number;
+    sliderbreaks: number;
+  }>,
+  mapDbIds: number[],
+): Promise<void> {
+  if (missingScores.length === 0) {
+    return;
+  }
+
+  console.log(`[Backfill] Starting backfill for ${missingScores.length} missing score(s)`);
+
+  // Fetch beatmap records to map osu! beatmapId → Beatmap.id
+  const beatmaps = await prisma.beatmap.findMany({
+    where: { id: { in: mapDbIds } },
+  });
+
+  // Create lookup map: osu! beatmapId → DB Beatmap record
+  const beatmapIdToRecord = new Map<number, (typeof beatmaps)[0]>();
+  for (const bm of beatmaps) {
+    beatmapIdToRecord.set(bm.beatmapId, bm);
+  }
+
+  // Save each missing score
+  for (const missing of missingScores) {
+    const beatmap = beatmapIdToRecord.get(missing.beatmapId);
+
+    if (!beatmap) {
+      console.warn(
+        `[Backfill] Skipping score for unknown beatmap ${missing.beatmapId} (not in current dan)`,
+      );
+      continue;
+    }
+
+    const requirementEval = evaluateBeatmapRequirements(
+      {
+        requiredScore: beatmap.requiredScore,
+        goldClearScore: beatmap.goldClearScore,
+        requiredAccuracy: beatmap.requiredAccuracy,
+        maxMisses: beatmap.maxMisses,
+        minCombo: beatmap.minCombo,
+        goldRequiredAccuracy: beatmap.goldRequiredAccuracy,
+        goldMaxMisses: beatmap.goldMaxMisses,
+        goldMinCombo: beatmap.goldMinCombo,
+      },
+      {
+        score: BigInt(missing.score),
+        accuracy: missing.accuracy * 100,
+        combo: missing.maxCombo,
+        countMiss: missing.countMiss,
+        effectiveMisses: missing.countMiss,
+      },
+      'normal',
+    );
+
+    const metRequirement = requirementEval.met;
+
+    // Check if score already exists (prevent duplicates)
+    const existing = await prisma.attemptScore.findUnique({
+      where: { attemptId_beatmapId: { attemptId, beatmapId: beatmap.id } },
+    });
+
+    if (existing) {
+      console.log(`[Backfill] Score already exists for beatmap ${beatmap.id}, skipping`);
+      continue;
+    }
+
+    try {
+      // NOTE: The osu! API match history does not provide reliable sliderbreak counts.
+      // During recovery we treat sliderbreaks as unknown (0) and let replay parsing / overlay fill later.
+      const sliderbreaks = 0;
+
+      // Create AttemptScore record with data from API
+      await prisma.attemptScore.create({
+        data: {
+          attemptId,
+          beatmapId: beatmap.id, // Use DB primary key, NOT osu! beatmapId
+          score: BigInt(missing.score),
+          accuracy: missing.accuracy * 100, // Convert 0-1 to 0-100 percentage
+          combo: missing.maxCombo,
+          count300: missing.count300,
+          count100: missing.count100,
+          count50: missing.count50,
+          countMiss: missing.countMiss,
+          sliderbreaks,
+          effectiveMisses: missing.countMiss + sliderbreaks,
+          passed: missing.passed,
+          metRequirement,
+          modsUsed: beatmap.mods,
+          playedAt: new Date(), // Best-effort timestamp
+        },
+      });
+
+      console.log(
+        `[Backfill] ✓ Saved score for beatmap ${beatmap.id} (osu! ID: ${missing.beatmapId}, accuracy: ${(missing.accuracy * 100).toFixed(2)}%)`,
+      );
+    } catch (error) {
+      console.error(
+        `[Backfill] ✗ Failed to save score for beatmap ${beatmap.id}:`,
+        error instanceof Error ? error.message : error,
+      );
+      // Continue with other scores even if one fails
+    }
+  }
+
+  console.log(`[Backfill] Backfill complete`);
 }
 
 /**
@@ -161,6 +284,13 @@ export async function reconcileMatchHistory(
     beatmapId: number;
     score: number;
     passed: boolean;
+    accuracy: number;
+    maxCombo: number;
+    count300: number;
+    count100: number;
+    count50: number;
+    countMiss: number;
+    sliderbreaks: number;
   }>;
 }> {
   console.log(`[Recovery] Reconciling match ${matchId} for attempt ${attemptId}`);
@@ -190,10 +320,19 @@ export async function reconcileMatchHistory(
       return { newMapIndex: expectedMapIndex, missingScores: [] };
     }
 
+    // Type definitions based on osu-api-v2-js (more complete than before)
     type OsuMatchScore = {
       user_id: number;
       score: number;
       passed: boolean;
+      accuracy: number; // 0-1 format (e.g., 0.9640 = 96.40%)
+      max_combo: number;
+      statistics?: {
+        great?: number; // count300
+        ok?: number; // count100
+        meh?: number; // count50
+        miss?: number; // countMiss
+      };
     };
 
     type OsuMatchGame = {
@@ -227,6 +366,13 @@ export async function reconcileMatchHistory(
       beatmapId: number;
       score: number;
       passed: boolean;
+      accuracy: number;
+      maxCombo: number;
+      count300: number;
+      count100: number;
+      count50: number;
+      countMiss: number;
+      sliderbreaks: number;
     }> = [];
 
     for (const game of apiGames) {
@@ -246,6 +392,15 @@ export async function reconcileMatchHistory(
           beatmapId: game.beatmap_id,
           score: playerScore.score,
           passed: playerScore.passed,
+          accuracy: playerScore.accuracy ?? 0,
+          maxCombo: playerScore.max_combo ?? 0,
+          count300: playerScore.statistics?.great ?? 0,
+          count100: playerScore.statistics?.ok ?? 0,
+          count50: playerScore.statistics?.meh ?? 0,
+          countMiss: playerScore.statistics?.miss ?? 0,
+          // The osu! API match history does not reliably expose sliderbreak counts.
+          // Keep this 0 during recovery; replay parsing / overlay can populate later.
+          sliderbreaks: 0,
         });
       }
     }
@@ -255,6 +410,17 @@ export async function reconcileMatchHistory(
     console.log(
       `[Recovery] Reconciliation complete: ${missingScores.length} missing scores found, new map index: ${newMapIndex}`,
     );
+
+    // Backfill missing scores to database
+    if (missingScores.length > 0) {
+      const state = await getLobbyState(matchId);
+      if (state?.mapDbIds && state.mapDbIds.length > 0) {
+        await backfillMissingScores(attemptId, missingScores, state.mapDbIds);
+        console.log(`[Recovery] Backfilled ${missingScores.length} missing score(s) to database`);
+      } else {
+        console.warn(`[Recovery] Cannot backfill - mapDbIds missing from lobby state`);
+      }
+    }
 
     return { newMapIndex, missingScores };
   } catch (error) {

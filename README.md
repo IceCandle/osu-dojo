@@ -55,7 +55,14 @@ npm run bot
 오버레이는 기본적으로 tosu WebSocket(`ws://<ip>:24050/ws`)에 붙습니다.
 
 - 예: `http://localhost:3000/overlay/<attemptId>?ip=localhost`
-- 오버레이가 맵 종료 시 `live-stats`를 POST하고, 봇이 이를 읽어 DB에 저장합니다.
+- OBS multi-source 예:
+  - Bars only: `http://localhost:3000/overlay/<attemptId>?ip=localhost&view=bars`
+  - Delta only: `http://localhost:3000/overlay/<attemptId>?ip=localhost&view=delta`
+
+Public 페이지:
+
+- Attempt stats: `http://localhost:3000/attempts/<attemptId>/stats`
+- Course leaderboard: `http://localhost:3000/dans/<danId>/leaderboard`
 
 ## 스크립트
 

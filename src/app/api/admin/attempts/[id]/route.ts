@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { redis } from '@/lib/redis';
 import { prisma } from '@/lib/prisma';
+import { requireAdminSession } from '@/lib/admin-auth';
 
 /**
  * GET /api/admin/attempts/:id
@@ -9,6 +10,9 @@ import { prisma } from '@/lib/prisma';
  */
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const adminCheck = await requireAdminSession();
+    if (!adminCheck.ok) return adminCheck.res;
+
     const { id } = await params;
     const attemptId = parseInt(id, 10);
 
@@ -41,22 +45,11 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       lobbyExists = Object.keys(lobbyState).length > 0;
 
       if (lobbyExists) {
-        const bannedMapIndicesRaw = lobbyState.bannedMapIndices;
-        let bannedMapIndices: number[] = [];
-        if (typeof bannedMapIndicesRaw === 'string') {
-          try {
-            bannedMapIndices = JSON.parse(bannedMapIndicesRaw);
-          } catch {
-            bannedMapIndices = [];
-          }
-        }
-
         redisData = {
           status: lobbyState.status,
           currentMapIndex: parseInt(lobbyState.currentMapIndex || '0'),
           lastHeartbeat: parseInt(lobbyState.lastHeartbeat || '0'),
           mapsCompleted: parseInt(lobbyState.mapsCompleted || '0'),
-          bannedMapIndices,
         };
       }
     }
@@ -132,6 +125,9 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
  */
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const adminCheck = await requireAdminSession();
+    if (!adminCheck.ok) return adminCheck.res;
+
     const { id } = await params;
     const attemptId = parseInt(id, 10);
 

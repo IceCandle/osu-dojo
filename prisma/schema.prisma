@@ -118,6 +118,10 @@ model Dan {
   danSystem    DanSystem? @relation(fields: [danSystemId], references: [id], onDelete: SetNull)
   tierInSystem Int? // Tier within system (1-10, 11=Extra, 12=Final, 13=Kaiden)
 
+  // Variants per certificate key (danSystemId + tierInSystem)
+  // 1-based index: 1, 2, 3...
+  variantIndex Int @default(1)
+
   // Legacy difficulty (for standalone/custom dans)
   difficultyTier Int // Relative difficulty rating (lower = easier) - used when danSystemId is null
 
@@ -126,8 +130,6 @@ model Dan {
   creator   User @relation("DanCreator", fields: [creatorId], references: [id], onDelete: Cascade)
 
   // Configuration
-  allowedBans Int @default(0) // Total ban budget - users distribute across slots at runtime
-
   // Status
   status     DanStatus @default(DRAFT) // Publication status
   isOfficial Boolean   @default(false) // Official vs community dan
@@ -162,6 +164,7 @@ model Dan {
   @@index([isFeatured, status])
   @@index([publishedAt])
   @@index([danSystemId, tierInSystem]) // Query dans in same system by tier
+  @@unique([danSystemId, tierInSystem, variantIndex])
   @@index([gameMode, danSystemId]) // Filter by game mode and system
   @@map("dans")
 }
@@ -202,9 +205,18 @@ model Beatmap {
   requiredScore  BigInt // Normal clear (pass) requirement
   goldClearScore BigInt // Gold clear (hard) requirement - higher than requiredScore
 
-  // Candidate map system for random selection
-  isCandidate    Boolean @default(false) // Maps with same candidateGroup are alternatives for same slot
-  candidateGroup Int? // Candidate group number (null if not a candidate)
+  // Optional additional requirements (if set, must be met in addition to score)
+  // Interpreted as:
+  // - Accuracy: minimum % (0-100)
+  // - Misses: maximum allowed misses (osu!standard uses effectiveMisses when available)
+  // - Combo: minimum max combo achieved
+  requiredAccuracy Float?
+  maxMisses        Int?
+  minCombo         Int?
+
+  goldRequiredAccuracy Float?
+  goldMaxMisses        Int?
+  goldMinCombo         Int?
 
   // Metadata
   skillFocus String? // Primary skill (e.g., "Jump", "Stream", "Tech", "Reading")
@@ -230,6 +242,7 @@ model Beatmap {
   // Relations
   attemptScores AttemptScore[] // All scores on this map
   sections      BeatmapSection[] // Mania: sections within this beatmap (metadata)
+  replays       Replay[] // Uploaded replays for this beatmap
 
   @@unique([danId, orderIndex]) // Each position must be unique per dan
   @@index([danId])
@@ -253,10 +266,6 @@ model Attempt {
 
   // Status
   status AttemptStatus @default(IN_PROGRESS) // Current status
-
-  // Ban tracking
-  bannedMapIds Int[] @default([]) // IDs of beatmaps banned for this attempt
-  bannedCount  Int   @default(0) // Number of maps banned (denormalized)
 
   // Progress tracking
   currentMapIndex Int @default(0) // Current map being played (0-based)
@@ -282,8 +291,8 @@ model Attempt {
   completedAt DateTime? // When attempt finished (pass or fail)
 
   // Relations
-  scores AttemptScore[] // Individual map scores
-  replay Replay? // Optional replay if gold clear
+  scores  AttemptScore[] // Individual map scores
+  replays Replay[] // Uploaded replays (one per map)
 
   @@index([userId, danId])
   @@index([danId, status])
@@ -365,8 +374,10 @@ model Replay {
   id Int @id @default(autoincrement())
 
   // Relationships
-  attemptId Int     @unique // The attempt this replay is from
+  attemptId Int // Multiple replays per attempt (one per map)
   attempt   Attempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  beatmapId Int // Which map in the dan this replay is for
+  beatmap   Beatmap @relation(fields: [beatmapId], references: [id], onDelete: Cascade)
   userId    Int // Player (denormalized for queries)
   user      User    @relation("ReplayUser", fields: [userId], references: [id], onDelete: Cascade)
   danId     Int // Dan (denormalized for queries)
@@ -377,13 +388,9 @@ model Replay {
   fileUrl  String? // Public URL if applicable
   fileSize Int? // File size in bytes
 
-  // Metadata
-  isGoldClear Boolean @default(false) // Is this the best clear for this dan?
-  isPacemaker Boolean @default(false) // Used as reference pace
-
-  // Stats (denormalized from attempt)
-  totalScore      BigInt // Total score for quick lookup
-  averageAccuracy Float? // Average accuracy as percentage (0-100)
+  // Stats from replay file (for this single map)
+  score           BigInt // Score for this map
+  replayTimestamp DateTime? // Timestamp from .osr file (for validation against AttemptScore.playedAt)
 
   // Timestamps
   createdAt  DateTime @default(now())
@@ -393,9 +400,12 @@ model Replay {
   danPassReplay      Dan? @relation("DanPassReplay") // If this is a dan's pass reference replay
   danGoldClearReplay Dan? @relation("DanGoldClearReplay") // If this is a dan's gold clear reference replay
 
+  @@unique([attemptId, beatmapId]) // One replay per map per attempt
   @@index([userId])
-  @@index([danId, isGoldClear])
-  @@index([totalScore])
+  @@index([danId])
+  @@index([beatmapId])
+  @@index([score])
+  @@index([replayTimestamp])
   @@map("replays")
 }
 

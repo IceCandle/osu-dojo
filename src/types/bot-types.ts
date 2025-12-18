@@ -13,6 +13,13 @@ export interface MapConfig {
   name?: string; // Display name for the map
   requiredScore: bigint; // Normal clear (pass) requirement
   goldClearScore: bigint; // Gold clear requirement
+  // Optional additional requirements (if set, must be met in addition to score)
+  requiredAccuracy?: number | null; // Min accuracy % (0-100)
+  maxMisses?: number | null; // Max allowed misses (osu!standard uses effective misses when available)
+  minCombo?: number | null; // Min required max combo
+  goldRequiredAccuracy?: number | null;
+  goldMaxMisses?: number | null;
+  goldMinCombo?: number | null;
   skillFocus?: string; // e.g., "Jump", "Stream", "Tech", "Reading"
   gameMode?: string; // OSU, TAIKO, CATCH, MANIA
 }
@@ -25,7 +32,7 @@ export interface AttemptConfig {
   multiplayerId: string | null; // osu! multiplayer match ID
   username: string; // osu! username
   danName: string; // Dan name for display
-  maps: MapConfig[]; // Final map list AFTER bans and candidate selection
+  maps: MapConfig[]; // Final map list for this attempt
   startMapIndex?: number; // 0-based map index for crash recovery
   onDone?: () => void; // Callback when attempt completes
 }
@@ -43,5 +50,6 @@ export interface MapScore {
   count100: number; // Great hits
   count50: number; // Good hits
   countMiss: number; // Misses
+  effectiveMisses?: number; // osu!standard: misses + sliderbreaks (when available)
   metRequirement: boolean; // Whether score met the requirement
 }

@@ -4,7 +4,7 @@
  *
  * References:
  * - ScoreV1: https://osu.ppy.sh/wiki/en/Gameplay/Score/ScoreV1/osu!
- * - ScoreV2: https://github.com/ppy/osu (ScoreProcessor.cs)
+ * - ScoreV2: Nowhere to be found, different from lazer
  * - Lazer: https://github.com/ppy/osu/blob/master/osu.Game/Rulesets/Scoring/ScoreProcessor.cs
  */
 
@@ -22,19 +22,18 @@ export const HIT_VALUES = {
  * ScoreV2 Mod Multipliers
  * Applied to final 1,000,000 base score
  *
- * TODO: Add remaining multipliers
- * User will provide complete table later
+ * TODO: Verify with osu!
  */
 export const SCOREV2_MOD_MULTIPLIERS: Record<string, number> = {
   // Difficulty increasing
   HD: 1.06, // Hidden
   HR: 1.1, // Hard Rock
   DT: 1.2, // Double Time
-  NC: 1.2, // Nightcore (same as DT)
+  NC: 1.2, // Nightcore
   FL: 1.12, // Flashlight
 
   // Difficulty decreasing
-  NF: 1.0, // No Fail (no penalty in V2!)
+  NF: 1.0, // No Fail
   EZ: 0.5, // Easy
   HT: 0.3, // Half Time
   SO: 0.95, // Spun Out
@@ -43,9 +42,38 @@ export const SCOREV2_MOD_MULTIPLIERS: Record<string, number> = {
   NM: 1.0, // No Mod
   SD: 1.0, // Sudden Death
   PF: 1.0, // Perfect
-  RX: 1.0, // Relax
-  AP: 1.0, // Auto Pilot
-  Auto: 1.0, // Auto
+};
+
+export const SCOREV1_MOD_MULTIPLIERS: Record<string, number> = {
+  // Difficulty increasing
+  HD: 1.06,
+  HR: 1.06,
+  DT: 1.12,
+  FL: 1.12,
+
+  // Difficulty decreasing
+  NF: 0.5,
+  EZ: 0.5,
+  HT: 0.3,
+
+  // No multiplier
+  NM: 1.0
+};
+
+export const LAZER_MOD_MULTIPLIERS: Record<string, number> = {
+  // Difficulty increasing
+  HD: 1.06,
+  HR: 1.06,
+  DT: 1.1,
+  FL: 1.12,
+
+  // Difficulty decreasing
+  NF: 0.5,
+  EZ: 0.5,
+  HT: 0.3,
+  
+  // No multiplier
+  NM: 1.0
 };
 
 /**
@@ -80,165 +108,12 @@ export function getModMultiplier(mods: string[], scoringType: 'v1' | 'v2' = 'v2'
       }
     }
   } else {
-    // TODO: Add ScoreV1 multipliers when needed
+    // TODO: Add ScoreV1 and lazer multipliers when needed
     // V1 has different multipliers (NF=0.5, HD=1.06, etc.)
     multiplier = 1.0;
   }
 
   return multiplier;
-}
-
-/**
- * ScoreV2 Calculator
- * Based on actual osu! source code
- *
- * Algorithm (from runScoreV2 in osu! codebase):
- * 1. Calculate comboPortion: sum of (baseScore * (1 + combo / 10))
- * 2. Calculate accuracy from base scores
- * 3. Final score = 700,000 * (comboPortion / maxComboPortion) +
- *                  300,000 * (accuracy^10) * (hitsCompleted / totalHits)
- * 4. Apply mod multiplier to result
- *
- * Maximum: 1,000,000 points (before mods)
- */
-export class ScoreV2Calculator {
-  private maxCombo: number;
-  private comboPortionMax: number;
-  private maxBaseScore: number;
-
-  constructor(maxCombo: number) {
-    this.maxCombo = maxCombo;
-    this.maxBaseScore = maxCombo * HIT_VALUES.GREAT;
-
-    // Pre-calculate maximum combo portion (perfect play with all 300s)
-    this.comboPortionMax = this.calculateMaxComboPortion();
-  }
-
-  /**
-   * Calculate maximum combo portion (all 300s)
-   */
-  private calculateMaxComboPortion(): number {
-    let comboPortion = 0;
-    for (let combo = 1; combo <= this.maxCombo; combo++) {
-      comboPortion += HIT_VALUES.GREAT * (1 + combo / 10.0);
-    }
-    return comboPortion;
-  }
-
-  /**
-   * Calculate ScoreV2 from hit counts
-   * Simulates the play and calculates combo progression
-   *
-   * @param count300 - Number of 300s
-   * @param count100 - Number of 100s
-   * @param count50 - Number of 50s
-   * @param countMiss - Number of misses
-   * @param modMultiplier - Mod multiplier (default 1.0)
-   * @returns Final ScoreV2 value
-   */
-  calculateScore(
-    count300: number,
-    count100: number,
-    count50: number,
-    countMiss: number,
-    modMultiplier: number = 1.0,
-  ): number {
-    let currentCombo = 0;
-    let comboPortion = 0;
-    let currentBaseScore = 0;
-    const currentHits = count300 + count100 + count50 + countMiss;
-
-    // Simulate hits in order
-    // NOTE: We don't know actual hit order, so we assume best case
-    // (all 300s first, then 100s, then 50s, then misses)
-
-    // Process 300s
-    for (let i = 0; i < count300; i++) {
-      currentBaseScore += HIT_VALUES.GREAT;
-      currentCombo++;
-      comboPortion += HIT_VALUES.GREAT * (1 + currentCombo / 10.0);
-    }
-
-    // Process 100s
-    for (let i = 0; i < count100; i++) {
-      currentBaseScore += HIT_VALUES.OK;
-      currentCombo++;
-      comboPortion += HIT_VALUES.OK * (1 + currentCombo / 10.0);
-    }
-
-    // Process 50s
-    for (let i = 0; i < count50; i++) {
-      currentBaseScore += HIT_VALUES.MEH;
-      currentCombo++;
-      comboPortion += HIT_VALUES.MEH * (1 + currentCombo / 10.0);
-    }
-
-    // Process misses (resets combo, contributes to maxBaseScore but not currentBaseScore)
-    // Note: Misses are handled by not incrementing currentBaseScore or combo
-
-    // Calculate accuracy
-    const accuracy = this.maxBaseScore > 0 ? currentBaseScore / this.maxBaseScore : 0;
-
-    // Apply ScoreV2 formula
-    const comboPart = 700000 * (comboPortion / this.comboPortionMax);
-    const accuracyPart = 300000 * Math.pow(accuracy, 10) * (currentHits / this.maxCombo);
-
-    const baseScore = comboPart + accuracyPart;
-
-    // Apply mod multiplier to final score
-    return Math.round(baseScore * modMultiplier);
-  }
-
-  /**
-   * Calculate score at specific progress point
-   * Used for pacemaker time-series generation
-   *
-   * @param objectsCompleted - Number of objects hit so far
-   * @param count300 - 300s hit so far
-   * @param count100 - 100s hit so far
-   * @param count50 - 50s hit so far
-   * @param countMiss - Misses so far
-   * @param modMultiplier - Mod multiplier
-   * @returns Score at this point in time
-   */
-  calculateProgressScore(
-    objectsCompleted: number,
-    count300: number,
-    count100: number,
-    count50: number,
-    countMiss: number,
-    modMultiplier: number = 1.0,
-  ): number {
-    let comboPortion = 0;
-    let currentBaseScore = 0;
-    let combo = 0;
-
-    // Simulate combo growth (assuming hits in order: 300s, 100s, 50s)
-    for (let i = 0; i < count300; i++) {
-      currentBaseScore += HIT_VALUES.GREAT;
-      combo++;
-      comboPortion += HIT_VALUES.GREAT * (1 + combo / 10.0);
-    }
-
-    for (let i = 0; i < count100; i++) {
-      currentBaseScore += HIT_VALUES.OK;
-      combo++;
-      comboPortion += HIT_VALUES.OK * (1 + combo / 10.0);
-    }
-
-    for (let i = 0; i < count50; i++) {
-      currentBaseScore += HIT_VALUES.MEH;
-      combo++;
-      comboPortion += HIT_VALUES.MEH * (1 + combo / 10.0);
-    }
-
-    const accuracy = this.maxBaseScore > 0 ? currentBaseScore / this.maxBaseScore : 0;
-
-    const comboPart = 700000 * (comboPortion / this.comboPortionMax);
-    const accuracyPart = 300000 * Math.pow(accuracy, 10) * (objectsCompleted / this.maxCombo);
-
-    return Math.round((comboPart + accuracyPart) * modMultiplier);
-  }
 }
 
 /**

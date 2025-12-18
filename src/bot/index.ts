@@ -29,7 +29,7 @@ const matchGenerator = new MatchGenerator();
 
 /**
  * Process a queued attempt
- * Handles candidate map selection with ban-first logic
+ * Generates the map order (static shuffle) and runs the lobby
  */
 async function processAttempt(
   bot: BotClient,
@@ -69,33 +69,20 @@ async function processAttempt(
       username: user.osuUsername,
     });
 
-    // Use MatchGenerator to handle ban phase and map selection
+    // Use MatchGenerator to handle static course shuffle selection
     const banchoClient = bot.getClient();
-    const { finalMaps, banResult } = await matchGenerator.generateMatchMaps(
+    const { finalMaps } = await matchGenerator.generateMatchMaps(
       banchoClient,
       attemptId,
       user.osuId,
       user.osuUsername,
       beatmaps,
-      dan.allowedBans,
     );
 
     const finalMapList = finalMaps;
     logger.info('Match generation complete', {
       mapCount: finalMapList.length,
-      bannedCount: banResult.bannedMapIds.length,
     });
-
-    // Persist bans to the attempt
-    if (banResult.bannedMapIds.length > 0) {
-      await prisma.attempt.update({
-        where: { id: attemptId },
-        data: {
-          bannedMapIds: banResult.bannedMapIds,
-          bannedCount: banResult.bannedMapIds.length,
-        },
-      });
-    }
 
     // Step 6: Create multiplayer lobby
     const lobbyName = `osu!dojo: ${user.osuUsername} - ${dan.name} (#${attemptId})`;
@@ -132,7 +119,6 @@ async function processAttempt(
       startedAt: Date.now(),
       lastHeartbeat: Date.now(),
       mapsCompleted: 0,
-      bannedMapIndices: banResult.bannedIndices,
       mapDbIds,
     });
 
@@ -144,6 +130,12 @@ async function processAttempt(
       name: m.beatmapTitle ?? `Beatmap ${m.beatmapId}`,
       requiredScore: m.requiredScore,
       goldClearScore: m.goldClearScore,
+      requiredAccuracy: m.requiredAccuracy ?? null,
+      maxMisses: m.maxMisses ?? null,
+      minCombo: m.minCombo ?? null,
+      goldRequiredAccuracy: m.goldRequiredAccuracy ?? null,
+      goldMaxMisses: m.goldMaxMisses ?? null,
+      goldMinCombo: m.goldMinCombo ?? null,
       skillFocus: m.skillFocus ?? undefined,
       gameMode: m.gameMode,
     }));
@@ -234,7 +226,7 @@ async function main() {
 
           if (missingScores.length > 0) {
             console.log(
-              `[Recovery] Found ${missingScores.length} missing score(s). (Backfill TODO)`,
+              `[Recovery] Backfilled ${missingScores.length} missing score(s) from API`,
             );
           }
 

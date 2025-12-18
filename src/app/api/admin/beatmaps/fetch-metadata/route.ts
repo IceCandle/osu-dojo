@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { osuApi } from '@/lib/osu-api';
+import { requireAdminSession } from '@/lib/admin-auth';
 
 /**
  * POST /api/admin/beatmaps/fetch-metadata
@@ -13,6 +14,9 @@ import { osuApi } from '@/lib/osu-api';
  */
 export async function POST(req: NextRequest) {
   try {
+    const adminCheck = await requireAdminSession();
+    if (!adminCheck.ok) return adminCheck.res;
+
     const { beatmapId } = await req.json();
 
     if (!beatmapId || typeof beatmapId !== 'number') {

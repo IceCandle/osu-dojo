@@ -68,7 +68,11 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
             beatmap: true,
           },
         },
-        replay: true,
+        replays: {
+          where: {
+            beatmapId: currentBeatmap.id, // Filter to current map's replay
+          },
+        },
       },
       orderBy: {
         totalScore: 'desc',
@@ -88,7 +92,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     const bestScore = bestAttempt.scores[0];
 
     // Parse replay file - required for pacemaker
-    const replayKey = bestAttempt.replay?.filePath;
+    const replayKey = bestAttempt.replays[0]?.filePath;
     const storage = getStorage();
 
     if (!replayKey || !(await storage.exists(replayKey))) {

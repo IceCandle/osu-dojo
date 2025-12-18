@@ -62,3 +62,4 @@ CLAUDE.md
 # local tools
 .claude/
 repomix-output.txt
+.repomixignore
