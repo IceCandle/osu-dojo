@@ -1,48 +1,44 @@
 # osu!dojo Architecture & Status (December 2025)
 
-> **Audience**: New contributors preparing to work on osu!dojo
-> **Purpose**: Onboarding-oriented current status, system architecture, and delegation-ready task plan
-
 ---
 
 ## Table of Contents
 
 1. [Current Status Summary](#current-status-summary)
-2. [Docker-First Dev Setup](#docker-first-dev-setup)
+2. [Dev Setup](#dev-setup)
 3. [Architecture Overview](#architecture-overview)
 4. [Core Flows](#core-flows)
 5. [Data Model](#data-model)
 6. [Operational Topology](#operational-topology)
 7. [Known Issues & Risks](#known-issues--risks)
-8. [Delegation-Ready Task Plan](#delegation-ready-task-plan)
+8. [Task Plan](#task-plan)
 
 ---
 
 ## Current Status Summary
 
-### What Needs Testing
+### Features (needs more test)
 
-| **Bot (IRC)** | Connects to Bancho, creates lobbies, processes attempts via queue |
-| **Attempts** | Full lifecycle: queue → lobby → play → score → completion |
-| **Dans/Courses** | Single/multi-map dans with two-tier clear system (normal/gold) |
-| **Requirements** | Score, accuracy, misses, combo checks per map + gold variants |
-| **Pacemaker Overlay** | tosu WebSocket integration, MY-BEST and RIVAL bars, 3 display modes |
-| **Leaderboards** | Per-dan leaderboards with score normalization (mod multiplier removal) |
-| **Admin/Auth** | NextAuth osu! OAuth, admin diagnostics API |
-| **Recovery** | Zombie lobby detection, stuck-lobby watchdog, match history reconciliation |
-| **Replay Upload** | Full validation (timestamp, MD5, player, score matching) |
+**Bot (IRC)**: Connects to Bancho, creates lobbies, processes attempts via queue
+**Attempts**: Full lifecycle: queue → lobby → play → score → completion
+**Dans/Courses**: Single/multi-map dans with two-tier clear system (normal/gold)
+**Requirements**: Score, accuracy, misses, combo checks per map + gold variants
+**Pacemaker Overlay**: tosu WebSocket integration, pacemaker(MY-BEST and RIVAL bars)/play-along
+**Leaderboards**: Per-dan leaderboards with score normalization before adding (mod multiplier removal)
+**Admin/Auth**: NextAuth osu! OAuth, admin diagnostics API
+**Recovery**: Zombie lobby detection, stuck-lobby watchdog, match history reconciliation
+**Replay Upload**: Full validation (timestamp, MD5, player, score matching)
 
 ### What's Risky/Partial/Unclear
 
 | Area                        | Risk Level         | Details                                                                                    |
 | --------------------------- | ------------------ | ------------------------------------------------------------------------------------------ |
 | Scoring accuracy            | ⚠️ Medium          | `ScoringService.ts` has TODO noting mod multiplier values and algorithms need verification |
-| S3 storage                  | 🔵 Not Implemented | Storage layer defaults to local; S3 throws "not yet implemented"                           |
 | Pacemaker friends/same-rank | 🔵 Not Implemented | Rival modes "friends", "same-rank", "rotate" throw not-implemented errors                  |
 | Custom dan creation UI      | 🔵 Partial         | API exists but no frontend for creating dans (admin-only seed currently)                   |
 | Mania section accuracy      | ⚠️ Partial         | Schema supports sections but section-score extraction from replays not fully tested        |
 
-### Known Unknowns (Decision Points)
+### Decision Points
 
 1. **Banner system**: Schema mentions banners but no banner generation/award logic exists yet
 2. **Skillset tags**: `skillFocus` field exists on beatmaps but no UI for tag management or search/filter
@@ -51,11 +47,11 @@
 
 ---
 
-## Docker-First Dev Setup
+## Dev Setup
 
 ### Prerequisites
 
-- Node.js (LTS recommended, tested with v20+)
+- Node.js
 - Docker & Docker Compose
 - osu! IRC credentials from https://osu.ppy.sh/p/irc
 - osu! OAuth app from https://osu.ppy.sh/home/account/edit#oauth
@@ -278,7 +274,7 @@ User sends "!dojo start <danId>" via osu! DM
          │  On map complete: POST live-stats            │
          ├──────────────────────►│                       │
          │                       │                       │
-         │  Render 3-bar display │                       │
+         │  Render display       │                       │
          │  YOU | MY-BEST | RIVAL│                       │
          └───────────────────────┴───────────────────────┘
 ```
@@ -446,31 +442,7 @@ Beatmap ──┬── has ──▶ AttemptScore[]
 └─────────────────────────────────────────────────┘
 ```
 
-### Production Topology (Planned)
-
-```
-┌────────────────────────────────────────────────────────────┐
-│                     Cloud Infrastructure                    │
-├────────────────────────────────────────────────────────────┤
-│                                                             │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐         │
-│  │   Web App   │  │   Bot       │  │  Worker     │         │
-│  │  (Next.js)  │  │  (Node.js)  │  │  (Future)   │         │
-│  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘         │
-│         │                │                │                 │
-│         └────────────────┼────────────────┘                 │
-│                          │                                  │
-│              ┌───────────┴───────────┐                      │
-│              ▼                       ▼                      │
-│       ┌────────────┐          ┌────────────┐               │
-│       │ PostgreSQL │          │   Redis    │               │
-│       │ (Managed)  │          │ (Managed)  │               │
-│       └────────────┘          └────────────┘               │
-│                                                             │
-│  Object Storage: S3/R2 (replays, beatmap cache)            │
-│                                                             │
-└────────────────────────────────────────────────────────────┘
-```
+### Production Topology (S3? needs consideration)
 
 ---
 
@@ -491,7 +463,7 @@ Beatmap ──┬── has ──▶ AttemptScore[]
 
 ---
 
-## Delegation-Ready Task Plan
+## Task Plan
 
 ### Stage 1: Unblockers (Pre-delegation)
 
@@ -560,7 +532,7 @@ npm run db:studio    # Open Prisma Studio
 # Database
 npm run db:generate  # Generate Prisma client
 npm run db:migrate   # Apply migrations
-npm run db:seed      # Seed test data
+npm run db:seed      # Seed test data (not created yet)
 npm run db:reset     # Reset + seed
 
 # Docker

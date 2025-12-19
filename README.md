@@ -14,7 +14,6 @@
 - **Two-tier clear system**: Normal Pass and Gold Pass with separate requirements
 - **Pacemaker overlay**: Real-time score comparison using tosu (MY-BEST / RIVAL)
 - **Multi-map courses**: Single or multi-map dans with various requirement options
-- **Leaderboards**: Per-dan rankings with score normalization
 
 ### Quick Start
 
@@ -81,11 +80,10 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for full system documentation i
 
 ### 주요 기능
 
-- **IRC 봇**이 멀티플레이어 로비를 관리하여 단 시도 진행
+- **IRC 봇**이 멀티플레이어 로비를 관리하여 단 플레이 가이드
 - **2단계 클리어 시스템**: Normal Pass / Gold Pass 별도 요구조건
 - **페이스메이커 오버레이**: tosu를 사용한 실시간 점수 비교 (MY-BEST / RIVAL)
 - **멀티맵 코스**: 단일 또는 여러 맵 단, 다양한 요구조건 옵션
-- **리더보드**: 단별 랭킹
 
 ### 빠른 시작
 
