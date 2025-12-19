@@ -92,8 +92,12 @@ export async function validateReplayFile(
   }
 
   // Step 4: Player name verification
-  const replayPlayer = String(replay.player_name ?? '').trim().toLowerCase();
-  const expectedPlayer = String(user.osuUsername ?? '').trim().toLowerCase();
+  const replayPlayer = String(replay.player_name ?? '')
+    .trim()
+    .toLowerCase();
+  const expectedPlayer = String(user.osuUsername ?? '')
+    .trim()
+    .toLowerCase();
   if (!replayPlayer || !expectedPlayer || replayPlayer !== expectedPlayer) {
     return {
       valid: false,

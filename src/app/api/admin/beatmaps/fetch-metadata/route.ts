@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { osuApi } from '@/lib/osu-api';
+import { osuApi } from '@/lib/services/OsuApiService';
 import { requireAdminSession } from '@/lib/auth/admin-auth';
 
 /**

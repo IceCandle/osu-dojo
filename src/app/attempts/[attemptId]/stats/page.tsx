@@ -134,13 +134,15 @@ export default async function AttemptStatsPage({ params }: PageProps) {
           <div>
             <div className="text-xs text-white/60">Pass</div>
             <div className="text-xl font-bold tabular-nums">
-              {passCount.toLocaleString()} <span className="text-sm text-white/60">({passRate.toFixed(1)}%)</span>
+              {passCount.toLocaleString()}{' '}
+              <span className="text-sm text-white/60">({passRate.toFixed(1)}%)</span>
             </div>
           </div>
           <div>
             <div className="text-xs text-white/60">Gold</div>
             <div className="text-xl font-bold tabular-nums">
-              {goldCount.toLocaleString()} <span className="text-sm text-white/60">({goldRate.toFixed(1)}%)</span>
+              {goldCount.toLocaleString()}{' '}
+              <span className="text-sm text-white/60">({goldRate.toFixed(1)}%)</span>
             </div>
           </div>
         </div>

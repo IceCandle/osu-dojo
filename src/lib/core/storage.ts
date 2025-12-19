@@ -67,9 +67,7 @@ export class LocalStorageProvider implements StorageProvider {
 
     // Resolve under basePath and verify the result stays within basePath.
     const resolved = path.resolve(this.basePath, normalizedKey);
-    const basePrefix = this.basePath.endsWith(path.sep)
-      ? this.basePath
-      : this.basePath + path.sep;
+    const basePrefix = this.basePath.endsWith(path.sep) ? this.basePath : this.basePath + path.sep;
 
     if (resolved !== this.basePath && !resolved.startsWith(basePrefix)) {
       throw new Error('Invalid storage key (path traversal detected)');

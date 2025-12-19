@@ -20,6 +20,7 @@ const logger = createLogger('MatchGenerator');
 export interface BeatmapData {
   id: number; // DB primary key
   beatmapId: number; // osu! beatmap ID
+  scoringSystem?: 'SCORE_V2' | 'LAZER';
   beatmapTitle: string | null;
   mods: string[];
   requiredScore: bigint;

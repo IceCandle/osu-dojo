@@ -36,7 +36,10 @@ function formatDuration(ms: number): string {
   return `${hours}h ${minutes}m`;
 }
 
-async function getAttemptLimitInfo(userId: number, dan: { id: number; danSystemId: number | null; tierInSystem: number | null }) {
+async function getAttemptLimitInfo(
+  userId: number,
+  dan: { id: number; danSystemId: number | null; tierInSystem: number | null },
+) {
   const windowStart = new Date(Date.now() - ATTEMPT_LIMIT_WINDOW_MS);
 
   const where =
@@ -62,7 +65,10 @@ async function getAttemptLimitInfo(userId: number, dan: { id: number; danSystemI
   });
 
   const oldestCreatedAtMs = oldestInWindow?.createdAt?.getTime();
-  const nextAtMs = typeof oldestCreatedAtMs === 'number' ? oldestCreatedAtMs + ATTEMPT_LIMIT_WINDOW_MS : Date.now() + ATTEMPT_LIMIT_WINDOW_MS;
+  const nextAtMs =
+    typeof oldestCreatedAtMs === 'number'
+      ? oldestCreatedAtMs + ATTEMPT_LIMIT_WINDOW_MS
+      : Date.now() + ATTEMPT_LIMIT_WINDOW_MS;
   const remainingMs = Math.max(0, nextAtMs - Date.now());
 
   return { allowed: false as const, used, remainingMs };
@@ -121,7 +127,7 @@ async function handleStart(user: BanchoDmUser, username: string, danId: number):
   logger.info('Start command received', { username, danId });
 
   // Verify user exists via osu! API
-  const { osuApi } = await import('@/lib/osu-api');
+  const { osuApi } = await import('@/lib/services/OsuApiService');
   let osuUser;
 
   try {
@@ -245,7 +251,7 @@ async function handleStart(user: BanchoDmUser, username: string, danId: number):
  */
 async function handleList(user: BanchoDmUser): Promise<void> {
   const dans = await prisma.dan.findMany({
-    where: { status: 'PUBLISHED' },
+    where: { status: 'PUBLISHED', isOfficial: true },
     orderBy: { difficultyTier: 'asc' },
     take: 10,
   });
@@ -264,4 +270,3 @@ async function handleList(user: BanchoDmUser): Promise<void> {
 
   await user.sendMessage(lines.join('\n'));
 }
-

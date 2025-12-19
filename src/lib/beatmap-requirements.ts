@@ -55,7 +55,8 @@ export function evaluateBeatmapRequirements(
   }
 
   const maxMisses = getTierField(tier, beatmap.maxMisses, beatmap.goldMaxMisses);
-  const missesUsed = typeof play.effectiveMisses === 'number' ? play.effectiveMisses : play.countMiss;
+  const missesUsed =
+    typeof play.effectiveMisses === 'number' ? play.effectiveMisses : play.countMiss;
   if (typeof maxMisses === 'number' && Number.isFinite(maxMisses)) {
     if (missesUsed > maxMisses) {
       failed.push('misses');

@@ -9,6 +9,7 @@
 export interface MapConfig {
   id: number; // Beatmap.id (DB primary key)
   beatmapId: number; // osu! beatmap ID
+  scoringSystem?: 'SCORE_V2' | 'LAZER';
   mods: string[]; // e.g., ["HD", "HR"]
   name?: string; // Display name for the map
   requiredScore: bigint; // Normal clear (pass) requirement

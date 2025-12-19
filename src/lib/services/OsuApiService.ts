@@ -1,8 +1,9 @@
 import { API, Ruleset } from 'osu-api-v2-js';
 import { prisma } from '@/lib/core/prisma';
 import { createLogger } from '@/lib/core/logger';
+import { TokenBucket } from '@/lib/utils/rate-limiter';
 
-const logger = createLogger('OsuApi');
+const logger = createLogger('OsuApiService');
 
 function getErrorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
@@ -10,51 +11,31 @@ function getErrorMessage(error: unknown): string {
 }
 
 /**
- * Token Bucket Rate Limiter
- * Implements 1000 requests/minute limit for osu! API v2
+ * osu! API v2 Client Service
+ *
+ * Centralized wrapper for osu-api-v2-js with:
+ * - Token management (bot + user-specific OAuth)
+ * - Rate limiting (1000 requests/minute)
+ * - Automatic token refresh
+ * - Error handling for 404, 429, 503
+ *
+ * @example
+ * ```typescript
+ * import { osuApi } from '@/lib/services/OsuApiService';
+ *
+ * const beatmap = await osuApi.getBeatmap(123456);
+ * const user = await osuApi.getUser('peppy', 'osu');
+ * ```
  */
-class TokenBucket {
-  private tokens: number;
-  private lastRefill: number;
-  private readonly capacity = 1000;
-  private readonly refillRate = 1000 / 60000; // tokens per millisecond
-
-  constructor() {
-    this.tokens = this.capacity;
-    this.lastRefill = Date.now();
-  }
-
-  async wait(): Promise<void> {
-    this.refill();
-
-    if (this.tokens < 1) {
-      const waitTime = (1 - this.tokens) / this.refillRate;
-      logger.warn(`Rate limit reached, waiting ${Math.round(waitTime)}ms`);
-      await new Promise((resolve) => setTimeout(resolve, waitTime));
-      this.refill();
-    }
-
-    this.tokens -= 1;
-  }
-
-  private refill(): void {
-    const now = Date.now();
-    const timePassed = now - this.lastRefill;
-    const tokensToAdd = timePassed * this.refillRate;
-
-    this.tokens = Math.min(this.capacity, this.tokens + tokensToAdd);
-    this.lastRefill = now;
-  }
-}
-
-/**
- * osu! API v2 Client Wrapper
- * Centralized wrapper for osu-api-v2-js with token management, rate limiting, and error handling
- */
-class OsuApiClient {
+export class OsuApiService {
   private botApi: API | null = null;
   private userApis: Map<number, API> = new Map();
-  private rateLimiter = new TokenBucket();
+  private rateLimiter: TokenBucket;
+
+  constructor() {
+    // osu! API v2 limit: 1000 requests per minute
+    this.rateLimiter = new TokenBucket(1000, 60000);
+  }
 
   private getClientCredentials(): { clientId: number; clientSecret: string } {
     const rawId = process.env.OSU_CLIENT_ID;
@@ -177,6 +158,10 @@ class OsuApiClient {
 
   /**
    * Get beatmap metadata by beatmap ID
+   *
+   * @param beatmapId - The osu! beatmap ID
+   * @returns Beatmap object or null if not found
+   * @throws Error if API is unavailable or other errors occur
    */
   async getBeatmap(beatmapId: number): Promise<unknown | null> {
     await this.rateLimiter.wait();
@@ -204,6 +189,11 @@ class OsuApiClient {
 
   /**
    * Get user by username
+   *
+   * @param username - The osu! username
+   * @param mode - Game mode (osu, taiko, fruits, mania)
+   * @returns User object or null if not found
+   * @throws Error if API is unavailable or other errors occur
    */
   async getUser(
     username: string,
@@ -235,7 +225,12 @@ class OsuApiClient {
 
   /**
    * Get match history by match ID
+   *
    * Note: Match history only available for ~24 hours via osu! API
+   *
+   * @param matchId - The multiplayer match ID
+   * @returns Match object or null if not found
+   * @throws Error if API is unavailable or other errors occur
    */
   async getMatch(matchId: string): Promise<unknown | null> {
     await this.rateLimiter.wait();
@@ -263,4 +258,4 @@ class OsuApiClient {
 }
 
 // Singleton export
-export const osuApi = new OsuApiClient();
+export const osuApi = new OsuApiService();

@@ -15,7 +15,10 @@ function isAttachKind(value: unknown): value is AttachKind {
  * Body:
  *  { kind: 'PASS'|'GOLD', replayId: number }
  */
-export async function POST(request: NextRequest, { params }: { params: Promise<{ danId: string }> }) {
+export async function POST(
+  request: NextRequest,
+  { params }: { params: Promise<{ danId: string }> },
+) {
   try {
     const adminCheck = await requireAdminSession();
     if (!adminCheck.ok) return adminCheck.res;
@@ -45,22 +48,25 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       return NextResponse.json({ error: 'Dan not found' }, { status: 404 });
     }
 
-    const replay = await prisma.replay.findUnique({ where: { id: replayId }, select: { id: true, danId: true } });
+    const replay = await prisma.replay.findUnique({
+      where: { id: replayId },
+      select: { id: true, danId: true },
+    });
     if (!replay) {
       return NextResponse.json({ error: 'Replay not found' }, { status: 404 });
     }
 
     if (replay.danId !== danId) {
       return NextResponse.json(
-        { error: 'Replay does not belong to this dan', details: { replayDanId: replay.danId, danId } },
+        {
+          error: 'Replay does not belong to this dan',
+          details: { replayDanId: replay.danId, danId },
+        },
         { status: 400 },
       );
     }
 
-    const data =
-      kind === 'PASS'
-        ? { passReplayId: replayId }
-        : { goldClearReplayId: replayId };
+    const data = kind === 'PASS' ? { passReplayId: replayId } : { goldClearReplayId: replayId };
 
     const updated = await prisma.dan.update({
       where: { id: danId },
@@ -102,7 +108,10 @@ export async function DELETE(
 
     const kindParam = request.nextUrl.searchParams.get('kind');
     if (!isAttachKind(kindParam)) {
-      return NextResponse.json({ error: 'Missing/invalid kind query param (PASS|GOLD)' }, { status: 400 });
+      return NextResponse.json(
+        { error: 'Missing/invalid kind query param (PASS|GOLD)' },
+        { status: 400 },
+      );
     }
 
     const data = kindParam === 'PASS' ? { passReplayId: null } : { goldClearReplayId: null };

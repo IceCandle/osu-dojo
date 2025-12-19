@@ -1,5 +1,5 @@
 import 'server-only';
-import { calculateAccuracy as calculateAccuracyDecimal } from './scoring';
+import { scoringService, type AccuracyModel } from './services/ScoringService';
 import { getStorage } from './core/storage';
 import type { ScoreTimestamp } from './utils/time-series';
 import type { Beatmap, Replay } from 'osu-parser';
@@ -57,6 +57,7 @@ interface ParsedBeatmap {
 export async function parseReplayToTimeSeries(
   replayKey: string,
   beatmapId: number,
+  accuracyModel: AccuracyModel = 'SCORE_V2',
 ): Promise<ScoreTimestamp[]> {
   const { parseReplay } = await getOsuParser();
   const storage = getStorage();
@@ -79,7 +80,8 @@ export async function parseReplayToTimeSeries(
 
   const finalScore = replay.score || 0;
   const finalCombo = replay.max_combo || 0;
-  const finalAccDecimal = calculateAccuracyDecimal(
+  const finalAccDecimal = scoringService.calculateAccuracyByModel(
+    accuracyModel,
     replay.count_300 || 0,
     replay.count_100 || 0,
     replay.count_50 || 0,
@@ -130,7 +132,7 @@ export async function parseReplayToTimeSeries(
   return timeSeries;
 }
 
-// calculateAccuracy removed - now using calculateAccuracyDecimal from scoring.ts
+// Accuracy is computed from replay hitcounts using the requested accuracy model.
 
 /**
  * Fetch .osu beatmap file and cache using storage abstraction

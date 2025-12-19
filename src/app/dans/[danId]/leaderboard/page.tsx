@@ -100,7 +100,8 @@ export default async function DanLeaderboardPage({ params }: PageProps) {
           {systemLabel} · {dan.name}
         </h1>
         <div className="mt-2 text-sm text-white/70">
-          Ranked by <span className="font-semibold">added score</span> with ScoreV2 mod multipliers removed.
+          Ranked by <span className="font-semibold">added score</span> with ScoreV2 mod multipliers
+          removed.
         </div>
 
         <div className="mt-4 flex flex-wrap gap-3 text-sm">
@@ -132,14 +133,21 @@ export default async function DanLeaderboardPage({ params }: PageProps) {
                     <td className="py-2 pr-3 tabular-nums text-white/70">{idx + 1}</td>
                     <td className="py-2 pr-3">
                       <span className="font-medium">{r.osuUsername}</span>
-                      {r.countryCode ? <span className="ml-2 text-xs text-white/50">{r.countryCode}</span> : null}
+                      {r.countryCode ? (
+                        <span className="ml-2 text-xs text-white/50">{r.countryCode}</span>
+                      ) : null}
                     </td>
-                    <td className={`py-2 pr-3 font-semibold ${r.isGoldPass ? 'text-yellow-400' : 'text-green-400'}`}>
+                    <td
+                      className={`py-2 pr-3 font-semibold ${r.isGoldPass ? 'text-yellow-400' : 'text-green-400'}`}
+                    >
                       {r.isGoldPass ? 'GOLD' : 'PASS'}
                     </td>
                     <td className="py-2 pr-3 tabular-nums">{formatBigInt(r.addedScoreNoMods)}</td>
                     <td className="py-2 pr-3">
-                      <Link className="text-white/80 underline hover:text-white" href={`/attempts/${r.attemptId}/stats`}>
+                      <Link
+                        className="text-white/80 underline hover:text-white"
+                        href={`/attempts/${r.attemptId}/stats`}
+                      >
                         stats
                       </Link>
                       {r.multiplayerUrl ? (
@@ -164,7 +172,8 @@ export default async function DanLeaderboardPage({ params }: PageProps) {
         )}
 
         <div className="mt-3 text-xs text-white/50">
-          Note: This currently ranks from the most recent 2,000 completed passes to avoid heavy queries.
+          Note: This currently ranks from the most recent 2,000 completed passes to avoid heavy
+          queries.
         </div>
       </section>
     </main>

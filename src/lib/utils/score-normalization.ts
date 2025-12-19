@@ -1,4 +1,4 @@
-import { SCOREV2_MOD_MULTIPLIERS } from '@/lib/scoring';
+import { SCOREV2_MOD_MULTIPLIERS } from '@/lib/services/ScoringService';
 
 const MULTIPLIER_SCALE = 10_000n;
 

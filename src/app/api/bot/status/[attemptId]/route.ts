@@ -59,8 +59,8 @@ export async function GET(
     return NextResponse.json({
       connected: status === 'PLAYING',
       lastHeartbeat,
-      recovering: status === 'PAUSED',
-      message: status === 'PAUSED' ? 'Bot is recovering, please wait...' : undefined,
+      recovering: status === 'RECOVERING',
+      message: status === 'RECOVERING' ? 'Bot is recovering, please wait...' : undefined,
     });
   } catch (error) {
     console.error('[BotStatus] API error:', error);

@@ -65,10 +65,7 @@ export async function POST(request: NextRequest) {
     const beatmapId = parseInt(beatmapIdStr, 10);
 
     if (isNaN(attemptId) || isNaN(beatmapId)) {
-      return NextResponse.json(
-        { error: 'Invalid attemptId or beatmapId' },
-        { status: 400 },
-      );
+      return NextResponse.json({ error: 'Invalid attemptId or beatmapId' }, { status: 400 });
     }
 
     // 1. Basic file validation (type, size)
@@ -157,12 +154,7 @@ export async function POST(request: NextRequest) {
 
     // 6. Validate replay file against multiplayer score (CRITICAL ANTI-CHEAT)
     const fileBuffer = Buffer.from(await file.arrayBuffer());
-    const validation = await validateReplayFile(
-      fileBuffer,
-      attemptScore,
-      beatmap,
-      attempt.user,
-    );
+    const validation = await validateReplayFile(fileBuffer, attemptScore, beatmap, attempt.user);
 
     if (!validation.valid) {
       console.warn(`[ReplayUpload] Validation failed for attempt ${attemptId}:`, validation.error);

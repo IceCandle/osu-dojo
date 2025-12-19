@@ -116,7 +116,7 @@ model Dan {
   // Dan system relationship (for organized dans like mania systems)
   danSystemId  Int? // Parent system (null for standalone dans)
   danSystem    DanSystem? @relation(fields: [danSystemId], references: [id], onDelete: SetNull)
-  tierInSystem Int? // Tier within system (1-10, 11=Extra, 12=Final, 13=Kaiden)
+  tierInSystem Int? // Tier within system (1-10, 11+: for extra dans)
 
   // Variants per certificate key (danSystemId + tierInSystem)
   // 1-based index: 1, 2, 3...

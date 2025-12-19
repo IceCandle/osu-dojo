@@ -91,7 +91,6 @@ export const DM_COMMANDS_MESSAGES = {
 
   /** Welcome message */
   welcome: (username: string) => `Welcome to osu!dojo! Account created for ${username}.`,
-
 } as const;
 
 /**
