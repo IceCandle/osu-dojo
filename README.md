@@ -1,5 +1,7 @@
 # osu!dojo
 
+> **⚠️ WARNING: This branch (`legacy-draft`) is not tested at all and should not be trusted. Use at your own risk.**
+
 [English](#english) | [한국어](#한국어)
 
 ---
