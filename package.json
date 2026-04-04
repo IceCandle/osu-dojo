@@ -1,0 +1,32 @@
+{
+  "name": "osudojo",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@10.6.2+sha256.20072a1f6edd17646ea9234bf32c42d563dad37b2973e97a2dde5c17774a824d",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "bot": "node --import tsx src/bot/index.ts",
+    "bot:dev": "node --import tsx src/bot/dev-trigger.ts",
+    "test": "node --import tsx --test tests/*.test.js tests/*.test.ts"
+  },
+  "dependencies": {
+    "bancho.js": "^0.12.3",
+    "better-sqlite3": "^12.8.0",
+    "drizzle-orm": "^0.45.1",
+    "next": "^14.2.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.10",
+    "@types/react": "^18.3.10",
+    "@types/react-dom": "^18.3.0",
+    "tsx": "^4.19.3",
+    "typescript": "^5.8.2"
+  }
+}
