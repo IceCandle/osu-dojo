@@ -59,3 +59,6 @@ skills/
 subagents/
 dojo-dev.jsonl
 docs/Advanced Automation and Verification Frameworks for osu! Dan Courses_ Integrating Multiplayer Bots, Pacemaker Overlays, and Dynamic Profile Banners.md
+.playwright-cli/
+.bin/
+.corepack_home/

@@ -1,6 +1,6 @@
 import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
-import type { PassConditionType } from "@/lib/domain";
+import type { DanScoreModel, PassConditionType } from "@/lib/domain";
 import { validateCourseMods } from "@/lib/mods";
 
 interface CourseBeatmapSeed {
@@ -10,14 +10,21 @@ interface CourseBeatmapSeed {
   passConditionType: PassConditionType;
   passConditionThreshold: number;
   ordinal: number;
+  title: string;
+  artist: string;
+  difficultyName: string;
+  mapper: string;
+  coverUrl: string;
+  annotations: string[];
 }
 
 interface CourseDanSeed {
   id: string;
   name: string;
-  slug: string;
+  courseSlug: string;
   description: string;
   ordinal: number;
+  scoreModel: DanScoreModel;
   overallPassType: PassConditionType | null;
   overallPassThreshold: number | null;
   beatmaps: CourseBeatmapSeed[];
@@ -73,9 +80,10 @@ function parseCourseDan(value: unknown, source: string): CourseDanSeed {
   return {
     id: expectString(record.id, "id", source),
     name: expectString(record.name, "name", source),
-    slug: expectString(record.slug, "slug", source),
+    courseSlug: expectString(record.courseSlug, "courseSlug", source),
     description: expectString(record.description, "description", source),
     ordinal: expectInteger(record.ordinal, "ordinal", source),
+    scoreModel: expectScoreModel(record.scoreModel, "scoreModel", source),
     overallPassType: expectPassConditionTypeOrNull(
       record.overallPassType,
       "overallPassType",
@@ -110,6 +118,12 @@ function parseCourseBeatmap(value: unknown, source: string): CourseBeatmapSeed {
       source,
     ),
     ordinal: expectInteger(record.ordinal, "ordinal", source),
+    title: expectString(record.title, "title", source),
+    artist: expectString(record.artist, "artist", source),
+    difficultyName: expectString(record.difficultyName, "difficultyName", source),
+    mapper: expectString(record.mapper, "mapper", source),
+    coverUrl: expectString(record.coverUrl, "coverUrl", source),
+    annotations: expectStringArray(record.annotations, "annotations", source),
   };
 }
 
@@ -136,6 +150,14 @@ function expectArray(value: unknown, field: string, source: string): unknown[] {
 function expectString(value: unknown, field: string, source: string): string {
   if (typeof value !== "string") {
     throw new Error(`${source} field "${field}" must be a string.`);
+  }
+
+  return value;
+}
+
+function expectStringArray(value: unknown, field: string, source: string): string[] {
+  if (!Array.isArray(value) || value.some((entry) => typeof entry !== "string")) {
+    throw new Error(`${source} field "${field}" must be an array of strings.`);
   }
 
   return value;
@@ -176,12 +198,12 @@ function expectPassConditionType(
   field: string,
   source: string,
 ): PassConditionType {
-  if (value === "acc" || value === "sv2") {
+  if (value === "acc" || value === "score") {
     return value;
   }
 
   throw new Error(
-    `${source} field "${field}" must be "acc" or "sv2".`,
+    `${source} field "${field}" must be "acc" or "score".`,
   );
 }
 
@@ -195,4 +217,18 @@ function expectPassConditionTypeOrNull(
   }
 
   return expectPassConditionType(value, field, source);
+}
+
+function expectScoreModel(
+  value: unknown,
+  field: string,
+  source: string,
+): DanScoreModel {
+  if (value === "scorev1" || value === "scorev2") {
+    return value;
+  }
+
+  throw new Error(
+    `${source} field "${field}" must be "scorev1" or "scorev2".`,
+  );
 }

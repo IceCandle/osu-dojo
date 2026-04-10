@@ -11,7 +11,7 @@ import {
   type BanchoMod,
 } from "bancho.js";
 import { getDatabase, type AppDatabase } from "@/db/client";
-import { getDanCourseBySlug, storeDanRunResult } from "@/db/queries";
+import { getDanCourseByRoute, storeDanRunResult } from "@/db/queries";
 import { parseDojoCommand } from "@/bot/command";
 import { noopLogger, type BotLogFields, type BotLogger } from "@/bot/logger";
 import {
@@ -212,7 +212,7 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
       runId: run.runId,
       userId: run.playerUserId,
       username: run.playerUsername,
-      courseSlug: run.course.slug,
+      courseRoute: `${run.course.danSystemSlug}/${run.course.courseSlug}`,
       ...fields,
     };
   }
@@ -353,7 +353,7 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
       void abortRun(
         run,
         "inactivity-timeout",
-        "Run aborted: the room was inactive for too long. Start again with !dojo start <slug>.",
+        "Run aborted: the room was inactive for too long. Start again with !dojo start <systemSlug> <courseSlug>.",
       ).catch((error) => {
         logger.error("dojo inactivity abort failed", getRunLogFields(run, { error }));
       });
@@ -401,7 +401,8 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
     const database = await getDb();
     const playerIdentity = await resolvePlayerIdentity(message.user);
     logger.info("dojo command received", {
-      slug: command.slug,
+      systemSlug: command.systemSlug,
+      courseSlug: command.courseSlug,
       userId: playerIdentity.userId,
       username: playerIdentity.username,
     });
@@ -411,7 +412,7 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
       logger.warn("dojo active run rejected", {
         userId: playerIdentity.userId,
         username: playerIdentity.username,
-        existingCourse: existingRun.course.slug,
+        existingCourse: `${existingRun.course.danSystemSlug}/${existingRun.course.courseSlug}`,
       });
       await safeSendUserMessage(
         message.user,
@@ -420,16 +421,21 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
       return;
     }
 
-    const course = await getDanCourseBySlug(command.slug, database);
+    const course = await getDanCourseByRoute(
+      command.systemSlug,
+      command.courseSlug,
+      database,
+    );
     if (!course) {
-      logger.warn("dojo unknown slug", {
-        slug: command.slug,
+      logger.warn("dojo unknown route", {
+        systemSlug: command.systemSlug,
+        courseSlug: command.courseSlug,
         userId: playerIdentity.userId,
         username: playerIdentity.username,
       });
       await safeSendUserMessage(
         message.user,
-        `Unknown dan slug "${command.slug}".`,
+        `Unknown dan route "${command.systemSlug} ${command.courseSlug}".`,
       );
       return;
     }
@@ -455,7 +461,7 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
     try {
       await safeSendUserMessage(
         message.user,
-        `Creating multiplayer room for ${course.name}. Download the maps before joining: ${getCoursePageUrl(course.slug)}. Watch for an invite from BanchoBot.`,
+        `Creating multiplayer room for ${course.name}. Download the maps before joining: ${getCoursePageUrl(course.danSystemSlug, course.courseSlug)}. Watch for an invite from BanchoBot.`,
       );
 
       const lobbyChannel = await client.createLobby(`osu!dojo: ${course.name}`);
@@ -685,6 +691,7 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
     });
 
     const judgedMapResult = {
+      gameId: fetchedScore.gameId,
       beatmapId: beatmap.beatmapId,
       mods: ensureNoFailMods(beatmap.mods),
       passConditionType: beatmap.passConditionType,
@@ -798,7 +805,7 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
     await run.lobby.setMods(normalizeLobbyMods(beatmap.mods));
     await run.lobby.setSettings(
       TEAM_MODE_HEAD_TO_HEAD,
-      BanchoLobbyWinConditions.ScoreV2,
+      getLobbyWinCondition(run.course.scoreModel),
       1,
     );
   }
@@ -1031,6 +1038,7 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
         passed: plan.passed,
         startedAt: run.startedAt,
         completedAt: Date.now(),
+        matchId: run.lobby?.id ?? null,
         maps: run.mapResults,
       },
       await getDb(),
@@ -1191,6 +1199,12 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
   };
 }
 
+function getLobbyWinCondition(scoreModel: DanCourseDefinition["scoreModel"]) {
+  return scoreModel === "scorev1"
+    ? BanchoLobbyWinConditions.Score
+    : BanchoLobbyWinConditions.ScoreV2;
+}
+
 function normalizeLobbyMods(mods: string) {
   return BanchoMods.parseShortMods(
     ensureNoFailModTokens(parseCourseMods(validateCourseMods(mods))),
@@ -1251,9 +1265,9 @@ function defaultSleep(milliseconds: number) {
   });
 }
 
-function getCoursePageUrl(courseSlug: string) {
+function getCoursePageUrl(systemSlug: string, courseSlug: string) {
   const baseUrl = (process.env.DOJO_SITE_URL ?? "http://localhost:3000").replace(/\/$/, "");
-  return `${baseUrl}/dan/${encodeURIComponent(courseSlug)}`;
+  return `${baseUrl}/dan/${encodeURIComponent(systemSlug)}?course=${encodeURIComponent(courseSlug)}`;
 }
 
 function loadEnvFallback(filePath: string) {

@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import { integer, real, sqliteTable, text } from "drizzle-orm/sqlite-core";
-import type { PassConditionType } from "@/lib/domain";
+import type { DanScoreModel, PassConditionType } from "@/lib/domain";
 
 export const danSystems = sqliteTable("dan_systems", {
   id: text("id").primaryKey(),
@@ -15,9 +15,11 @@ export const dans = sqliteTable("dans", {
     .notNull()
     .references(() => danSystems.id),
   name: text("name").notNull(),
-  slug: text("slug").notNull().unique(),
+  legacySlug: text("slug"),
+  courseSlug: text("course_slug").notNull(),
   description: text("description").notNull().default(""),
   ordinal: integer("ordinal").notNull(),
+  scoreModel: text("score_model").$type<DanScoreModel>().notNull(),
   overallPassType: text("overall_pass_type").$type<PassConditionType | null>(),
   overallPassThreshold: real("overall_pass_threshold"),
 });
@@ -34,6 +36,12 @@ export const danBeatmaps = sqliteTable("dan_beatmaps", {
     .notNull(),
   passConditionThreshold: real("pass_condition_threshold").notNull(),
   ordinal: integer("ordinal").notNull(),
+  title: text("title").notNull().default(""),
+  artist: text("artist").notNull().default(""),
+  difficultyName: text("difficulty_name").notNull().default(""),
+  mapper: text("mapper").notNull().default(""),
+  coverUrl: text("cover_url").notNull().default(""),
+  annotations: text("annotations").notNull().default("[]"),
 });
 
 export const results = sqliteTable("results", {
@@ -46,6 +54,7 @@ export const results = sqliteTable("results", {
   passed: integer("passed", { mode: "boolean" }).notNull(),
   startedAt: integer("started_at").notNull(),
   completedAt: integer("completed_at").notNull(),
+  matchId: integer("match_id"),
 });
 
 export const mapResults = sqliteTable("map_results", {
@@ -53,6 +62,7 @@ export const mapResults = sqliteTable("map_results", {
   resultId: text("result_id")
     .notNull()
     .references(() => results.id),
+  gameId: integer("game_id"),
   beatmapId: integer("beatmap_id").notNull(),
   mods: text("mods").notNull(),
   passConditionType: text("pass_condition_type")

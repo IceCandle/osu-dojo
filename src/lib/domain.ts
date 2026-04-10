@@ -1,4 +1,5 @@
-export type PassConditionType = "acc" | "sv2";
+export type PassConditionType = "acc" | "score";
+export type DanScoreModel = "scorev1" | "scorev2";
 
 export type AccuracyRuleset = "osu" | string;
 export type AccuracyClient = "stable" | "lazer" | string;
@@ -20,16 +21,24 @@ export interface DanBeatmapDefinition {
   passConditionType: PassConditionType;
   passConditionThreshold: number;
   ordinal: number;
+  title: string;
+  artist: string;
+  difficultyName: string;
+  mapper: string;
+  coverUrl: string;
+  annotations: string[];
 }
 
 export interface DanCourseDefinition {
   id: string;
   danSystemId: string;
   danSystemName: string;
+  danSystemSlug: string;
   name: string;
-  slug: string;
+  courseSlug: string;
   description: string;
   ordinal: number;
+  scoreModel: DanScoreModel;
   overallPassType: PassConditionType | null;
   overallPassThreshold: number | null;
   beatmaps: DanBeatmapDefinition[];
@@ -45,6 +54,7 @@ export interface LegacyStableScoreStats {
 export interface JudgedMapResult extends LegacyStableScoreStats {
   id: string;
   resultId: string;
+  gameId: number | null;
   beatmapId: number;
   mods: string;
   passConditionType: PassConditionType;
@@ -65,4 +75,5 @@ export interface StoredRunResult {
   passed: boolean;
   startedAt: number;
   completedAt: number;
+  matchId: number | null;
 }

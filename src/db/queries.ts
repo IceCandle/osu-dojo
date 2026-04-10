@@ -3,6 +3,7 @@ import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { getDatabase, type AppDatabase } from "@/db/client";
 import { danBeatmaps, dans, danSystems, mapResults, results } from "@/db/schema";
 import type {
+  DanBeatmapDefinition,
   DanCourseDefinition,
   JudgedMapResult,
   StoredRunResult,
@@ -24,9 +25,10 @@ export async function listDanSystemsWithDans(db?: AppDatabase) {
       systemDescription: danSystems.description,
       danId: dans.id,
       danName: dans.name,
-      danSlug: dans.slug,
+      courseSlug: dans.courseSlug,
       danDescription: dans.description,
       danOrdinal: dans.ordinal,
+      scoreModel: dans.scoreModel,
       overallPassType: dans.overallPassType,
       overallPassThreshold: dans.overallPassThreshold,
     })
@@ -44,9 +46,10 @@ export async function listDanSystemsWithDans(db?: AppDatabase) {
       dans: Array<{
         id: string;
         name: string;
-        slug: string;
+        courseSlug: string;
         description: string;
         ordinal: number;
+        scoreModel: DanCourseDefinition["scoreModel"];
         overallPassType: DanCourseDefinition["overallPassType"];
         overallPassThreshold: number | null;
       }>;
@@ -54,9 +57,8 @@ export async function listDanSystemsWithDans(db?: AppDatabase) {
   >();
 
   for (const row of rows) {
-    const existing = systems.get(row.systemId);
     const system =
-      existing ??
+      systems.get(row.systemId) ??
       {
         id: row.systemId,
         name: row.systemName,
@@ -69,9 +71,10 @@ export async function listDanSystemsWithDans(db?: AppDatabase) {
       system.dans.push({
         id: row.danId,
         name: row.danName ?? "",
-        slug: row.danSlug ?? "",
+        courseSlug: row.courseSlug ?? "",
         description: row.danDescription ?? "",
         ordinal: row.danOrdinal ?? 0,
+        scoreModel: row.scoreModel ?? "scorev2",
         overallPassType: row.overallPassType,
         overallPassThreshold: row.overallPassThreshold,
       });
@@ -83,8 +86,85 @@ export async function listDanSystemsWithDans(db?: AppDatabase) {
   return [...systems.values()];
 }
 
-export async function getDanCourseBySlug(
-  slug: string,
+export async function listDanCoursesBySystemSlug(
+  systemSlug: string,
+  db?: AppDatabase,
+): Promise<DanCourseDefinition[]> {
+  const database = await useDb(db);
+  const rows = await database
+    .select({
+      danId: dans.id,
+      danName: dans.name,
+      courseSlug: dans.courseSlug,
+      danDescription: dans.description,
+      danOrdinal: dans.ordinal,
+      scoreModel: dans.scoreModel,
+      overallPassType: dans.overallPassType,
+      overallPassThreshold: dans.overallPassThreshold,
+      systemId: danSystems.id,
+      systemName: danSystems.name,
+      systemSlug: danSystems.slug,
+    })
+    .from(dans)
+    .innerJoin(danSystems, eq(dans.danSystemId, danSystems.id))
+    .where(eq(danSystems.slug, systemSlug))
+    .orderBy(asc(dans.ordinal));
+
+  if (rows.length === 0) {
+    return [];
+  }
+
+  const beatmapRows = await database
+    .select({
+      danId: danBeatmaps.danId,
+      id: danBeatmaps.id,
+      beatmapId: danBeatmaps.beatmapId,
+      mods: danBeatmaps.mods,
+      passConditionType: danBeatmaps.passConditionType,
+      passConditionThreshold: danBeatmaps.passConditionThreshold,
+      ordinal: danBeatmaps.ordinal,
+      title: danBeatmaps.title,
+      artist: danBeatmaps.artist,
+      difficultyName: danBeatmaps.difficultyName,
+      mapper: danBeatmaps.mapper,
+      coverUrl: danBeatmaps.coverUrl,
+      annotations: danBeatmaps.annotations,
+    })
+    .from(danBeatmaps)
+    .where(
+      inArray(
+        danBeatmaps.danId,
+        rows.map((row) => row.danId),
+      ),
+    )
+    .orderBy(asc(danBeatmaps.ordinal));
+
+  const beatmapsByDanId = new Map<string, typeof beatmapRows>();
+  for (const row of beatmapRows) {
+    const bucket = beatmapsByDanId.get(row.danId) ?? [];
+    bucket.push(row);
+    beatmapsByDanId.set(row.danId, bucket);
+  }
+
+  return rows.map((row) => ({
+    id: row.danId,
+    danSystemId: row.systemId,
+    danSystemName: row.systemName,
+    danSystemSlug: row.systemSlug,
+    name: row.danName,
+    courseSlug: row.courseSlug,
+    description: row.danDescription,
+    ordinal: row.danOrdinal,
+    scoreModel: row.scoreModel ?? "scorev2",
+    overallPassType: row.overallPassType,
+    overallPassThreshold: row.overallPassThreshold,
+    beatmaps: (beatmapsByDanId.get(row.danId) ?? []).map(parseBeatmapRow),
+  }));
+}
+
+export async function getDanCourseByRoute(
+  systemSlug: string,
+  courseSlug: string,
   db?: AppDatabase,
 ): Promise<DanCourseDefinition | null> {
   const database = await useDb(db);
@@ -92,24 +172,26 @@ export async function getDanCourseBySlug(
     .select({
       danId: dans.id,
       danName: dans.name,
-      danSlug: dans.slug,
+      courseSlug: dans.courseSlug,
       danDescription: dans.description,
       danOrdinal: dans.ordinal,
+      scoreModel: dans.scoreModel,
       overallPassType: dans.overallPassType,
       overallPassThreshold: dans.overallPassThreshold,
       systemId: danSystems.id,
       systemName: danSystems.name,
+      systemSlug: danSystems.slug,
     })
     .from(dans)
     .innerJoin(danSystems, eq(dans.danSystemId, danSystems.id))
-    .where(eq(dans.slug, slug));
+    .where(and(eq(danSystems.slug, systemSlug), eq(dans.courseSlug, courseSlug)));
 
   const row = rows[0];
   if (!row) {
     return null;
   }
 
-  const beatmaps = await database
+  const beatmapRows = await database
     .select({
       id: danBeatmaps.id,
       beatmapId: danBeatmaps.beatmapId,
@@ -117,6 +199,12 @@ export async function getDanCourseBySlug(
       passConditionType: danBeatmaps.passConditionType,
       passConditionThreshold: danBeatmaps.passConditionThreshold,
       ordinal: danBeatmaps.ordinal,
+      title: danBeatmaps.title,
+      artist: danBeatmaps.artist,
+      difficultyName: danBeatmaps.difficultyName,
+      mapper: danBeatmaps.mapper,
+      coverUrl: danBeatmaps.coverUrl,
+      annotations: danBeatmaps.annotations,
     })
     .from(danBeatmaps)
     .where(eq(danBeatmaps.danId, row.danId))
@@ -126,19 +214,25 @@ export async function getDanCourseBySlug(
     id: row.danId,
     danSystemId: row.systemId,
     danSystemName: row.systemName,
+    danSystemSlug: row.systemSlug,
     name: row.danName,
-    slug: row.danSlug,
+    courseSlug: row.courseSlug,
     description: row.danDescription,
     ordinal: row.danOrdinal,
+    scoreModel: row.scoreModel ?? "scorev2",
     overallPassType: row.overallPassType,
     overallPassThreshold: row.overallPassThreshold,
-    beatmaps,
+    beatmaps: beatmapRows.map(parseBeatmapRow),
   };
 }
 
-export async function listDanResultsBySlug(slug: string, db?: AppDatabase) {
+export async function listDanResultsByRoute(
+  systemSlug: string,
+  courseSlug: string,
+  db?: AppDatabase,
+) {
   const database = await useDb(db);
-  const course = await getDanCourseBySlug(slug, database);
+  const course = await getDanCourseByRoute(systemSlug, courseSlug, database);
 
   if (!course) {
     return null;
@@ -149,10 +243,9 @@ export async function listDanResultsBySlug(slug: string, db?: AppDatabase) {
       id: results.id,
       userId: results.userId,
       username: results.username,
-      danId: results.danId,
       passed: results.passed,
-      startedAt: results.startedAt,
       completedAt: results.completedAt,
+      matchId: results.matchId,
     })
     .from(results)
     .where(eq(results.danId, course.id))
@@ -163,19 +256,7 @@ export async function listDanResultsBySlug(slug: string, db?: AppDatabase) {
     return { course, results: [] };
   }
 
-  const resultIds = resultRows.map((row) => row.id);
-  const mapRows = await database
-    .select()
-    .from(mapResults)
-    .where(inArray(mapResults.resultId, resultIds))
-    .orderBy(asc(mapResults.ordinal), asc(mapResults.createdAt));
-
-  const mapsByResultId = new Map<string, typeof mapRows>();
-  for (const row of mapRows) {
-    const bucket = mapsByResultId.get(row.resultId) ?? [];
-    bucket.push(row);
-    mapsByResultId.set(row.resultId, bucket);
-  }
+  const mapsByResultId = await getMapsByResultId(resultRows.map((row) => row.id), database);
 
   return {
     course,
@@ -190,6 +271,86 @@ export async function listDanResultsBySlug(slug: string, db?: AppDatabase) {
   };
 }
 
+export async function getRankingByRoute(
+  systemSlug: string,
+  courseSlug: string,
+  db?: AppDatabase,
+) {
+  const database = await useDb(db);
+  const course = await getDanCourseByRoute(systemSlug, courseSlug, database);
+
+  if (!course) {
+    return null;
+  }
+
+  return getRankingForCourse(course, database);
+}
+
+export async function getRankingForCourse(
+  course: DanCourseDefinition,
+  db?: AppDatabase,
+) {
+  const database = await useDb(db);
+
+  const resultRows = await database
+    .select({
+      id: results.id,
+      userId: results.userId,
+      username: results.username,
+      passed: results.passed,
+      completedAt: results.completedAt,
+      matchId: results.matchId,
+    })
+    .from(results)
+    .where(eq(results.danId, course.id));
+
+  if (resultRows.length === 0) {
+    return { course, results: [] };
+  }
+
+  const mapsByResultId = await getMapsByResultId(resultRows.map((row) => row.id), database);
+
+  const allSortedResults = resultRows
+    .map((row) => {
+      const maps = mapsByResultId.get(row.id) ?? [];
+      const status = deriveRunStatus(row.passed, maps, course.beatmaps.length);
+
+      return {
+        id: row.id,
+        username: row.username,
+        userId: row.userId,
+        completedAt: row.completedAt,
+        matchId: row.matchId,
+        status,
+        totalScore: sum(maps.map((map) => map.score)),
+        summedAccuracy:
+          status === "pass"
+            ? sum(maps.map((map) => map.accuracy))
+            : sum(maps.filter((map) => map.passed).map((map) => map.accuracy)),
+        maps,
+      };
+    })
+    .sort((left, right) => compareRankingRows(left, right, course.scoreModel));
+
+  const seenUserIds = new Set<number>();
+  return {
+    course,
+    results: allSortedResults
+      .filter((row) => {
+        if (seenUserIds.has(row.userId)) {
+          return false;
+        }
+
+        seenUserIds.add(row.userId);
+        return true;
+      })
+      .map((row, index) => ({
+        ...row,
+        rank: index + 1,
+      })),
+  };
+}
+
 export async function storeDanRunResult(
   input: {
     userId: number;
@@ -198,6 +359,7 @@ export async function storeDanRunResult(
     passed: boolean;
     startedAt: number;
     completedAt: number;
+    matchId?: number | null;
     maps: Omit<JudgedMapResult, "id" | "resultId">[];
   },
   db?: AppDatabase,
@@ -212,6 +374,7 @@ export async function storeDanRunResult(
     passed: input.passed,
     startedAt: input.startedAt,
     completedAt: input.completedAt,
+    matchId: input.matchId ?? null,
   } satisfies StoredRunResult;
 
   database.transaction((tx) => {
@@ -220,6 +383,7 @@ export async function storeDanRunResult(
       input.maps.map((map) => ({
         id: randomUUID(),
         resultId,
+        gameId: map.gameId,
         beatmapId: map.beatmapId,
         mods: map.mods,
         passConditionType: map.passConditionType,
@@ -250,6 +414,64 @@ export async function storeDanRunResult(
   };
 }
 
+async function getMapsByResultId(resultIds: string[], database: AppDatabase) {
+  const mapRows = await database
+    .select()
+    .from(mapResults)
+    .where(inArray(mapResults.resultId, resultIds))
+    .orderBy(asc(mapResults.ordinal), asc(mapResults.createdAt));
+
+  const mapsByResultId = new Map<string, typeof mapRows>();
+  for (const row of mapRows) {
+    const bucket = mapsByResultId.get(row.resultId) ?? [];
+    bucket.push(row);
+    mapsByResultId.set(row.resultId, bucket);
+  }
+
+  return mapsByResultId;
+}
+
+function parseBeatmapRow(row: {
+  id: string;
+  beatmapId: number;
+  mods: string;
+  passConditionType: DanBeatmapDefinition["passConditionType"];
+  passConditionThreshold: number;
+  ordinal: number;
+  title: string;
+  artist: string;
+  difficultyName: string;
+  mapper: string;
+  coverUrl: string;
+  annotations: string;
+}): DanBeatmapDefinition {
+  return {
+    id: row.id,
+    beatmapId: row.beatmapId,
+    mods: row.mods,
+    passConditionType: row.passConditionType,
+    passConditionThreshold: row.passConditionThreshold,
+    ordinal: row.ordinal,
+    title: row.title,
+    artist: row.artist,
+    difficultyName: row.difficultyName,
+    mapper: row.mapper,
+    coverUrl: row.coverUrl,
+    annotations: parseAnnotations(row.annotations),
+  };
+}
+
+function parseAnnotations(value: string): string[] {
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) && parsed.every((entry) => typeof entry === "string")
+      ? parsed
+      : [];
+  } catch {
+    return [];
+  }
+}
+
 function deriveRunStatus(
   passed: boolean,
   maps: Array<{ passed: boolean }>,
@@ -268,4 +490,58 @@ function deriveRunStatus(
   }
 
   return "dnf";
+}
+
+function compareRankingRows(
+  left: {
+    id: string;
+    status: DerivedRunStatus;
+    summedAccuracy: number;
+    totalScore: number;
+    completedAt: number;
+  },
+  right: {
+    id: string;
+    status: DerivedRunStatus;
+    summedAccuracy: number;
+    totalScore: number;
+    completedAt: number;
+  },
+  scoreModel: DanCourseDefinition["scoreModel"],
+): number {
+  const statusComparison = getStatusWeight(left.status) - getStatusWeight(right.status);
+  if (statusComparison !== 0) {
+    return statusComparison;
+  }
+
+  const metricComparison =
+    scoreModel === "scorev1"
+      ? compareNumbersDesc(left.summedAccuracy, right.summedAccuracy)
+      : compareNumbersDesc(left.totalScore, right.totalScore);
+
+  if (metricComparison !== 0) {
+    return metricComparison;
+  }
+
+  return compareNumbersDesc(left.completedAt, right.completedAt) || left.id.localeCompare(right.id);
+}
+
+function getStatusWeight(status: DerivedRunStatus): number {
+  if (status === "pass") {
+    return 0;
+  }
+
+  if (status === "fail") {
+    return 1;
+  }
+
+  return 2;
+}
+
+function compareNumbersDesc(left: number, right: number): number {
+  return right - left;
+}
+
+function sum(values: number[]): number {
+  return values.reduce((total, value) => total + value, 0);
 }

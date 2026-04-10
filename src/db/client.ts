@@ -31,11 +31,14 @@ CREATE TABLE IF NOT EXISTS dans (
   id TEXT PRIMARY KEY,
   dan_system_id TEXT NOT NULL REFERENCES dan_systems(id),
   name TEXT NOT NULL,
-  slug TEXT NOT NULL UNIQUE,
+  slug TEXT,
+  course_slug TEXT NOT NULL,
   description TEXT NOT NULL DEFAULT '',
   ordinal INTEGER NOT NULL,
+  score_model TEXT NOT NULL DEFAULT 'scorev2',
   overall_pass_type TEXT,
-  overall_pass_threshold REAL
+  overall_pass_threshold REAL,
+  UNIQUE(dan_system_id, course_slug)
 );
 
 CREATE TABLE IF NOT EXISTS dan_beatmaps (
@@ -45,7 +48,13 @@ CREATE TABLE IF NOT EXISTS dan_beatmaps (
   mods TEXT NOT NULL,
   pass_condition_type TEXT NOT NULL,
   pass_condition_threshold REAL NOT NULL,
-  ordinal INTEGER NOT NULL
+  ordinal INTEGER NOT NULL,
+  title TEXT NOT NULL DEFAULT '',
+  artist TEXT NOT NULL DEFAULT '',
+  difficulty_name TEXT NOT NULL DEFAULT '',
+  mapper TEXT NOT NULL DEFAULT '',
+  cover_url TEXT NOT NULL DEFAULT '',
+  annotations TEXT NOT NULL DEFAULT '[]'
 );
 
 CREATE TABLE IF NOT EXISTS results (
@@ -55,12 +64,14 @@ CREATE TABLE IF NOT EXISTS results (
   dan_id TEXT NOT NULL REFERENCES dans(id),
   passed INTEGER NOT NULL,
   started_at INTEGER NOT NULL,
-  completed_at INTEGER NOT NULL
+  completed_at INTEGER NOT NULL,
+  match_id INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS map_results (
   id TEXT PRIMARY KEY,
   result_id TEXT NOT NULL REFERENCES results(id),
+  game_id INTEGER,
   beatmap_id INTEGER NOT NULL,
   mods TEXT NOT NULL,
   pass_condition_type TEXT NOT NULL,
@@ -99,6 +110,7 @@ async function initializeDatabaseBundle(
   const sqlite = new Database(resolveDatabaseSource(url));
   sqlite.pragma("foreign_keys = ON");
   sqlite.exec(CREATE_TABLES_SQL);
+  migrateLegacySchema(sqlite);
 
   const db = drizzle(sqlite, { schema }) as AppDatabase;
   await seedDatabase(db);
@@ -116,4 +128,59 @@ export async function getDatabase(): Promise<AppDatabase> {
 
 export async function createTestDatabase(url: string): Promise<DatabaseBundle> {
   return initializeDatabaseBundle(url);
+}
+
+function migrateLegacySchema(sqlite: BetterSqliteConnection) {
+  const migrate = sqlite.transaction(() => {
+    ensureColumn(sqlite, "dans", "course_slug", "TEXT");
+    ensureColumn(sqlite, "dans", "score_model", "TEXT");
+    ensureColumn(sqlite, "results", "match_id", "INTEGER");
+    ensureColumn(sqlite, "map_results", "game_id", "INTEGER");
+    ensureColumn(sqlite, "dan_beatmaps", "title", "TEXT NOT NULL DEFAULT ''");
+    ensureColumn(sqlite, "dan_beatmaps", "artist", "TEXT NOT NULL DEFAULT ''");
+    ensureColumn(sqlite, "dan_beatmaps", "difficulty_name", "TEXT NOT NULL DEFAULT ''");
+    ensureColumn(sqlite, "dan_beatmaps", "mapper", "TEXT NOT NULL DEFAULT ''");
+    ensureColumn(sqlite, "dan_beatmaps", "cover_url", "TEXT NOT NULL DEFAULT ''");
+    ensureColumn(sqlite, "dan_beatmaps", "annotations", "TEXT NOT NULL DEFAULT '[]'");
+
+    sqlite.prepare("UPDATE dans SET course_slug = slug WHERE course_slug IS NULL").run();
+    sqlite
+      .prepare("UPDATE dans SET score_model = 'scorev2' WHERE score_model IS NULL")
+      .run();
+    sqlite
+      .prepare("UPDATE dans SET overall_pass_type = 'score' WHERE overall_pass_type = 'sv2'")
+      .run();
+    sqlite
+      .prepare(
+        "UPDATE dan_beatmaps SET pass_condition_type = 'score' WHERE pass_condition_type = 'sv2'",
+      )
+      .run();
+    sqlite
+      .prepare(
+        "UPDATE map_results SET pass_condition_type = 'score' WHERE pass_condition_type = 'sv2'",
+      )
+      .run();
+    sqlite.prepare(
+      "CREATE UNIQUE INDEX IF NOT EXISTS dans_system_course_unique ON dans(dan_system_id, course_slug)",
+    ).run();
+  });
+
+  migrate();
+}
+
+function ensureColumn(
+  sqlite: BetterSqliteConnection,
+  tableName: string,
+  columnName: string,
+  definition: string,
+) {
+  const columns = sqlite
+    .prepare(`PRAGMA table_info(${tableName})`)
+    .all() as Array<{ name: string }>;
+
+  if (columns.some((column) => column.name === columnName)) {
+    return;
+  }
+
+  sqlite.prepare(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${definition}`).run();
 }

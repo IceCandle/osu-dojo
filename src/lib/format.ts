@@ -1,4 +1,4 @@
-import type { PassConditionType } from "@/lib/domain";
+import type { DanScoreModel, PassConditionType } from "@/lib/domain";
 
 export function formatPercentage(value: number): string {
   return `${value.toFixed(2)}%`;
@@ -14,7 +14,7 @@ export function formatCondition(
 ): string {
   return type === "acc"
     ? `${formatPercentage(threshold)} accuracy`
-    : `${formatInteger(threshold)} ScoreV2`;
+    : `${formatInteger(threshold)} score`;
 }
 
 export function formatConditionValue(
@@ -31,6 +31,16 @@ export function formatTimestamp(timestamp: number): string {
   });
 }
 
+export function formatDate(timestamp: number): string {
+  return new Date(timestamp).toLocaleDateString("en-US", {
+    dateStyle: "medium",
+  });
+}
+
 export function formatMods(mods: string): string {
   return mods.trim() === "" ? "NM" : mods;
+}
+
+export function formatScoreModel(scoreModel: DanScoreModel): string {
+  return scoreModel === "scorev1" ? "ScoreV1" : "ScoreV2";
 }

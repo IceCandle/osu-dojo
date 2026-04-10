@@ -50,14 +50,146 @@ a {
   text-decoration: none;
 }
 
+button,
+input {
+  font: inherit;
+}
+
 code {
   font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
 }
 
 .page-shell {
-  width: min(1120px, calc(100vw - 32px));
+  width: min(1220px, calc(100vw - 32px));
   margin: 0 auto;
-  padding: 48px 0 88px;
+  padding: 34px 0 88px;
+}
+
+.site-header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  padding: 16px 16px 0;
+  backdrop-filter: blur(20px);
+}
+
+.site-header-shell {
+  width: min(1220px, calc(100vw - 32px));
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  gap: 18px;
+  align-items: center;
+  padding: 14px 18px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 24px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.08), transparent 52%),
+    rgba(18, 13, 10, 0.78);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.24);
+}
+
+.site-brand {
+  display: grid;
+  gap: 2px;
+}
+
+.site-brand-mark,
+.site-nav-link,
+.site-action,
+.site-search input,
+.site-brand-copy,
+.cta-link,
+.system-card-meta span,
+.system-card-link,
+.course-heading-meta span,
+.difficulty-chip,
+.mod-chip,
+.ranking-player-date,
+.ranking-metric-subline {
+  font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+}
+
+.site-brand-mark {
+  color: var(--text);
+  font-size: 17px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.site-brand-copy {
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.site-nav {
+  display: flex;
+  gap: 10px;
+}
+
+.site-nav-link,
+.site-action,
+.cta-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 42px;
+  padding: 0 16px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.035);
+  color: var(--text);
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.site-nav-link {
+  background: rgba(255, 179, 71, 0.12);
+  border-color: rgba(255, 179, 71, 0.2);
+  color: var(--accent);
+}
+
+.site-header-tools {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) auto auto;
+  gap: 12px;
+  align-items: center;
+  justify-self: end;
+  width: 100%;
+  max-width: 620px;
+}
+
+.site-search {
+  display: block;
+}
+
+.site-search input {
+  width: 100%;
+  min-height: 42px;
+  padding: 0 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.035);
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.site-action {
+  cursor: default;
+}
+
+.site-action:disabled,
+.site-search input:read-only {
+  opacity: 1;
+}
+
+.site-action-primary {
+  border-color: rgba(255, 179, 71, 0.26);
+  background: linear-gradient(180deg, rgba(255, 179, 71, 0.16), rgba(255, 123, 57, 0.1));
+  color: var(--accent);
 }
 
 .masthead,
@@ -152,6 +284,10 @@ code {
   margin-top: 12px;
 }
 
+.masthead-actions {
+  margin-top: 24px;
+}
+
 .scope-badge {
   display: inline-flex;
   margin-bottom: 10px;
@@ -169,6 +305,11 @@ code {
   margin-top: 28px;
 }
 
+.dan-overview-header .detail-stats strong {
+  font-size: 18px;
+  line-height: 1.4;
+}
+
 .system-card,
 .sequence-card,
 .result-card,
@@ -183,6 +324,13 @@ code {
 .beatmap-card h3 {
   margin: 0;
   font-size: 28px;
+}
+
+.directory-heading {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(280px, 0.8fr);
+  gap: 24px;
+  align-items: end;
 }
 
 .dan-list,
@@ -232,6 +380,11 @@ code {
   background: rgba(255, 179, 71, 0.06);
 }
 
+.cta-link:hover,
+.site-nav-link:hover {
+  transform: translateY(-2px);
+}
+
 .dan-link strong,
 .result-user {
   display: block;
@@ -255,6 +408,55 @@ code {
   gap: 6px;
 }
 
+.systems-grid-index {
+  align-items: stretch;
+}
+
+.system-link-card {
+  display: block;
+}
+
+.system-card-index {
+  height: 100%;
+  display: grid;
+  gap: 24px;
+  transition:
+    transform 180ms ease,
+    border-color 180ms ease,
+    background 180ms ease;
+}
+
+.system-link-card:hover .system-card-index {
+  transform: translateY(-4px);
+  border-color: rgba(255, 179, 71, 0.24);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.06), transparent 24%),
+    rgba(38, 25, 18, 0.88);
+}
+
+.system-card-meta {
+  display: grid;
+  grid-template-columns: auto auto;
+  gap: 18px;
+  align-items: end;
+}
+
+.system-card-meta div {
+  display: grid;
+  gap: 6px;
+}
+
+.system-card-meta strong {
+  font-size: 30px;
+}
+
+.system-card-link {
+  justify-self: end;
+  color: var(--accent);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
 .detail-stats div {
   padding-top: 16px;
   border-top: 1px solid var(--line);
@@ -271,10 +473,33 @@ code {
   margin-top: 24px;
 }
 
+.results-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.72fr);
+  gap: 24px;
+  margin-top: 24px;
+  align-items: start;
+}
+
 .section-heading {
   grid-template-columns: 1fr auto;
   align-items: center;
   margin-bottom: 22px;
+}
+
+.course-section-heading {
+  align-items: start;
+}
+
+.course-heading-meta {
+  display: grid;
+  gap: 10px;
+  justify-items: end;
+}
+
+.course-heading-meta span {
+  color: var(--muted);
+  font-size: 13px;
 }
 
 .results-link,
@@ -295,6 +520,105 @@ code {
   background: rgba(255, 255, 255, 0.025);
 }
 
+.course-requirement,
+.stats-grid div,
+.stage-summary-row {
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.course-requirement {
+  display: grid;
+  gap: 8px;
+  padding: 18px;
+  border-radius: 20px;
+}
+
+.course-requirement span,
+.stats-grid span,
+.stage-label,
+.ranking-table th,
+.ranking-table td {
+  font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+}
+
+.course-requirement span,
+.stats-grid span,
+.stage-label {
+  color: var(--muted);
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.course-requirement strong,
+.stats-grid strong {
+  font-size: 24px;
+}
+
+.stage-summary-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.stage-summary-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 16px;
+  align-items: center;
+  min-width: 280px;
+  padding: 16px 18px;
+  border-radius: 22px;
+  transition:
+    transform 180ms ease,
+    border-color 180ms ease,
+    background 180ms ease;
+}
+
+.stage-summary-row strong {
+  font-size: 20px;
+}
+
+.stage-summary-row.is-active {
+  border-color: rgba(255, 179, 71, 0.24);
+  background: linear-gradient(180deg, rgba(255, 179, 71, 0.12), rgba(255, 255, 255, 0.025));
+}
+
+.stage-summary-row:hover {
+  transform: translateY(-2px);
+}
+
+.stage-label {
+  margin: 0 0 8px;
+}
+
+.stage-summary-meta {
+  display: grid;
+  justify-items: end;
+  gap: 8px;
+}
+
+.stage-summary-meta span {
+  color: var(--muted);
+  font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 13px;
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+}
+
+.stats-grid div {
+  display: grid;
+  gap: 8px;
+  padding: 18px;
+  border-radius: 20px;
+}
+
 .beatmap-order {
   width: 52px;
   height: 52px;
@@ -304,6 +628,10 @@ code {
   background: rgba(255, 179, 71, 0.12);
   color: var(--accent);
   font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+}
+
+.detail-sequence-card {
+  scroll-margin-top: 3rem;
 }
 
 .beatmap-body p,
@@ -349,22 +677,287 @@ code {
   color: var(--dnf);
 }
 
+.ranking-section {
+  margin-top: 24px;
+  position: sticky;
+  top: 108px;
+}
+
+.compact-empty-card {
+  padding: 22px;
+}
+
+.ranking-table-wrap {
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.ranking-table {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+}
+
+.ranking-table th,
+.ranking-table td {
+  padding: 14px 12px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+}
+
+.ranking-table th {
+  position: sticky;
+  top: 0;
+  background: var(--panel);
+  color: var(--muted);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.ranking-table tbody tr:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.ranking-table tr:last-child td {
+  border-bottom: none;
+}
+
+.ranking-rank-cell {
+  width: 56px;
+}
+
+.ranking-player-cell,
+.ranking-metric-cell {
+  display: grid;
+  gap: 4px;
+}
+
+.ranking-player-name {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 16px;
+}
+
+.ranking-player-date,
+.ranking-metric-subline {
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.ranking-metric-link {
+  color: var(--accent);
+}
+
+.dan-stage-section {
+  margin-top: 24px;
+}
+
+.dan-stage-stack {
+  display: grid;
+  gap: 18px;
+}
+
+.dan-stage-card {
+  display: grid;
+  grid-template-columns: 190px minmax(0, 1fr);
+  gap: 22px;
+  align-items: stretch;
+  padding: 18px;
+  border-radius: 26px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04), transparent 30%),
+    rgba(255, 255, 255, 0.025);
+}
+
+.dan-stage-cover-wrap {
+  position: relative;
+  display: block;
+  min-height: 120px;
+}
+
+.dan-stage-cover {
+  width: 100%;
+  height: 100%;
+  min-height: 120px;
+  border-radius: 20px;
+  object-fit: cover;
+  display: block;
+}
+
+.dan-stage-cover-placeholder {
+  background:
+    linear-gradient(135deg, rgba(255, 179, 71, 0.22), rgba(255, 123, 57, 0.16)),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(14, 10, 8, 0.7));
+}
+
+.dan-stage-cover-wrap .beatmap-order {
+  position: absolute;
+  left: 14px;
+  top: 14px;
+  backdrop-filter: blur(8px);
+}
+
+.dan-stage-body {
+  display: grid;
+  gap: 18px;
+}
+
+.dan-stage-heading {
+  display: block;
+}
+
+.dan-stage-heading h3,
+.dan-stage-condition,
+.dan-stage-subline {
+  margin: 0;
+}
+
+.dan-stage-title-wrap {
+  display: grid;
+  gap: 10px;
+}
+
+.dan-stage-kicker-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.difficulty-chip,
+.mod-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 32px;
+  padding: 0 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.difficulty-chip {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--text);
+}
+
+.mod-chip {
+  background: rgba(255, 179, 71, 0.16);
+  border: 1px solid rgba(255, 179, 71, 0.24);
+  color: var(--accent);
+}
+
+.dan-stage-heading h3 {
+  font-size: clamp(24px, 4vw, 34px);
+  line-height: 1.02;
+  letter-spacing: -0.03em;
+}
+
+.dan-stage-subline {
+  margin-top: 8px;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.dan-stage-note {
+  color: var(--accent);
+}
+
+.dan-stage-footer {
+  display: grid;
+  gap: 14px;
+}
+
+.dan-stage-condition {
+  color: var(--text);
+  font-size: 16px;
+}
+
+.annotation-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.annotation-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 7px 12px;
+  border-radius: 999px;
+  background: rgba(255, 179, 71, 0.14);
+  border: 1px solid rgba(255, 179, 71, 0.18);
+  color: var(--accent);
+  font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.numeric-cell {
+  text-align: right;
+}
+
 @media (max-width: 900px) {
+  .site-header {
+    padding-top: 12px;
+  }
+
+  .site-header-shell,
+  .site-header-tools,
+  .directory-heading,
+  .results-layout,
   .masthead-grid,
   .section-heading,
   .result-header,
   .dan-link,
   .beatmap-card,
-  .result-map-row {
+  .dan-stage-card,
+  .dan-stage-heading,
+  .result-map-row,
+  .stage-summary-row {
     grid-template-columns: 1fr;
   }
 
   .beatmap-side,
   .dan-link-meta,
+  .stage-summary-meta,
+  .course-heading-meta,
   .status-pass,
   .status-fail,
   .status-dnf {
     justify-items: start;
     justify-self: start;
+  }
+
+  .ranking-section {
+    position: static;
+  }
+
+  .ranking-table-wrap {
+    overflow-x: auto;
+  }
+
+  .ranking-table {
+    min-width: 520px;
+  }
+
+  .system-card-meta,
+  .stage-summary-row {
+    grid-template-columns: 1fr;
+  }
+
+  .stage-summary-row {
+    min-width: 100%;
   }
 }

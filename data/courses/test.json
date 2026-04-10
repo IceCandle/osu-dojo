@@ -7,9 +7,10 @@
     {
       "id": "dan-test-1dan",
       "name": "test-1",
-      "slug": "test-1dan",
+      "courseSlug": "test-1dan",
       "description": "Two-map smoke-test sample course with short beatmaps and zeroed thresholds for quick manual verification.",
       "ordinal": 1,
+      "scoreModel": "scorev2",
       "overallPassType": "acc",
       "overallPassThreshold": 20,
       "beatmaps": [
@@ -19,15 +20,27 @@
           "mods": "HR",
           "passConditionType": "acc",
           "passConditionThreshold": 10,
-          "ordinal": 1
+          "ordinal": 1,
+          "title": "test stage one",
+          "artist": "osu!dojo",
+          "difficultyName": "Opening",
+          "mapper": "staff",
+          "coverUrl": "https://assets.ppy.sh/beatmaps/1/covers/cover.jpg",
+          "annotations": ["aim", "opening consistency"]
         },
         {
           "id": "beatmap-test-2",
           "beatmapId": 259,
           "mods": "",
-          "passConditionType": "sv2",
+          "passConditionType": "score",
           "passConditionThreshold": 10000,
-          "ordinal": 2
+          "ordinal": 2,
+          "title": "test stage two",
+          "artist": "osu!dojo",
+          "difficultyName": "Closer",
+          "mapper": "staff",
+          "coverUrl": "https://assets.ppy.sh/beatmaps/2/covers/cover.jpg",
+          "annotations": ["speed", "final push"]
         }
       ]
     }

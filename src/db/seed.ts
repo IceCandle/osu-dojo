@@ -15,6 +15,7 @@ const seedResult = {
   passed: true,
   startedAt: now - 180_000,
   completedAt: now,
+  matchId: 4_242,
 };
 
 type SeedDatabase = BetterSQLite3Database<typeof schema>;
@@ -50,9 +51,11 @@ export async function seedDatabase(
           id: dan.id,
           danSystemId: system.id,
           name: dan.name,
-          slug: dan.slug,
+          legacySlug: dan.courseSlug,
+          courseSlug: dan.courseSlug,
           description: dan.description,
           ordinal: dan.ordinal,
+          scoreModel: dan.scoreModel,
           overallPassType: dan.overallPassType,
           overallPassThreshold: dan.overallPassThreshold,
         })
@@ -61,9 +64,11 @@ export async function seedDatabase(
           set: {
             danSystemId: system.id,
             name: dan.name,
-            slug: dan.slug,
+            legacySlug: dan.courseSlug,
+            courseSlug: dan.courseSlug,
             description: dan.description,
             ordinal: dan.ordinal,
+            scoreModel: dan.scoreModel,
             overallPassType: dan.overallPassType,
             overallPassThreshold: dan.overallPassThreshold,
           },
@@ -79,6 +84,12 @@ export async function seedDatabase(
           passConditionType: beatmap.passConditionType,
           passConditionThreshold: beatmap.passConditionThreshold,
           ordinal: beatmap.ordinal,
+          title: beatmap.title,
+          artist: beatmap.artist,
+          difficultyName: beatmap.difficultyName,
+          mapper: beatmap.mapper,
+          coverUrl: beatmap.coverUrl,
+          annotations: JSON.stringify(beatmap.annotations),
         })),
       );
     }
@@ -111,6 +122,7 @@ export async function seedDatabase(
     {
       id: "result-demo-map-1",
       resultId: seedResult.id,
+      gameId: 1,
       beatmapId: demoBeatmaps[0].beatmapId,
       mods: demoBeatmaps[0].mods,
       passConditionType: demoBeatmaps[0].passConditionType,
@@ -129,6 +141,7 @@ export async function seedDatabase(
     {
       id: "result-demo-map-2",
       resultId: seedResult.id,
+      gameId: 2,
       beatmapId: demoBeatmaps[1].beatmapId,
       mods: demoBeatmaps[1].mods,
       passConditionType: demoBeatmaps[1].passConditionType,

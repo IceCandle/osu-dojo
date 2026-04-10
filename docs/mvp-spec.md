@@ -17,11 +17,11 @@ A working IRC bot that runs osu! dan courses in automated multiplayer rooms, jud
 
 ```
 DanSystem (id, name, slug, description)
-  has many Dan (id, name, slug, danSystemId, ordinal)
-    has many DanBeatmap (id, danId, beatmapId, mods, passCondition: {type: "acc"|"sv2", threshold: number}, ordinal)
+  has many Dan (id, name, slug, danSystemId, ordinal, scoreModel: "scorev1"|"scorev2")
+    has many DanBeatmap (id, danId, beatmapId, mods, passCondition: {type: "acc"|"score", threshold: number}, ordinal)
 
-Result (id, userId, danId, passed, timestamp)
-  has many MapResult (id, resultId, beatmapId, score, accuracy, passed)
+Result (id, userId, danId, passed, timestamp, matchId?)
+  has many MapResult (id, resultId, gameId?, beatmapId, score, accuracy, passed)
 ```
 
 - A Dan is a course: play N maps in sequence, each with its own pass condition.
@@ -47,14 +47,13 @@ Result (id, userId, danId, passed, timestamp)
 - Stores: `{userId, danId, beatmapId, score, accuracy, passed, timestamp}`.
 
 ### AC4: Pass/Fail Judgment
-- Per-map: compare accuracy or sv2 score against the threshold in DanBeatmap.
+- Per-map: compare accuracy or score against the threshold in DanBeatmap.
 - Overall: dan is passed only if all maps are passed and the overall score/accuracy passes the course criteria.
 - Bot announces per-map result and final result in multiplayer chat.
 
 ### AC5: Website
 - `/` — list of dan systems and their dans.
-- `/dan/[slug]` — dan detail: beatmap list, pass conditions.
-- `/dan/[slug]/results` — recent results (player, pass/fail, per-map scores).
+- `/dan/[systemSlug]` — dan system detail: all courses rendered sequentially with beatmap lists, pass conditions, integrated leaderboards, and `#course=<courseSlug>` anchor jumps.
 - No auth required. Read-only. SSR with server components.
 
 ## Demo Scenario
@@ -67,7 +66,7 @@ Result (id, userId, danId, passed, timestamp)
 6. Bot sets map 2. Repeat.
 7. After map 2, bot announces "test-1: PASS" or "FAIL (1,050,000 vs 1,240,000)".
 8. Result stored in DB.
-9. Visit `http://localhost:3000/dan/test-1dan/results` — see the result.
+9. Visit `http://localhost:3000/dan/test#course=test-1dan` — see the course and its latest result.
 
 ## Non-Goals (MVP)
 

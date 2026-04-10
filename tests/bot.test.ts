@@ -4,10 +4,10 @@ import os from "node:os";
 import path from "node:path";
 import { EventEmitter } from "node:events";
 import { mkdtempSync, rmSync } from "node:fs";
-import { BanchoLobbyPlayerStates } from "bancho.js";
+import { BanchoLobbyPlayerStates, BanchoLobbyWinConditions } from "bancho.js";
 import type { BotLogger } from "@/bot/logger";
 import { createTestDatabase } from "@/db/client";
-import { getDanCourseBySlug, listDanResultsBySlug } from "@/db/queries";
+import { getDanCourseByRoute, listDanResultsByRoute } from "@/db/queries";
 import {
   createDojoBot,
   type BotClientLike,
@@ -25,6 +25,10 @@ function createTempDatabaseUrl() {
     },
   };
 }
+
+const SEEDED_SYSTEM_SLUG = "test";
+const SEEDED_COURSE_SLUG = "test-1dan";
+const SEEDED_START_COMMAND = `!dojo start ${SEEDED_SYSTEM_SLUG} ${SEEDED_COURSE_SLUG}`;
 
 type FakeLobbyPlayer = {
   user: BotUserLike;
@@ -261,7 +265,7 @@ function latestMeaningfulLobbyMessage(lobby: FakeLobby) {
 }
 
 async function getSeededBeatmapIds(db: Awaited<ReturnType<typeof createTestDatabase>>["db"]) {
-  const course = await getDanCourseBySlug("test-1dan", db);
+  const course = await getDanCourseByRoute(SEEDED_SYSTEM_SLUG, SEEDED_COURSE_SLUG, db);
 
   if (!course) {
     throw new Error("Missing seeded test course.");
@@ -270,7 +274,11 @@ async function getSeededBeatmapIds(db: Awaited<ReturnType<typeof createTestDatab
   return course.beatmaps.map((beatmap) => beatmap.beatmapId);
 }
 
-test("bot rejects invalid dan slugs", async () => {
+function createSeededStartMessage(user: BotUserLike) {
+  return createPrivateMessage(user, SEEDED_START_COMMAND);
+}
+
+test("bot rejects unknown dan routes", async () => {
   const temp = createTempDatabaseUrl();
 
   try {
@@ -283,9 +291,9 @@ test("bot rejects invalid dan slugs", async () => {
     });
     const user = new FakeUser(42, "PlayerOne");
 
-    await bot.handlePrivateMessage(createPrivateMessage(user, "!dojo start nope"));
+    await bot.handlePrivateMessage(createPrivateMessage(user, "!dojo start nope nope"));
 
-    assert.match(user.messages.at(-1) ?? "", /Unknown dan slug/i);
+    assert.match(user.messages.at(-1) ?? "", /Unknown dan route/i);
   } finally {
     temp.cleanup();
   }
@@ -357,16 +365,14 @@ test("bot runs the seeded course, forces NF, switches to ScoreV2, and stores the
       endedEvents.push(event);
     });
 
-    await bot.handlePrivateMessage(
-      createPrivateMessage(user, "!dojo start test-1dan"),
-    );
+    await bot.handlePrivateMessage(createSeededStartMessage(user));
 
     assert.equal(client.createLobbyCalls[0]?.privateLobby, undefined);
     assert.deepEqual(client.lobby.invites, ["#42"]);
     assert.equal(client.lobby.lockHistory, 1);
     assert.match(
       user.messages[0] ?? "",
-      /http:\/\/localhost:3000\/dan\/test-1dan/i,
+      /http:\/\/localhost:3000\/dan\/test\?course=test-1dan/i,
     );
 
     client.lobby.emit("playerJoined", {
@@ -386,21 +392,80 @@ test("bot runs the seeded course, forces NF, switches to ScoreV2, and stores the
     await flushAsyncWork(8);
     await waitForTimer(20);
 
-    assert.equal(client.lobby.settingsHistory[1]?.winCondition, 3);
+    assert.equal(
+      client.lobby.settingsHistory[1]?.winCondition,
+      BanchoLobbyWinConditions.ScoreV2,
+    );
     assert.match(latestMeaningfulLobbyMessage(client.lobby), /test-1: PASS/i);
     assert.equal(client.lobby.closeLobbyCalls, 1);
     assert.equal(endedEvents[0]?.result, "completed");
     assert.equal(endedEvents[0]?.reason, undefined);
 
-    const results = await listDanResultsBySlug("test-1dan", db);
+    const results = await listDanResultsByRoute(SEEDED_SYSTEM_SLUG, SEEDED_COURSE_SLUG, db);
     assert.equal(results?.results.length, 2);
     assert.equal(results?.results[0]?.username, "PlayerOne");
+    assert.equal(results?.results[0]?.matchId, client.lobby.id);
+    assert.equal(results?.results[0]?.maps[0]?.gameId, 1);
+    assert.equal(results?.results[0]?.maps[1]?.gameId, 2);
   } finally {
     if (originalSiteUrl === undefined) {
       delete process.env.DOJO_SITE_URL;
     } else {
       process.env.DOJO_SITE_URL = originalSiteUrl;
     }
+    temp.cleanup();
+  }
+});
+
+test("bot switches lobby scoring to ScoreV1 when the course requests it", async () => {
+  const temp = createTempDatabaseUrl();
+
+  try {
+    const { db } = await createTestDatabase(temp.url);
+    db.$client
+      .prepare("UPDATE dans SET score_model = ? WHERE course_slug = ?")
+      .run("scorev1", SEEDED_COURSE_SLUG);
+
+    const client = new FakeClient();
+    const user = new FakeUser(42, "PlayerOne");
+    const seededBeatmapIds = await getSeededBeatmapIds(db);
+    const bot = createDojoBot({
+      client,
+      db,
+      connectOnStart: false,
+      restDurationMs: 0,
+      finalGracePeriodMs: 0,
+      firstMapCountdownSeconds: 0,
+      nextMapCountdownSeconds: 0,
+      sleep: async () => {},
+      fetchScore: async (_lobby, options) => ({
+        gameId: options.beatmapId,
+        beatmapId: options.beatmapId,
+        userId: 42,
+        score: 999999,
+        accuracy: 100,
+        maxCombo: 800,
+        count300: 1000,
+        count100: 0,
+        count50: 0,
+        countMiss: 0,
+        passed: true,
+      }),
+    });
+
+    await bot.handlePrivateMessage(createSeededStartMessage(user));
+
+    client.lobby.emit("playerJoined", {
+      player: client.lobby.registerPlayer(user),
+    });
+    await flushAsyncWork();
+
+    assert.equal(client.lobby.mapHistory[0], seededBeatmapIds[0]);
+    assert.equal(
+      client.lobby.settingsHistory[0]?.winCondition,
+      BanchoLobbyWinConditions.Score,
+    );
+  } finally {
     temp.cleanup();
   }
 });
@@ -463,9 +528,7 @@ test("bot uses the confirmed-finish score fetch policy and completes the run", a
       },
     });
 
-    await bot.handlePrivateMessage(
-      createPrivateMessage(user, "!dojo start test-1dan"),
-    );
+    await bot.handlePrivateMessage(createSeededStartMessage(user));
 
     const player = client.lobby.registerPlayer(user);
     client.lobby.emit("playerJoined", { player });
@@ -529,12 +592,8 @@ test("bot rejects duplicate active runs for the same player", async () => {
       }),
     });
 
-    await bot.handlePrivateMessage(
-      createPrivateMessage(user, "!dojo start test-1dan"),
-    );
-    await bot.handlePrivateMessage(
-      createPrivateMessage(user, "!dojo start test-1dan"),
-    );
+    await bot.handlePrivateMessage(createSeededStartMessage(user));
+    await bot.handlePrivateMessage(createSeededStartMessage(user));
 
     assert.match(user.messages.at(-1) ?? "", /already have an active run/i);
   } finally {
@@ -571,9 +630,7 @@ test("bot aborts immediately when the target player leaves between maps", async 
       }),
     });
 
-    await bot.handlePrivateMessage(
-      createPrivateMessage(user, "!dojo start test-1dan"),
-    );
+    await bot.handlePrivateMessage(createSeededStartMessage(user));
 
     const player = client.lobby.registerPlayer(user);
     client.lobby.emit("playerJoined", { player });
@@ -591,7 +648,7 @@ test("bot aborts immediately when the target player leaves between maps", async 
     assert.match(latestMeaningfulLobbyMessage(client.lobby), /player left the room/i);
     assert.equal(bot.activeRunsByUserId.has(42), false);
 
-    const results = await listDanResultsBySlug("test-1dan", db);
+    const results = await listDanResultsByRoute(SEEDED_SYSTEM_SLUG, SEEDED_COURSE_SLUG, db);
     assert.equal(results?.results[0]?.status, "dnf");
     assert.equal(results?.results[0]?.maps.length, 1);
   } finally {
@@ -629,9 +686,7 @@ test("bot halts the course immediately when a map fails", async () => {
       }),
     });
 
-    await bot.handlePrivateMessage(
-      createPrivateMessage(user, "!dojo start test-1dan"),
-    );
+    await bot.handlePrivateMessage(createSeededStartMessage(user));
 
     client.lobby.emit("playerJoined", {
       player: client.lobby.registerPlayer(user),
@@ -645,7 +700,7 @@ test("bot halts the course immediately when a map fails", async () => {
     assert.equal(client.lobby.startHistory.length, 1);
     assert.match(latestMeaningfulLobbyMessage(client.lobby), /test-1: FAIL/i);
 
-    const results = await listDanResultsBySlug("test-1dan", db);
+    const results = await listDanResultsByRoute(SEEDED_SYSTEM_SLUG, SEEDED_COURSE_SLUG, db);
     assert.equal(results?.results[0]?.status, "fail");
     assert.equal(results?.results[0]?.maps.length, 1);
     assert.equal(results?.results[0]?.maps[0]?.passed, false);
@@ -668,9 +723,7 @@ test("bot aborts inactive runs before the player joins and allows a fresh restar
       inactivityTimeoutMs: 40,
     });
 
-    await bot.handlePrivateMessage(
-      createPrivateMessage(user, "!dojo start test-1dan"),
-    );
+    await bot.handlePrivateMessage(createSeededStartMessage(user));
     await waitForTimer(60);
 
     assert.match(
@@ -679,9 +732,7 @@ test("bot aborts inactive runs before the player joins and allows a fresh restar
     );
     assert.equal(bot.activeRunsByUserId.has(42), false);
 
-    await bot.handlePrivateMessage(
-      createPrivateMessage(user, "!dojo start test-1dan"),
-    );
+    await bot.handlePrivateMessage(createSeededStartMessage(user));
 
     assert.equal(client.createLobbyCalls.length, 2);
     assert.match(user.messages.at(-1) ?? "", /Join the invite to begin/i);
@@ -704,9 +755,7 @@ test("bot resets the inactivity timer when the run makes progress", async () => 
       inactivityTimeoutMs: 1_000,
     });
 
-    await bot.handlePrivateMessage(
-      createPrivateMessage(user, "!dojo start test-1dan"),
-    );
+    await bot.handlePrivateMessage(createSeededStartMessage(user));
 
     await waitForTimer(300);
     client.lobby.emit("playerJoined", {
@@ -752,9 +801,7 @@ test("bot aborts active runs when the IRC client disconnects and emits runEnded"
     });
 
     await bot.start();
-    await bot.handlePrivateMessage(
-      createPrivateMessage(user, "!dojo start test-1dan"),
-    );
+    await bot.handlePrivateMessage(createSeededStartMessage(user));
 
     client.emit("disconnected", new Error("socket closed"));
     await flushAsyncWork(8);
@@ -828,9 +875,7 @@ test("bot cleanup does not block forever when closeLobby hangs", async () => {
       },
     });
 
-    await bot.handlePrivateMessage(
-      createPrivateMessage(user, "!dojo start test-1dan"),
-    );
+    await bot.handlePrivateMessage(createSeededStartMessage(user));
 
     client.lobby.emit("playerJoined", {
       player: client.lobby.registerPlayer(user),
@@ -870,9 +915,7 @@ test("bot.stop waits for active-run cleanup and closes the lobby", async () => {
       connectOnStart: false,
     });
 
-    await bot.handlePrivateMessage(
-      createPrivateMessage(user, "!dojo start test-1dan"),
-    );
+    await bot.handlePrivateMessage(createSeededStartMessage(user));
 
     assert.equal(bot.activeRunsByUserId.has(42), true);
 
@@ -900,9 +943,7 @@ test("bot aborts an active run when Bancho reports the match was aborted", async
       connectOnStart: false,
     });
 
-    await bot.handlePrivateMessage(
-      createPrivateMessage(user, "!dojo start test-1dan"),
-    );
+    await bot.handlePrivateMessage(createSeededStartMessage(user));
 
     client.lobby.emit("playerJoined", {
       player: client.lobby.registerPlayer(user),
@@ -962,9 +1003,7 @@ test("bot aborts with score-resolution-timeout when confirmed-finish score resol
       endedEvents.push(event);
     });
 
-    await bot.handlePrivateMessage(
-      createPrivateMessage(user, "!dojo start test-1dan"),
-    );
+    await bot.handlePrivateMessage(createSeededStartMessage(user));
 
     const player = client.lobby.registerPlayer(user);
     client.lobby.emit("playerJoined", { player });
@@ -1017,9 +1056,7 @@ test("bot treats a missing player score after match finish as an interrupted run
       },
     });
 
-    await bot.handlePrivateMessage(
-      createPrivateMessage(user, "!dojo start test-1dan"),
-    );
+    await bot.handlePrivateMessage(createSeededStartMessage(user));
 
     client.lobby.emit("playerJoined", {
       player: client.lobby.registerPlayer(user),
@@ -1062,9 +1099,7 @@ test("bot aborts before the first map starts when delayed refresh shows NoMap", 
       firstMapCountdownSeconds: 0,
     });
 
-    await bot.handlePrivateMessage(
-      createPrivateMessage(user, "!dojo start test-1dan"),
-    );
+    await bot.handlePrivateMessage(createSeededStartMessage(user));
 
     client.lobby.emit("playerJoined", {
       player: client.lobby.registerPlayer(user, BanchoLobbyPlayerStates.NoMap),
@@ -1098,9 +1133,7 @@ test("bot aborts with a generic message when the first pure start never produces
       firstMapCountdownSeconds: 0,
     });
 
-    await bot.handlePrivateMessage(
-      createPrivateMessage(user, "!dojo start test-1dan"),
-    );
+    await bot.handlePrivateMessage(createSeededStartMessage(user));
 
     client.lobby.emit("playerJoined", {
       player: client.lobby.registerPlayer(user, BanchoLobbyPlayerStates.NotReady),
@@ -1134,9 +1167,7 @@ test("bot ignores late lobby events after inactivity cleanup", async () => {
       inactivityTimeoutMs: 40,
     });
 
-    await bot.handlePrivateMessage(
-      createPrivateMessage(user, "!dojo start test-1dan"),
-    );
+    await bot.handlePrivateMessage(createSeededStartMessage(user));
     await waitForTimer(60);
 
     const abortMessageCount = client.lobby.channelMessages.filter((message) =>

@@ -1,10 +1,13 @@
 export interface StartCommand {
   type: "start";
-  slug: string;
+  systemSlug: string;
+  courseSlug: string;
 }
 
 export function parseDojoCommand(message: string): StartCommand | null {
-  const match = /^!dojo\s+start\s+([a-z0-9-]+)\s*$/i.exec(message.trim());
+  const match = /^!dojo\s+start\s+([a-z0-9-]+)\s+([a-z0-9-]+)\s*$/i.exec(
+    message.trim(),
+  );
 
   if (!match) {
     return null;
@@ -12,6 +15,7 @@ export function parseDojoCommand(message: string): StartCommand | null {
 
   return {
     type: "start",
-    slug: match[1].toLowerCase(),
+    systemSlug: match[1].toLowerCase(),
+    courseSlug: match[2].toLowerCase(),
   };
 }

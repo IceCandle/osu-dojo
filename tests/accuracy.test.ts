@@ -63,15 +63,15 @@ test("calculateAccuracy returns 100 for a perfect all-300 score", () => {
 
 test("judgeThreshold compares accuracy and score against the proper field", () => {
   const acc = judgeThreshold("acc", 95, { accuracy: 96.25, score: 800000 });
-  const sv2 = judgeThreshold("sv2", 900000, {
+  const score = judgeThreshold("score", 900000, {
     accuracy: 90,
     score: 905432,
   });
 
   assert.equal(acc.passed, true);
   assert.equal(acc.value, 96.25);
-  assert.equal(sv2.passed, true);
-  assert.equal(sv2.value, 905432);
+  assert.equal(score.passed, true);
+  assert.equal(score.value, 905432);
 });
 
 test("judgeDanRun averages accuracy for dan acc thresholds", () => {
@@ -80,10 +80,12 @@ test("judgeDanRun averages accuracy for dan acc thresholds", () => {
       id: "dan-1",
       danSystemId: "system-1",
       danSystemName: "test",
+      danSystemSlug: "test",
       name: "test-1",
-      slug: "test-1dan",
+      courseSlug: "test-1dan",
       description: "",
       ordinal: 1,
+      scoreModel: "scorev2",
       overallPassType: "acc",
       overallPassThreshold: 95,
       beatmaps: [],
@@ -92,6 +94,7 @@ test("judgeDanRun averages accuracy for dan acc thresholds", () => {
       {
         id: "map-1",
         resultId: "result-1",
+        gameId: 1,
         beatmapId: 1,
         mods: "HDHRNF",
         passConditionType: "acc",
@@ -110,6 +113,7 @@ test("judgeDanRun averages accuracy for dan acc thresholds", () => {
       {
         id: "map-2",
         resultId: "result-1",
+        gameId: 2,
         beatmapId: 2,
         mods: "HDDTNF",
         passConditionType: "acc",
@@ -138,10 +142,12 @@ test("judgeDanRun fails when maps pass but average accuracy misses the overall t
       id: "dan-1",
       danSystemId: "system-1",
       danSystemName: "test",
+      danSystemSlug: "test",
       name: "test-1",
-      slug: "test-1dan",
+      courseSlug: "test-1dan",
       description: "",
       ordinal: 1,
+      scoreModel: "scorev2",
       overallPassType: "acc",
       overallPassThreshold: 95,
       beatmaps: [],
@@ -150,6 +156,7 @@ test("judgeDanRun fails when maps pass but average accuracy misses the overall t
       {
         id: "map-1",
         resultId: "result-1",
+        gameId: 1,
         beatmapId: 1,
         mods: "HDHRNF",
         passConditionType: "acc",
@@ -168,6 +175,7 @@ test("judgeDanRun fails when maps pass but average accuracy misses the overall t
       {
         id: "map-2",
         resultId: "result-1",
+        gameId: 2,
         beatmapId: 2,
         mods: "HDDTNF",
         passConditionType: "acc",
@@ -193,17 +201,19 @@ test("judgeDanRun fails when maps pass but average accuracy misses the overall t
   assert.equal(judged.passed, false);
 });
 
-test("judgeDanRun sums score for dan sv2 thresholds", () => {
+test("judgeDanRun sums score for dan score thresholds", () => {
   const judged = judgeDanRun(
     {
       id: "dan-1",
       danSystemId: "system-1",
       danSystemName: "test",
+      danSystemSlug: "test",
       name: "test-1",
-      slug: "test-1dan",
+      courseSlug: "test-1dan",
       description: "",
       ordinal: 1,
-      overallPassType: "sv2",
+      scoreModel: "scorev2",
+      overallPassType: "score",
       overallPassThreshold: 1700000,
       beatmaps: [],
     },
@@ -211,9 +221,10 @@ test("judgeDanRun sums score for dan sv2 thresholds", () => {
       {
         id: "map-1",
         resultId: "result-1",
+        gameId: 1,
         beatmapId: 1,
         mods: "NF",
-        passConditionType: "sv2",
+        passConditionType: "score",
         passConditionThreshold: 800000,
         score: 910000,
         accuracy: 0,
@@ -229,9 +240,10 @@ test("judgeDanRun sums score for dan sv2 thresholds", () => {
       {
         id: "map-2",
         resultId: "result-1",
+        gameId: 2,
         beatmapId: 2,
         mods: "NF",
-        passConditionType: "sv2",
+        passConditionType: "score",
         passConditionThreshold: 800000,
         score: 905000,
         accuracy: 0,

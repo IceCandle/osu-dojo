@@ -1,13 +1,9 @@
 import React from "react";
 import Link from "next/link";
-import { listDanSystemsWithDans } from "@/db/queries";
-import { formatCondition } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
 export default async function HomePage() {
-  const systems = await listDanSystemsWithDans();
-
   return (
     <main className="page-shell">
       <section className="masthead">
@@ -16,10 +12,16 @@ export default async function HomePage() {
           <div>
             <h1>Stable-hosted dan runs, judged automatically.</h1>
             <p className="masthead-copy">
-              DM the bot with <code>!dojo start &lt;dan_slug&gt;</code>, get
+              DM the bot with{" "}
+              <code>!dojo start &lt;systemSlug&gt; &lt;courseSlug&gt;</code>, get
               invited into an automated multiplayer room, and let the course
-              sequence, scoring, and results archive run themselves.
+              sequence, scoring, and leaderboard archive run themselves.
             </p>
+            <div className="masthead-actions">
+              <Link className="cta-link" href="/dan">
+                Browse dan systems
+              </Link>
+            </div>
           </div>
 
           <div className="scope-panel">
@@ -34,40 +36,6 @@ export default async function HomePage() {
             </p>
           </div>
         </div>
-      </section>
-
-      <section className="systems-grid">
-        {systems.map((system) => (
-          <article className="system-card" key={system.id}>
-            <div className="system-heading">
-              <p className="eyebrow">{system.slug}</p>
-              <h2>{system.name}</h2>
-              <p>{system.description}</p>
-            </div>
-
-            <div className="dan-list">
-              {system.dans.map((dan) => (
-                <Link className="dan-link" href={`/dan/${dan.slug}`} key={dan.id}>
-                  <div>
-                    <strong>{dan.name}</strong>
-                    <span>{dan.slug}</span>
-                  </div>
-                  <div className="dan-link-meta">
-                    <span>
-                      {dan.overallPassType && dan.overallPassThreshold !== null
-                        ? formatCondition(
-                            dan.overallPassType,
-                            dan.overallPassThreshold,
-                          )
-                        : "Per-map only"}
-                    </span>
-                    <span>Open course</span>
-                  </div>
-                </Link>
-              ))}
-            </div>
-          </article>
-        ))}
       </section>
     </main>
   );
