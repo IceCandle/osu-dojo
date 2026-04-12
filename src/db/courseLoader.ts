@@ -10,11 +10,11 @@ interface CourseBeatmapSeed {
   passConditionType: PassConditionType;
   passConditionThreshold: number;
   ordinal: number;
-  title: string;
-  artist: string;
-  difficultyName: string;
-  mapper: string;
-  coverUrl: string;
+  title?: string;
+  artist?: string;
+  difficultyName?: string;
+  mapper?: string;
+  coverUrl?: string;
   annotations: string[];
 }
 
@@ -118,11 +118,11 @@ function parseCourseBeatmap(value: unknown, source: string): CourseBeatmapSeed {
       source,
     ),
     ordinal: expectInteger(record.ordinal, "ordinal", source),
-    title: expectString(record.title, "title", source),
-    artist: expectString(record.artist, "artist", source),
-    difficultyName: expectString(record.difficultyName, "difficultyName", source),
-    mapper: expectString(record.mapper, "mapper", source),
-    coverUrl: expectString(record.coverUrl, "coverUrl", source),
+    title: optionalString(record.title, "title", source, ""),
+    artist: optionalString(record.artist, "artist", source, ""),
+    difficultyName: optionalString(record.difficultyName, "difficultyName", source, ""),
+    mapper: optionalString(record.mapper, "mapper", source, ""),
+    coverUrl: optionalString(record.coverUrl, "coverUrl", source, ""),
     annotations: expectStringArray(record.annotations, "annotations", source),
   };
 }
@@ -153,6 +153,19 @@ function expectString(value: unknown, field: string, source: string): string {
   }
 
   return value;
+}
+
+function optionalString(
+  value: unknown,
+  field: string,
+  source: string,
+  fallback: string,
+): string {
+  if (value === undefined) {
+    return fallback;
+  }
+
+  return expectString(value, field, source);
 }
 
 function expectStringArray(value: unknown, field: string, source: string): string[] {

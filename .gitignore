@@ -2,6 +2,7 @@
 /node_modules
 /.pnp
 .pnp.*
+.pnpm-store/
 .yarn/*
 !.yarn/patches
 !.yarn/plugins
@@ -11,6 +12,7 @@
 # testing
 /coverage
 /test/
+dojo-dev.jsonl
 
 # next.js
 /.next/
@@ -18,19 +20,6 @@
 
 # production
 /build
-
-# misc
-.DS_Store
-*.pem
-.eslintcache
-.stylelintcache
-dojo.db
-
-# editors
-.vscode/
-.idea/
-*.swp
-*.swo
 
 # debug
 npm-debug.log*
@@ -49,16 +38,4 @@ yarn-error.log*
 
 # typescript
 *.tsbuildinfo
-
-# local tools
-.claude
-.omc
-AGENTS.md
-CLAUDE.md
-skills/
-subagents/
-dojo-dev.jsonl
-docs/Advanced Automation and Verification Frameworks for osu! Dan Courses_ Integrating Multiplayer Bots, Pacemaker Overlays, and Dynamic Profile Banners.md
-.playwright-cli/
-.bin/
-.corepack_home/
+.omx/

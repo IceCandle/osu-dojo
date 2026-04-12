@@ -104,6 +104,7 @@ export async function listDanCoursesBySystemSlug(
       systemId: danSystems.id,
       systemName: danSystems.name,
       systemSlug: danSystems.slug,
+      systemDescription: danSystems.description,
     })
     .from(dans)
     .innerJoin(danSystems, eq(dans.danSystemId, danSystems.id))
@@ -151,6 +152,7 @@ export async function listDanCoursesBySystemSlug(
     danSystemId: row.systemId,
     danSystemName: row.systemName,
     danSystemSlug: row.systemSlug,
+    danSystemDescription: row.systemDescription,
     name: row.danName,
     courseSlug: row.courseSlug,
     description: row.danDescription,
@@ -181,6 +183,7 @@ export async function getDanCourseByRoute(
       systemId: danSystems.id,
       systemName: danSystems.name,
       systemSlug: danSystems.slug,
+      systemDescription: danSystems.description,
     })
     .from(dans)
     .innerJoin(danSystems, eq(dans.danSystemId, danSystems.id))
@@ -215,6 +218,7 @@ export async function getDanCourseByRoute(
     danSystemId: row.systemId,
     danSystemName: row.systemName,
     danSystemSlug: row.systemSlug,
+    danSystemDescription: row.systemDescription,
     name: row.danName,
     courseSlug: row.courseSlug,
     description: row.danDescription,

@@ -64,9 +64,37 @@ New ideas and scope changes go here. Do NOT inject them into active work.
 - **Affected AC:** AC3, AC4
 - **Decision:** deferred
 
-### Dan web route and layout revision
+### Current product contract refresh
+- **Classification:** important
+- **Source:** team development readiness review
+- **Description:** Replace or revise outdated MVP wording so docs match the current command syntax, route shape, non-goals, and team ownership boundaries. See `docs/team-development-plan.md`.
+- **Affected AC:** all
+- **Decision:** pending
+
+### Course authoring guide and validation checklist
+- **Classification:** important
+- **Source:** team development readiness review
+- **Description:** Document how to add real course JSON safely, including slug conventions, optional metadata behavior, validation errors, and app/course smoke-check steps before introducing any write UI.
+- **Affected AC:** AC2, AC5
+- **Decision:** pending
+
+### Staff proof review policy
 - **Classification:** optional
-- **Source:** planner-approved UI pass
-- **Description:** Move the dan-system index from `/` to `/dan`, keep `/` as intro-only, add a shared shell header, and change `/dan/[systemSlug]` from full-scroll sequential rendering to a selected-course detail layout with compact leaderboard rail. This is intentionally spec-adjacent product/UI work rather than an AC blocker.
-- **Affected AC:** AC5
+- **Source:** product scope review
+- **Description:** Decide whether staff replay-file or handcam-video review belongs in this product. Default assumption is no automated pause detection and no replay-based verification pipeline because replays are local/SV2-limited and staff adjudication may conflict with the automated-bot goal.
+- **Affected AC:** none
+- **Decision:** pending
+
+### Dynamic profile banner generation
+- **Classification:** optional
+- **Source:** advanced automation roadmap
+- **Description:** Explore generated pass banners only after hosting, verification URL, abuse handling, and "cosmetic vs official proof" semantics are defined.
+- **Affected AC:** none
+- **Decision:** deferred
+
+### Custom course creation UI
+- **Classification:** optional
+- **Source:** advanced automation roadmap
+- **Description:** Add a write UI for user-created courses only after auth, ownership, moderation, validation, and persistence decisions are explicit.
+- **Affected AC:** none
 - **Decision:** deferred

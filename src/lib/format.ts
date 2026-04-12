@@ -17,6 +17,15 @@ export function formatCondition(
     : `${formatInteger(threshold)} score`;
 }
 
+export function formatConditionCompact(
+  type: PassConditionType,
+  threshold: number,
+): string {
+  return type === "acc"
+    ? `${formatPercentage(threshold)}+`
+    : `${formatInteger(threshold)}+ score`;
+}
+
 export function formatConditionValue(
   type: PassConditionType,
   value: number,
@@ -38,7 +47,7 @@ export function formatDate(timestamp: number): string {
 }
 
 export function formatMods(mods: string): string {
-  return mods.trim() === "" ? "NM" : mods;
+  return mods.trim() === "" ? "+NM" : `+${mods}`;
 }
 
 export function formatScoreModel(scoreModel: DanScoreModel): string {

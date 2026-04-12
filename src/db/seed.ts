@@ -4,6 +4,7 @@ import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import * as schema from "@/db/schema";
 import { loadCoursesFromDir, type CourseSystemSeed } from "@/db/courseLoader";
 import { danBeatmaps, dans, danSystems, mapResults, results } from "@/db/schema";
+import type { BeatmapMetadata, MetadataResult } from "@/lib/beatmapMetadata";
 
 const now = 1_710_000_000_000;
 
@@ -21,11 +22,24 @@ const seedResult = {
 type SeedDatabase = BetterSQLite3Database<typeof schema>;
 
 const COURSE_DATA_DIR = path.join(process.cwd(), "data/courses");
+const DEFAULT_METADATA_REQUEST_DELAY_MS = 200;
+
+export interface SeedOptions {
+  resolveMetadata?: (beatmapId: number) => Promise<MetadataResult>;
+  metadataRequestDelayMs?: number;
+}
+
+type ExistingBeatmapMetadata = BeatmapMetadata & {
+  beatmapId: number;
+};
 
 export async function seedDatabase(
   db: SeedDatabase,
   systems = loadCoursesFromDir(COURSE_DATA_DIR),
+  options: SeedOptions = {},
 ) {
+  const metadataResolutionState = { requestCount: 0 };
+
   for (const system of systems) {
     await db
       .insert(danSystems)
@@ -74,9 +88,32 @@ export async function seedDatabase(
           },
         });
 
-      await db.delete(danBeatmaps).where(eq(danBeatmaps.danId, dan.id));
-      await db.insert(danBeatmaps).values(
-        dan.beatmaps.map((beatmap) => ({
+      const existingBeatmaps = await db
+        .select({
+          id: danBeatmaps.id,
+          beatmapId: danBeatmaps.beatmapId,
+          title: danBeatmaps.title,
+          artist: danBeatmaps.artist,
+          difficultyName: danBeatmaps.difficultyName,
+          mapper: danBeatmaps.mapper,
+          coverUrl: danBeatmaps.coverUrl,
+        })
+        .from(danBeatmaps)
+        .where(eq(danBeatmaps.danId, dan.id));
+      const existingMetadataById = new Map(
+        existingBeatmaps.map((beatmap) => [beatmap.id, beatmap]),
+      );
+      const beatmapValues = [];
+
+      for (const beatmap of dan.beatmaps) {
+        const metadata = await resolveSeedBeatmapMetadata(
+          beatmap,
+          existingMetadataById.get(beatmap.id),
+          options,
+          metadataResolutionState,
+        );
+
+        beatmapValues.push({
           id: beatmap.id,
           danId: dan.id,
           beatmapId: beatmap.beatmapId,
@@ -84,14 +121,17 @@ export async function seedDatabase(
           passConditionType: beatmap.passConditionType,
           passConditionThreshold: beatmap.passConditionThreshold,
           ordinal: beatmap.ordinal,
-          title: beatmap.title,
-          artist: beatmap.artist,
-          difficultyName: beatmap.difficultyName,
-          mapper: beatmap.mapper,
-          coverUrl: beatmap.coverUrl,
+          title: metadata.title,
+          artist: metadata.artist,
+          difficultyName: metadata.difficultyName,
+          mapper: metadata.mapper,
+          coverUrl: metadata.coverUrl,
           annotations: JSON.stringify(beatmap.annotations),
-        })),
-      );
+        });
+      }
+
+      await db.delete(danBeatmaps).where(eq(danBeatmaps.danId, dan.id));
+      await db.insert(danBeatmaps).values(beatmapValues);
     }
   }
 
@@ -199,4 +239,85 @@ function requireBeatmap<T>(
   }
 
   return beatmap;
+}
+
+async function resolveSeedBeatmapMetadata(
+  beatmap: CourseSystemSeed["dans"][number]["beatmaps"][number],
+  existing: ExistingBeatmapMetadata | undefined,
+  options: SeedOptions,
+  metadataResolutionState: { requestCount: number },
+): Promise<BeatmapMetadata> {
+  const seededMetadata = normalizeMetadata(beatmap);
+
+  if (hasCompleteMetadata(seededMetadata)) {
+    return seededMetadata;
+  }
+
+  if (hasReusableExistingMetadata(beatmap, existing)) {
+    return normalizeMetadata(existing);
+  }
+
+  if (!options.resolveMetadata) {
+    return emptyMetadata();
+  }
+
+  const delayMs = options.metadataRequestDelayMs ?? DEFAULT_METADATA_REQUEST_DELAY_MS;
+
+  if (metadataResolutionState.requestCount > 0 && delayMs > 0) {
+    await sleep(delayMs);
+  }
+
+  metadataResolutionState.requestCount += 1;
+  const result = await options.resolveMetadata(beatmap.beatmapId);
+
+  if (result.ok) {
+    return result.data;
+  }
+
+  console.warn(
+    `Unable to resolve metadata for beatmap ${beatmap.beatmapId}: ${result.reason}`,
+  );
+
+  return emptyMetadata();
+}
+
+function hasReusableExistingMetadata(
+  beatmap: CourseSystemSeed["dans"][number]["beatmaps"][number],
+  existing: ExistingBeatmapMetadata | undefined,
+): existing is ExistingBeatmapMetadata {
+  return (
+    existing !== undefined &&
+    existing.beatmapId === beatmap.beatmapId &&
+    hasCompleteMetadata(normalizeMetadata(existing))
+  );
+}
+
+function normalizeMetadata(metadata: Partial<BeatmapMetadata>): BeatmapMetadata {
+  return {
+    title: metadata.title ?? "",
+    artist: metadata.artist ?? "",
+    difficultyName: metadata.difficultyName ?? "",
+    mapper: metadata.mapper ?? "",
+    coverUrl: metadata.coverUrl ?? "",
+  };
+}
+
+function hasCompleteMetadata(metadata: BeatmapMetadata): boolean {
+  return Object.values(metadata).every((value) => value.trim() !== "");
+}
+
+function emptyMetadata(): BeatmapMetadata {
+  return {
+    title: "",
+    artist: "",
+    difficultyName: "",
+    mapper: "",
+    coverUrl: "",
+  };
+}
+
+function sleep(milliseconds: number) {
+  return new Promise<void>((resolve) => {
+    setTimeout(resolve, milliseconds);
+  });
 }

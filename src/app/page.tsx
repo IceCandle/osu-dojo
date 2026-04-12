@@ -7,14 +7,13 @@ export default async function HomePage() {
   return (
     <main className="page-shell">
       <section className="masthead">
-        <p className="masthead-kicker">osu!dojo / multiplayer discipline</p>
+        <p className="masthead-kicker">osu!dojo</p>
         <div className="masthead-grid">
           <div>
             <h1>Stable-hosted dan runs, judged automatically.</h1>
             <p className="masthead-copy">
-              DM the bot with{" "}
-              <code>!dojo start &lt;systemSlug&gt; &lt;courseSlug&gt;</code>, get
-              invited into an automated multiplayer room, and let the course
+              DM the bot with <code>!dojo start &lt;system&gt; &lt;course&gt;</code>,
+              get invited into an automated multiplayer room, and let the course
               sequence, scoring, and leaderboard archive run themselves.
             </p>
             <div className="masthead-actions">
@@ -25,14 +24,13 @@ export default async function HomePage() {
           </div>
 
           <div className="scope-panel">
-            <span className="scope-badge">Implementation boundary</span>
+            <span className="scope-badge">Right now</span>
             <p>
-              Accuracy parsing is currently implemented for{" "}
-              <strong>osu!standard stable multiplayer scores</strong>.
+              Built for <strong>osu!standard stable multiplayer scores</strong>.
             </p>
             <p>
-              The project model stays open for other rulesets and lazer-aware
-              scoring later.
+              Course commands, pass rules, and recent clears stay easy to inspect
+              from one place.
             </p>
           </div>
         </div>

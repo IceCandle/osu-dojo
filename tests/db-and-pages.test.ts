@@ -49,6 +49,7 @@ test("seeded queries expose the sample dan and results", async () => {
     assert.equal(systems[0]?.dans[0]?.scoreModel, "scorev2");
     assert.equal(course?.beatmaps.length, 2);
     assert.equal(course?.scoreModel, "scorev2");
+    assert.match(course?.danSystemDescription ?? "", /Sample dan system/i);
     assert.equal(results?.results.length, 1);
     assert.equal(results?.results[0]?.username, "DemoPlayer");
     assert.equal(results?.results[0]?.status, "pass");
@@ -84,13 +85,18 @@ test("pages render seeded dan data from SQLite", async () => {
     assert.doesNotMatch(homeHtml, /Open system/);
     assert.match(systemsHtml, /test/i);
     assert.match(systemsHtml, /\/dan\/test/);
+    assert.match(systemsHtml, /Each system groups related dan courses under one scoring model\./);
     assert.match(courseHtml, /test stage one/i);
     assert.match(courseHtml, /!dojo start test test-1dan/);
+    assert.match(courseHtml, /Sample dan system for the MVP\./);
     assert.match(courseHtml, new RegExp(course?.beatmaps[0]?.difficultyName ?? ""));
     assert.match(courseHtml, /ScoreV2/);
+    assert.match(courseHtml, /20\.00%\+/);
+    assert.match(courseHtml, /10\.00%\+/);
+    assert.match(courseHtml, /10,000\+ score/);
     assert.match(courseHtml, /DemoPlayer/);
     assert.match(courseHtml, /Top runs/);
-    assert.match(courseHtml, /PASS/);
+    assert.match(courseHtml, /status-pass/);
     assert.doesNotMatch(courseHtml, /\b\d{1,2}:\d{2}\b/);
   } finally {
     process.env.DATABASE_URL = previousDatabaseUrl;
@@ -161,7 +167,7 @@ test("results queries and page derive DNF for interrupted partial runs", async (
     );
 
     assert.match(resultsHtml, /DNFPlayer/);
-    assert.match(resultsHtml, /DNF/);
+    assert.match(resultsHtml, /status-dnf/);
   } finally {
     process.env.DATABASE_URL = previousDatabaseUrl;
     globalThis.__osuDojoDatabaseBundle = previousBundle;
@@ -226,6 +232,159 @@ test("seedDatabase synchronizes updated seeded beatmaps on an existing SQLite fi
       originalCourse?.beatmaps.map((beatmap) => beatmap.beatmapId),
     );
   } finally {
+    temp.cleanup();
+  }
+});
+
+test("seedDatabase reuses existing resolved metadata when course JSON omits it", async () => {
+  const temp = createTempDatabaseUrl();
+
+  try {
+    const { db } = await createTestDatabase(temp.url);
+    const systems = cloneCourseSystems(loadCoursesFromDir(path.join(process.cwd(), "data/courses")));
+    const dan = systems[0]?.dans.find((entry) => entry.courseSlug === SEEDED_COURSE_SLUG);
+    let resolverCalls = 0;
+
+    assert.ok(dan);
+
+    if (!dan) {
+      throw new Error("Missing seeded test dan.");
+    }
+
+    for (const beatmap of dan.beatmaps) {
+      beatmap.title = "";
+      beatmap.artist = "";
+      beatmap.difficultyName = "";
+      beatmap.mapper = "";
+      beatmap.coverUrl = "";
+    }
+
+    await seedDatabase(db, systems, {
+      metadataRequestDelayMs: 0,
+      resolveMetadata: async () => {
+        resolverCalls += 1;
+        return { ok: false, reason: "resolver should not be called" };
+      },
+    });
+
+    const updatedCourse = await getDanCourseByRoute(SEEDED_SYSTEM_SLUG, SEEDED_COURSE_SLUG, db);
+
+    assert.equal(resolverCalls, 0);
+    assert.equal(updatedCourse?.beatmaps[0]?.title, "test stage one");
+    assert.equal(updatedCourse?.beatmaps[1]?.title, "test stage two");
+  } finally {
+    temp.cleanup();
+  }
+});
+
+test("seedDatabase stores defaults for missing metadata when no resolver is configured", async () => {
+  const temp = createTempDatabaseUrl();
+
+  try {
+    const { db } = await createTestDatabase(temp.url);
+    const systems = cloneCourseSystems(loadCoursesFromDir(path.join(process.cwd(), "data/courses")));
+    const dan = systems[0]?.dans.find((entry) => entry.courseSlug === SEEDED_COURSE_SLUG);
+
+    assert.ok(dan);
+
+    if (!dan) {
+      throw new Error("Missing seeded test dan.");
+    }
+
+    dan.beatmaps[0] = {
+      ...dan.beatmaps[0],
+      beatmapId: 8_888,
+      title: "",
+      artist: "",
+      difficultyName: "",
+      mapper: "",
+      coverUrl: "",
+    };
+
+    await seedDatabase(db, systems);
+
+    const updatedCourse = await getDanCourseByRoute(SEEDED_SYSTEM_SLUG, SEEDED_COURSE_SLUG, db);
+
+    assert.equal(updatedCourse?.beatmaps[0]?.title, "");
+    assert.equal(updatedCourse?.beatmaps[0]?.artist, "");
+    assert.equal(updatedCourse?.beatmaps[0]?.difficultyName, "");
+    assert.equal(updatedCourse?.beatmaps[0]?.mapper, "");
+    assert.equal(updatedCourse?.beatmaps[0]?.coverUrl, "");
+  } finally {
+    temp.cleanup();
+  }
+});
+
+test("seedDatabase resolves missing metadata and stores defaults on resolver failure", async () => {
+  const temp = createTempDatabaseUrl();
+  const originalWarn = console.warn;
+  const warnings: string[] = [];
+
+  try {
+    const { db } = await createTestDatabase(temp.url);
+    const systems = cloneCourseSystems(loadCoursesFromDir(path.join(process.cwd(), "data/courses")));
+    const dan = systems[0]?.dans.find((entry) => entry.courseSlug === SEEDED_COURSE_SLUG);
+    const resolverBeatmapIds: number[] = [];
+
+    assert.ok(dan);
+
+    if (!dan) {
+      throw new Error("Missing seeded test dan.");
+    }
+
+    dan.beatmaps[0] = {
+      ...dan.beatmaps[0],
+      beatmapId: 9_999,
+      title: "",
+      artist: "",
+      difficultyName: "",
+      mapper: "",
+      coverUrl: "",
+    };
+    dan.beatmaps[1] = {
+      ...dan.beatmaps[1],
+      beatmapId: 10_000,
+      title: "",
+      artist: "",
+      difficultyName: "",
+      mapper: "",
+      coverUrl: "",
+    };
+
+    console.warn = (message?: unknown) => {
+      warnings.push(String(message));
+    };
+
+    await seedDatabase(db, systems, {
+      metadataRequestDelayMs: 0,
+      resolveMetadata: async (beatmapId) => {
+        resolverBeatmapIds.push(beatmapId);
+
+        return beatmapId === 9_999
+          ? {
+              ok: true,
+              data: {
+                title: "Resolved title",
+                artist: "Resolved artist",
+                difficultyName: "Resolved difficulty",
+                mapper: "Resolved mapper",
+                coverUrl: "https://assets.ppy.sh/beatmaps/999/covers/cover.jpg",
+              },
+            }
+          : { ok: false, reason: "missing metadata" };
+      },
+    });
+
+    const updatedCourse = await getDanCourseByRoute(SEEDED_SYSTEM_SLUG, SEEDED_COURSE_SLUG, db);
+
+    assert.deepEqual(resolverBeatmapIds, [9_999, 10_000]);
+    assert.equal(updatedCourse?.beatmaps[0]?.title, "Resolved title");
+    assert.equal(updatedCourse?.beatmaps[0]?.artist, "Resolved artist");
+    assert.equal(updatedCourse?.beatmaps[1]?.title, "");
+    assert.equal(updatedCourse?.beatmaps[1]?.artist, "");
+    assert.match(warnings[0] ?? "", /10,000|10000/);
+  } finally {
+    console.warn = originalWarn;
     temp.cleanup();
   }
 });

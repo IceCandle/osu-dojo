@@ -53,28 +53,27 @@ Result (id, userId, danId, passed, timestamp, matchId?)
 
 ### AC5: Website
 - `/` — list of dan systems and their dans.
-- `/dan/[systemSlug]` — dan system detail: all courses rendered sequentially with beatmap lists, pass conditions, integrated leaderboards, and `#course=<courseSlug>` anchor jumps.
+- `/dan/[systemSlug]` — dan system detail: all courses rendered sequentially with beatmap lists, pass conditions, integrated leaderboards, and `?course=<courseSlug>` anchor jumps.
 - No auth required. Read-only. SSR with server components.
 
 ## Demo Scenario
 
 1. Seed DB with sample dan system "test" containing dan "test-1" (slug: `test-1dan`) with 2 beatmaps.
 2. Start bot process: `pnpm bot`.
-3. Player DMs bot: `!dojo start test-1dan`.
+3. Player DMs bot: `!dojo start test test-1dan`.
 4. Bot creates room, invites player, sets first map.
 5. Player plays map 1. Bot reads score, judges pass/fail, announces "Map 1: PASS (97.2% >= 95%)".
 6. Bot sets map 2. Repeat.
 7. After map 2, bot announces "test-1: PASS" or "FAIL (1,050,000 vs 1,240,000)".
 8. Result stored in DB.
-9. Visit `http://localhost:3000/dan/test#course=test-1dan` — see the course and its latest result.
+9. Visit `http://localhost:3000/dan/test?course=test-1dan` — see the course and its latest result.
 
-## Non-Goals (MVP)
+## Non-Goals for now
 
 - Replay verification, anti-cheat
-- Rankings, leaderboards, rivals
+- Rivals
 - Banner image generation
 - Custom dan system creation UI
 - Admin panel, user auth
 - Recovery from bot crashes
 - Production deployment, CDN, caching
-- Pacemaker/OBS overlay

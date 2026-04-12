@@ -87,6 +87,57 @@ test("course loader rejects unsupported beatmap mods", () => {
   }
 });
 
+test("course loader allows beatmap metadata to be omitted", () => {
+  const temp = createTempDirectory();
+
+  try {
+    writeFileSync(
+      path.join(temp.directory, "optional-metadata.json"),
+      JSON.stringify({
+        id: "system-optional",
+        name: "optional",
+        slug: "optional",
+        description: "optional",
+        dans: [
+          {
+            id: "dan-optional",
+            name: "optional",
+            courseSlug: "optional-1",
+            description: "optional",
+            ordinal: 1,
+            scoreModel: "scorev2",
+            overallPassType: "acc",
+            overallPassThreshold: 95,
+            beatmaps: [
+              {
+                id: "beatmap-optional",
+                beatmapId: 1,
+                mods: "",
+                passConditionType: "acc",
+                passConditionThreshold: 95,
+                ordinal: 1,
+                annotations: ["metadata resolved at seed time"],
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    const systems = loadCoursesFromDir(temp.directory);
+    const beatmap = systems[0]?.dans[0]?.beatmaps[0];
+
+    assert.equal(beatmap?.title, "");
+    assert.equal(beatmap?.artist, "");
+    assert.equal(beatmap?.difficultyName, "");
+    assert.equal(beatmap?.mapper, "");
+    assert.equal(beatmap?.coverUrl, "");
+    assert.deepEqual(beatmap?.annotations, ["metadata resolved at seed time"]);
+  } finally {
+    temp.cleanup();
+  }
+});
+
 test("course loader rejects unsupported score models", () => {
   const temp = createTempDirectory();
 

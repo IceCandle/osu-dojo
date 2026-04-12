@@ -3,8 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getRankingForCourse, listDanCoursesBySystemSlug } from "@/db/queries";
 import {
-  formatCondition,
-  formatDate,
+  formatConditionCompact,
   formatMods,
   formatPercentage,
   formatScoreModel,
@@ -33,106 +32,56 @@ export default async function DanSystemPage({
   const selectedCourse =
     courses.find((course) => course.courseSlug === requestedCourseSlug) ?? courses[0]!;
   const ranking = await getRankingForCourse(selectedCourse);
-  const totalBeatmaps = courses.reduce((count, course) => count + course.beatmaps.length, 0);
   const system = courses[0]!;
   const command = `!dojo start ${selectedCourse.danSystemSlug} ${selectedCourse.courseSlug}`;
   const topResults = ranking.results.slice(0, 10);
+  const overallRequirement =
+    selectedCourse.overallPassType && selectedCourse.overallPassThreshold !== null
+      ? `${formatConditionCompact(
+          selectedCourse.overallPassType,
+          selectedCourse.overallPassThreshold,
+        )}`
+      : "Per-map pass only";
 
   return (
     <main className="page-shell">
       <section className="detail-header dan-overview-header">
-        <Link className="back-link" href="/dan">
-          Back to systems
-        </Link>
-        <h1>{system.danSystemName}</h1>
-        <p className="detail-copy">
-          Pick a course tab, inspect the map sequence, and keep the strongest
-          recent runs visible without turning the page into one long archive.
-        </p>
-
-        <div className="detail-stats">
+        <div className="system-header-grid">
           <div>
-            <span>Courses</span>
-            <strong>{courses.length}</strong>
-          </div>
-          <div>
-            <span>Total maps</span>
-            <strong>{totalBeatmaps}</strong>
-          </div>
-          <div>
-            <span>Command</span>
-            <strong>
-              <code>{command}</code>
-            </strong>
+            <h1>{system.danSystemName}</h1>
+            <p className="detail-copy">{system.danSystemDescription}</p>
           </div>
         </div>
-
-        <div className="stage-summary-list" role="tablist" aria-label="Course selector">
-          {courses.map((course) => (
-            <Link
-              className={`stage-summary-row${
-                course.id === selectedCourse.id ? " is-active" : ""
-              }`}
-              href={`/dan/${systemSlug}?course=${course.courseSlug}`}
-              key={course.id}
-              role="tab"
-              aria-selected={course.id === selectedCourse.id}
-            >
-              <div>
-                <p className="stage-label">{course.courseSlug}</p>
-                <strong>{course.name}</strong>
-              </div>
-              <div className="stage-summary-meta">
-                <span>{formatScoreModel(course.scoreModel)}</span>
-                <span>{course.beatmaps.length} maps</span>
-              </div>
-            </Link>
-          ))}
+        <div className="detail-stats system-score-model">
+          <div>
+            <span>Score model</span>
+            <strong>{formatScoreModel(selectedCourse.scoreModel)}</strong>
+          </div>
         </div>
       </section>
 
-      <section className="sequence-card detail-sequence-card">
-        <div className="section-heading course-section-heading">
-          <div>
-            <p className="eyebrow">{selectedCourse.courseSlug}</p>
-            <h2>{selectedCourse.name}</h2>
-            <p className="detail-copy">{selectedCourse.description}</p>
-          </div>
-          <div className="course-heading-meta">
-            <span>{formatScoreModel(selectedCourse.scoreModel)}</span>
-            <span>
-              {selectedCourse.overallPassType && selectedCourse.overallPassThreshold !== null
-                ? formatCondition(
-                    selectedCourse.overallPassType,
-                    selectedCourse.overallPassThreshold,
-                  )
-                : "Per-map only"}
-            </span>
-          </div>
-        </div>
+      <nav className="course-tab-bar" role="tablist" aria-label="Course selector">
+        {courses.map((course) => (
+          <Link
+            className={`course-tab${course.id === selectedCourse.id ? " is-active" : ""}`}
+            href={`/dan/${systemSlug}?course=${course.courseSlug}`}
+            key={course.id}
+            role="tab"
+            aria-selected={course.id === selectedCourse.id}
+          >
+            {course.name}
+          </Link>
+        ))}
+      </nav>
 
-        <div className="stats-grid">
-          <div>
-            <span>Maps</span>
-            <strong>{selectedCourse.beatmaps.length}</strong>
-          </div>
-          <div>
-            <span>Overall</span>
-            <strong>
-              {selectedCourse.overallPassType && selectedCourse.overallPassThreshold !== null
-                ? formatCondition(
-                    selectedCourse.overallPassType,
-                    selectedCourse.overallPassThreshold,
-                  )
-                : "Per-map only"}
-            </strong>
-          </div>
-          <div>
-            <span>Start</span>
-            <strong>
-              <code>{command}</code>
-            </strong>
-          </div>
+      <section className="sequence-card detail-sequence-card">
+        <div className="course-overview">
+          <h2>{selectedCourse.name}</h2>
+          <p className="course-overall-requirement">{overallRequirement}</p>
+          <p className="course-command-line">
+            <code>{command}</code>
+          </p>
+          <p className="course-description">{selectedCourse.description}</p>
         </div>
 
         <div className="results-layout">
@@ -144,49 +93,46 @@ export default async function DanSystemPage({
             <div className="dan-stage-stack">
               {selectedCourse.beatmaps.map((beatmap) => {
                 const beatmapUrl = `https://osu.ppy.sh/b/${beatmap.beatmapId}`;
+                const coverStyle =
+                  beatmap.coverUrl.trim() === ""
+                    ? undefined
+                    : ({
+                        "--cover-image": `url("${beatmap.coverUrl}")`,
+                      } as React.CSSProperties);
 
                 return (
                   <article className="dan-stage-card" key={beatmap.id}>
                     <a
-                      className="dan-stage-cover-wrap"
+                      className={`dan-stage-visual${
+                        beatmap.coverUrl.trim() === "" ? " is-placeholder" : ""
+                      }`}
                       href={beatmapUrl}
                       rel="noreferrer"
+                      style={coverStyle}
                       target="_blank"
                     >
-                      {beatmap.coverUrl ? (
-                        <img
-                          alt={`${beatmap.title} cover`}
-                          className="dan-stage-cover"
-                          src={beatmap.coverUrl}
-                        />
-                      ) : (
-                        <div className="dan-stage-cover dan-stage-cover-placeholder" />
-                      )}
                       <span className="beatmap-order">
                         {String(beatmap.ordinal).padStart(2, "0")}
                       </span>
+                      <div className="dan-stage-visual-copy">
+                        <p className="dan-stage-song-title">{beatmap.title}</p>
+                        <p className="dan-stage-song-meta">
+                          {beatmap.artist} / {beatmap.mapper}
+                        </p>
+                      </div>
                     </a>
 
                     <div className="dan-stage-body">
                       <div className="dan-stage-heading">
-                        <div className="dan-stage-title-wrap">
-                          <div className="dan-stage-kicker-row">
-                            <span className="difficulty-chip">{beatmap.difficultyName}</span>
-                            <span className="mod-chip">{formatMods(beatmap.mods)}</span>
-                          </div>
-                          <a href={beatmapUrl} rel="noreferrer" target="_blank">
-                            <h3>{beatmap.title}</h3>
-                          </a>
-                          <p className="dan-stage-subline">
-                            {beatmap.artist} • mapped by {beatmap.mapper}
-                          </p>
-                        </div>
+                        <a href={beatmapUrl} rel="noreferrer" target="_blank">
+                          <h3 className="difficulty-label">[{beatmap.difficultyName}]</h3>
+                        </a>
+                        <p className="mod-label">{formatMods(beatmap.mods)}</p>
                       </div>
 
                       <div className="dan-stage-footer">
                         <p className="dan-stage-condition">
-                          Pass condition:{" "}
-                          {formatCondition(
+                          {formatConditionCompact(
                             beatmap.passConditionType,
                             beatmap.passConditionThreshold,
                           )}
@@ -221,7 +167,6 @@ export default async function DanSystemPage({
                     <tr>
                       <th>Rank</th>
                       <th>Player</th>
-                      <th>Status</th>
                       <th>
                         {selectedCourse.scoreModel === "scorev1"
                           ? "Course Acc"
@@ -243,21 +188,15 @@ export default async function DanSystemPage({
 
                       return (
                         <tr key={result.id}>
-                          <td className="ranking-rank-cell">{result.rank}</td>
-                          <td>
-                            <div className="ranking-player-cell">
-                              <strong className="ranking-player-name">
-                                {result.username}
-                              </strong>
-                              <span className="ranking-player-date">
-                                {formatDate(result.completedAt)}
-                              </span>
-                            </div>
+                          <td
+                            className={`ranking-rank-cell ${getRunStatusClassName(
+                              result.status,
+                            )}`}
+                          >
+                            {result.rank}
                           </td>
                           <td>
-                            <strong className={getRunStatusClassName(result.status)}>
-                              {result.status.toUpperCase()}
-                            </strong>
+                            <strong className="ranking-player-name">{result.username}</strong>
                           </td>
                           <td className="numeric-cell">
                             <div className="ranking-metric-cell">
@@ -273,9 +212,6 @@ export default async function DanSystemPage({
                               ) : (
                                 <span>{metricValue}</span>
                               )}
-                              <span className="ranking-metric-subline">
-                                {matchUrl ? "match" : "-"}
-                              </span>
                             </div>
                           </td>
                         </tr>

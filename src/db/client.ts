@@ -2,7 +2,8 @@ import path from "node:path";
 import Database from "better-sqlite3";
 import { drizzle, type BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import * as schema from "@/db/schema";
-import { seedDatabase } from "@/db/seed";
+import { seedDatabase, type SeedOptions } from "@/db/seed";
+import { fetchBeatmapMetadata } from "@/lib/beatmapMetadata";
 
 type BetterSqliteConnection = InstanceType<typeof Database>;
 
@@ -106,6 +107,7 @@ function resolveDatabaseSource(url: string): string {
 
 async function initializeDatabaseBundle(
   url = process.env.DATABASE_URL ?? "file:./dojo.db",
+  seedOptions = getSeedOptionsFromEnvironment(),
 ): Promise<DatabaseBundle> {
   const sqlite = new Database(resolveDatabaseSource(url));
   sqlite.pragma("foreign_keys = ON");
@@ -113,7 +115,7 @@ async function initializeDatabaseBundle(
   migrateLegacySchema(sqlite);
 
   const db = drizzle(sqlite, { schema }) as AppDatabase;
-  await seedDatabase(db);
+  await seedDatabase(db, undefined, seedOptions);
 
   return { db, sqlite };
 }
@@ -127,7 +129,17 @@ export async function getDatabase(): Promise<AppDatabase> {
 }
 
 export async function createTestDatabase(url: string): Promise<DatabaseBundle> {
-  return initializeDatabaseBundle(url);
+  return initializeDatabaseBundle(url, {});
+}
+
+function getSeedOptionsFromEnvironment(): SeedOptions {
+  const apiKey = process.env.OSU_API_KEY;
+
+  return apiKey
+    ? {
+        resolveMetadata: (beatmapId) => fetchBeatmapMetadata(apiKey, beatmapId),
+      }
+    : {};
 }
 
 function migrateLegacySchema(sqlite: BetterSqliteConnection) {

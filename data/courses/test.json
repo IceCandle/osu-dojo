@@ -21,12 +21,7 @@
           "passConditionType": "acc",
           "passConditionThreshold": 10,
           "ordinal": 1,
-          "title": "test stage one",
-          "artist": "osu!dojo",
-          "difficultyName": "Opening",
-          "mapper": "staff",
-          "coverUrl": "https://assets.ppy.sh/beatmaps/1/covers/cover.jpg",
-          "annotations": ["aim", "opening consistency"]
+          "annotations": ["aim"]
         },
         {
           "id": "beatmap-test-2",
@@ -35,12 +30,7 @@
           "passConditionType": "score",
           "passConditionThreshold": 10000,
           "ordinal": 2,
-          "title": "test stage two",
-          "artist": "osu!dojo",
-          "difficultyName": "Closer",
-          "mapper": "staff",
-          "coverUrl": "https://assets.ppy.sh/beatmaps/2/covers/cover.jpg",
-          "annotations": ["speed", "final push"]
+          "annotations": ["speed"]
         }
       ]
     }

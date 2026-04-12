@@ -34,6 +34,7 @@ export interface DanCourseDefinition {
   danSystemId: string;
   danSystemName: string;
   danSystemSlug: string;
+  danSystemDescription: string;
   name: string;
   courseSlug: string;
   description: string;

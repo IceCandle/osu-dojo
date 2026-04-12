@@ -15,14 +15,13 @@ export default async function DanSystemsPage() {
           <div>
             <h1>Dan systems, archived cleanly.</h1>
             <p className="detail-copy">
-              Browse each system, pick a course, and inspect the compact run
-              snapshots without leaving the page.
+              Each system groups related dan courses under one scoring model.
             </p>
           </div>
           <div className="scope-panel">
-            <span className="scope-badge">Current surface</span>
-            <p>System pages focus on a single selected course at a time.</p>
-            <p>The leaderboard rail is intentionally compact and capped.</p>
+            <span className="scope-badge">How it works</span>
+            <p>Open a system to compare its courses without losing the full set.</p>
+            <p>Each course keeps its map order, pass rules, and top clears close together.</p>
           </div>
         </div>
       </section>
@@ -32,9 +31,8 @@ export default async function DanSystemsPage() {
           <Link className="system-link-card" href={`/dan/${system.slug}`} key={system.id}>
             <article className="system-card system-card-index">
               <div className="system-heading">
-                <p className="eyebrow">{system.slug}</p>
                 <h2>{system.name}</h2>
-                <p>{system.description}</p>
+                <p className="system-card-description">{system.description}</p>
               </div>
 
               <div className="system-card-meta">
@@ -42,7 +40,6 @@ export default async function DanSystemsPage() {
                   <span>Courses</span>
                   <strong>{system.dans.length}</strong>
                 </div>
-                <span className="system-card-link">Open system</span>
               </div>
             </article>
           </Link>
