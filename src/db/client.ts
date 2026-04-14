@@ -32,7 +32,6 @@ CREATE TABLE IF NOT EXISTS dans (
   id TEXT PRIMARY KEY,
   dan_system_id TEXT NOT NULL REFERENCES dan_systems(id),
   name TEXT NOT NULL,
-  slug TEXT,
   course_slug TEXT NOT NULL,
   description TEXT NOT NULL DEFAULT '',
   ordinal INTEGER NOT NULL,
@@ -88,6 +87,18 @@ CREATE TABLE IF NOT EXISTS map_results (
   passed INTEGER NOT NULL,
   created_at INTEGER NOT NULL DEFAULT (unixepoch() * 1000)
 );
+
+CREATE INDEX IF NOT EXISTS dans_system_ordinal_idx
+  ON dans(dan_system_id, ordinal);
+
+CREATE INDEX IF NOT EXISTS dan_beatmaps_dan_ordinal_idx
+  ON dan_beatmaps(dan_id, ordinal);
+
+CREATE INDEX IF NOT EXISTS results_dan_completed_idx
+  ON results(dan_id, completed_at);
+
+CREATE INDEX IF NOT EXISTS map_results_result_ordinal_idx
+  ON map_results(result_id, ordinal);
 `;
 
 function resolveDatabaseSource(url: string): string {
@@ -112,7 +123,6 @@ async function initializeDatabaseBundle(
   const sqlite = new Database(resolveDatabaseSource(url));
   sqlite.pragma("foreign_keys = ON");
   sqlite.exec(CREATE_TABLES_SQL);
-  migrateLegacySchema(sqlite);
 
   const db = drizzle(sqlite, { schema }) as AppDatabase;
   await seedDatabase(db, undefined, seedOptions);
@@ -140,59 +150,4 @@ function getSeedOptionsFromEnvironment(): SeedOptions {
         resolveMetadata: (beatmapId) => fetchBeatmapMetadata(apiKey, beatmapId),
       }
     : {};
-}
-
-function migrateLegacySchema(sqlite: BetterSqliteConnection) {
-  const migrate = sqlite.transaction(() => {
-    ensureColumn(sqlite, "dans", "course_slug", "TEXT");
-    ensureColumn(sqlite, "dans", "score_model", "TEXT");
-    ensureColumn(sqlite, "results", "match_id", "INTEGER");
-    ensureColumn(sqlite, "map_results", "game_id", "INTEGER");
-    ensureColumn(sqlite, "dan_beatmaps", "title", "TEXT NOT NULL DEFAULT ''");
-    ensureColumn(sqlite, "dan_beatmaps", "artist", "TEXT NOT NULL DEFAULT ''");
-    ensureColumn(sqlite, "dan_beatmaps", "difficulty_name", "TEXT NOT NULL DEFAULT ''");
-    ensureColumn(sqlite, "dan_beatmaps", "mapper", "TEXT NOT NULL DEFAULT ''");
-    ensureColumn(sqlite, "dan_beatmaps", "cover_url", "TEXT NOT NULL DEFAULT ''");
-    ensureColumn(sqlite, "dan_beatmaps", "annotations", "TEXT NOT NULL DEFAULT '[]'");
-
-    sqlite.prepare("UPDATE dans SET course_slug = slug WHERE course_slug IS NULL").run();
-    sqlite
-      .prepare("UPDATE dans SET score_model = 'scorev2' WHERE score_model IS NULL")
-      .run();
-    sqlite
-      .prepare("UPDATE dans SET overall_pass_type = 'score' WHERE overall_pass_type = 'sv2'")
-      .run();
-    sqlite
-      .prepare(
-        "UPDATE dan_beatmaps SET pass_condition_type = 'score' WHERE pass_condition_type = 'sv2'",
-      )
-      .run();
-    sqlite
-      .prepare(
-        "UPDATE map_results SET pass_condition_type = 'score' WHERE pass_condition_type = 'sv2'",
-      )
-      .run();
-    sqlite.prepare(
-      "CREATE UNIQUE INDEX IF NOT EXISTS dans_system_course_unique ON dans(dan_system_id, course_slug)",
-    ).run();
-  });
-
-  migrate();
-}
-
-function ensureColumn(
-  sqlite: BetterSqliteConnection,
-  tableName: string,
-  columnName: string,
-  definition: string,
-) {
-  const columns = sqlite
-    .prepare(`PRAGMA table_info(${tableName})`)
-    .all() as Array<{ name: string }>;
-
-  if (columns.some((column) => column.name === columnName)) {
-    return;
-  }
-
-  sqlite.prepare(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${definition}`).run();
 }

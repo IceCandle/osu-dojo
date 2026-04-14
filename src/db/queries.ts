@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, asc, desc, eq, inArray } from "drizzle-orm";
+import { asc, desc, eq, inArray } from "drizzle-orm";
 import { getDatabase, type AppDatabase } from "@/db/client";
 import { danBeatmaps, dans, danSystems, mapResults, results } from "@/db/schema";
 import type {
@@ -8,8 +8,24 @@ import type {
   JudgedMapResult,
   StoredRunResult,
 } from "@/lib/domain";
+import { kebabizeName } from "@/lib/format";
 
 type DerivedRunStatus = "pass" | "fail" | "dnf";
+
+type DanCourseRow = {
+  danId: string;
+  danName: string;
+  courseSlug: string;
+  danDescription: string;
+  danOrdinal: number;
+  scoreModel: DanCourseDefinition["scoreModel"] | null;
+  overallPassType: DanCourseDefinition["overallPassType"];
+  overallPassThreshold: number | null;
+  systemId: string;
+  systemName: string;
+  systemSlug: string;
+  systemDescription: string;
+};
 
 async function useDb(db?: AppDatabase): Promise<AppDatabase> {
   return db ?? getDatabase();
@@ -86,8 +102,8 @@ export async function listDanSystemsWithDans(db?: AppDatabase) {
   return [...systems.values()];
 }
 
-export async function listDanCoursesBySystemSlug(
-  systemSlug: string,
+export async function listDanCoursesBySystemNameKey(
+  systemNameKey: string,
   db?: AppDatabase,
 ): Promise<DanCourseDefinition[]> {
   const database = await useDb(db);
@@ -108,13 +124,39 @@ export async function listDanCoursesBySystemSlug(
     })
     .from(dans)
     .innerJoin(danSystems, eq(dans.danSystemId, danSystems.id))
-    .where(eq(danSystems.slug, systemSlug))
-    .orderBy(asc(dans.ordinal));
+    .orderBy(asc(danSystems.name), asc(dans.ordinal));
 
-  if (rows.length === 0) {
+  const normalizedSystemNameKey = kebabizeName(systemNameKey);
+  const matchingRows = rows.filter(
+    (row) => kebabizeName(row.systemName) === normalizedSystemNameKey,
+  );
+
+  if (matchingRows.length === 0) {
     return [];
   }
 
+  return hydrateCourseRows(matchingRows, database);
+}
+
+export async function getDanCourseByNameKey(
+  systemNameKey: string,
+  courseNameKey: string,
+  db?: AppDatabase,
+): Promise<DanCourseDefinition | null> {
+  const database = await useDb(db);
+  const courses = await listDanCoursesBySystemNameKey(systemNameKey, database);
+  const normalizedCourseNameKey = kebabizeName(courseNameKey);
+
+  return (
+    courses.find((course) => kebabizeName(course.name) === normalizedCourseNameKey) ??
+    null
+  );
+}
+
+async function hydrateCourseRows(
+  rows: DanCourseRow[],
+  database: AppDatabase,
+): Promise<DanCourseDefinition[]> {
   const beatmapRows = await database
     .select({
       danId: danBeatmaps.danId,
@@ -164,79 +206,17 @@ export async function listDanCoursesBySystemSlug(
   }));
 }
 
-export async function getDanCourseByRoute(
-  systemSlug: string,
-  courseSlug: string,
-  db?: AppDatabase,
-): Promise<DanCourseDefinition | null> {
-  const database = await useDb(db);
-  const rows = await database
-    .select({
-      danId: dans.id,
-      danName: dans.name,
-      courseSlug: dans.courseSlug,
-      danDescription: dans.description,
-      danOrdinal: dans.ordinal,
-      scoreModel: dans.scoreModel,
-      overallPassType: dans.overallPassType,
-      overallPassThreshold: dans.overallPassThreshold,
-      systemId: danSystems.id,
-      systemName: danSystems.name,
-      systemSlug: danSystems.slug,
-      systemDescription: danSystems.description,
-    })
-    .from(dans)
-    .innerJoin(danSystems, eq(dans.danSystemId, danSystems.id))
-    .where(and(eq(danSystems.slug, systemSlug), eq(dans.courseSlug, courseSlug)));
-
-  const row = rows[0];
-  if (!row) {
-    return null;
-  }
-
-  const beatmapRows = await database
-    .select({
-      id: danBeatmaps.id,
-      beatmapId: danBeatmaps.beatmapId,
-      mods: danBeatmaps.mods,
-      passConditionType: danBeatmaps.passConditionType,
-      passConditionThreshold: danBeatmaps.passConditionThreshold,
-      ordinal: danBeatmaps.ordinal,
-      title: danBeatmaps.title,
-      artist: danBeatmaps.artist,
-      difficultyName: danBeatmaps.difficultyName,
-      mapper: danBeatmaps.mapper,
-      coverUrl: danBeatmaps.coverUrl,
-      annotations: danBeatmaps.annotations,
-    })
-    .from(danBeatmaps)
-    .where(eq(danBeatmaps.danId, row.danId))
-    .orderBy(asc(danBeatmaps.ordinal));
-
-  return {
-    id: row.danId,
-    danSystemId: row.systemId,
-    danSystemName: row.systemName,
-    danSystemSlug: row.systemSlug,
-    danSystemDescription: row.systemDescription,
-    name: row.danName,
-    courseSlug: row.courseSlug,
-    description: row.danDescription,
-    ordinal: row.danOrdinal,
-    scoreModel: row.scoreModel ?? "scorev2",
-    overallPassType: row.overallPassType,
-    overallPassThreshold: row.overallPassThreshold,
-    beatmaps: beatmapRows.map(parseBeatmapRow),
-  };
-}
-
-export async function listDanResultsByRoute(
-  systemSlug: string,
-  courseSlug: string,
+export async function listDanResultsByNameKey(
+  systemNameKey: string,
+  courseNameKey: string,
   db?: AppDatabase,
 ) {
   const database = await useDb(db);
-  const course = await getDanCourseByRoute(systemSlug, courseSlug, database);
+  const course = await getDanCourseByNameKey(
+    systemNameKey,
+    courseNameKey,
+    database,
+  );
 
   if (!course) {
     return null;
@@ -275,13 +255,13 @@ export async function listDanResultsByRoute(
   };
 }
 
-export async function getRankingByRoute(
-  systemSlug: string,
-  courseSlug: string,
+export async function getRankingByNameKey(
+  systemNameKey: string,
+  courseNameKey: string,
   db?: AppDatabase,
 ) {
   const database = await useDb(db);
-  const course = await getDanCourseByRoute(systemSlug, courseSlug, database);
+  const course = await getDanCourseByNameKey(systemNameKey, courseNameKey, database);
 
   if (!course) {
     return null;

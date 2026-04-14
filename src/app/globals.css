@@ -195,8 +195,7 @@ code {
 .detail-header,
 .sequence-card,
 .system-card,
-.empty-card,
-.result-card {
+.empty-card {
   border: 1px solid var(--line);
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.05), transparent 24%),
@@ -237,7 +236,6 @@ code {
 .masthead-grid,
 .detail-stats,
 .systems-grid,
-.result-header,
 .section-heading {
   display: grid;
   gap: 24px;
@@ -260,8 +258,7 @@ code {
 .masthead-copy,
 .detail-copy,
 .system-heading p,
-.empty-card p,
-.beatmap-card p {
+.empty-card p {
   color: var(--muted);
   line-height: 1.7;
 }
@@ -323,7 +320,6 @@ code {
 
 .system-card,
 .sequence-card,
-.result-card,
 .empty-card {
   border-radius: 28px;
   padding: 24px;
@@ -331,8 +327,7 @@ code {
 
 .system-heading h2,
 .sequence-card h2,
-.empty-card h2,
-.beatmap-card h3 {
+.empty-card h2 {
   margin: 0;
   font-size: 28px;
 }
@@ -342,14 +337,6 @@ code {
   grid-template-columns: minmax(0, 1.4fr) minmax(280px, 0.8fr);
   gap: 24px;
   align-items: end;
-}
-
-.dan-list,
-.beatmap-sequence,
-.results-stack,
-.result-maps {
-  display: grid;
-  gap: 14px;
 }
 
 .system-heading {
@@ -365,38 +352,8 @@ code {
   -webkit-line-clamp: 2;
 }
 
-.dan-link,
-.beatmap-card,
-.result-map-row {
-  display: grid;
-  gap: 14px;
-  align-items: center;
-}
-
-.dan-link,
-.result-map-row {
-  grid-template-columns: minmax(0, 1.2fr) minmax(180px, 0.8fr);
-}
-
-.dan-link {
-  padding: 18px;
-  border-radius: 20px;
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  background: rgba(255, 255, 255, 0.03);
-  transition:
-    transform 180ms ease,
-    border-color 180ms ease,
-    background 180ms ease;
-}
-
-.dan-link:hover,
 .results-link:hover {
   transform: translateY(-2px);
-}
-
-.dan-link:hover {
-  border-color: rgba(255, 179, 71, 0.3);
-  background: rgba(255, 179, 71, 0.06);
 }
 
 .cta-link:hover,
@@ -404,27 +361,10 @@ code {
   transform: translateY(-2px);
 }
 
-.dan-link strong,
-.result-user {
-  display: block;
-  font-size: 22px;
-}
-
-.dan-link span,
-.result-header span,
-.detail-stats span,
-.beatmap-side span,
-.result-map-row span {
+.detail-stats span {
   color: var(--muted);
   font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
   font-size: 13px;
-}
-
-.dan-link-meta,
-.beatmap-side {
-  display: grid;
-  justify-items: end;
-  gap: 6px;
 }
 
 .systems-grid-index {
@@ -490,8 +430,7 @@ code {
   border-top: none;
 }
 
-.sequence-card,
-.results-stack {
+.sequence-card {
   margin-top: 24px;
 }
 
@@ -509,21 +448,12 @@ code {
   margin-bottom: 22px;
 }
 
-.results-link,
-.beatmap-side a {
+.results-link {
   color: var(--accent);
   font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
   font-size: 13px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-}
-
-.beatmap-card {
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  padding: 18px;
-  border-radius: 22px;
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  background: rgba(255, 255, 255, 0.025);
 }
 
 .beatmap-order {
@@ -620,26 +550,9 @@ code {
   line-height: 1.65;
 }
 
-.beatmap-body p,
 .empty-card h1,
 .empty-card h2 {
   margin: 0;
-}
-
-.result-card + .result-card {
-  margin-top: 16px;
-}
-
-.result-header {
-  grid-template-columns: 1fr auto;
-  align-items: end;
-  margin-bottom: 18px;
-}
-
-.result-map-row {
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  padding-top: 12px;
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 .status-pass,
@@ -924,17 +837,11 @@ code {
   .results-layout,
   .masthead-grid,
   .section-heading,
-  .result-header,
-  .dan-link,
-  .beatmap-card,
   .dan-stage-card,
-  .result-map-row,
   .detail-stats {
     grid-template-columns: 1fr;
   }
 
-  .beatmap-side,
-  .dan-link-meta,
   .status-pass,
   .status-fail,
   .status-dnf {

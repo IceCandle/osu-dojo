@@ -1,12 +1,13 @@
 import React from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getRankingForCourse, listDanCoursesBySystemSlug } from "@/db/queries";
+import { getRankingForCourse, listDanCoursesBySystemNameKey } from "@/db/queries";
 import {
   formatConditionCompact,
   formatMods,
   formatPercentage,
   formatScoreModel,
+  kebabizeName,
 } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
@@ -15,25 +16,35 @@ export default async function DanSystemPage({
   params,
   searchParams,
 }: {
-  params: Promise<{ systemSlug: string }>;
+  params: Promise<{ systemNameKey: string }>;
   searchParams?: Promise<{ course?: string | string[] }>;
 }) {
-  const { systemSlug } = await params;
-  const courses = await listDanCoursesBySystemSlug(systemSlug);
+  const { systemNameKey } = await params;
+  const courses = await listDanCoursesBySystemNameKey(systemNameKey);
 
   if (courses.length === 0) {
     notFound();
   }
 
   const resolvedSearchParams = searchParams ? await searchParams : undefined;
-  const requestedCourseSlug = Array.isArray(resolvedSearchParams?.course)
+  const requestedCourseNameKey = Array.isArray(resolvedSearchParams?.course)
     ? resolvedSearchParams?.course[0]
     : resolvedSearchParams?.course;
   const selectedCourse =
-    courses.find((course) => course.courseSlug === requestedCourseSlug) ?? courses[0]!;
+    requestedCourseNameKey === undefined
+      ? courses[0]!
+      : courses.find(
+          (course) => kebabizeName(course.name) === kebabizeName(requestedCourseNameKey),
+        );
+
+  if (!selectedCourse) {
+    notFound();
+  }
+
   const ranking = await getRankingForCourse(selectedCourse);
   const system = courses[0]!;
-  const command = `!dojo start ${selectedCourse.danSystemSlug} ${selectedCourse.courseSlug}`;
+  const systemNameKeyForLinks = kebabizeName(system.danSystemName);
+  const command = `!dojo start ${systemNameKeyForLinks} ${kebabizeName(selectedCourse.name)}`;
   const topResults = ranking.results.slice(0, 10);
   const overallRequirement =
     selectedCourse.overallPassType && selectedCourse.overallPassThreshold !== null
@@ -64,7 +75,7 @@ export default async function DanSystemPage({
         {courses.map((course) => (
           <Link
             className={`course-tab${course.id === selectedCourse.id ? " is-active" : ""}`}
-            href={`/dan/${systemSlug}?course=${course.courseSlug}`}
+            href={`/dan/${systemNameKeyForLinks}?course=${kebabizeName(course.name)}`}
             key={course.id}
             role="tab"
             aria-selected={course.id === selectedCourse.id}

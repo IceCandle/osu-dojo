@@ -1,19 +1,6 @@
 export type PassConditionType = "acc" | "score";
 export type DanScoreModel = "scorev1" | "scorev2";
 
-export type AccuracyRuleset = "osu" | string;
-export type AccuracyClient = "stable" | "lazer" | string;
-
-export interface AccuracyVariant {
-  ruleset: AccuracyRuleset;
-  client: AccuracyClient;
-}
-
-export const DEFAULT_ACCURACY_VARIANT = {
-  ruleset: "osu",
-  client: "stable",
-} as const satisfies AccuracyVariant;
-
 export interface DanBeatmapDefinition {
   id: string;
   beatmapId: number;
@@ -45,14 +32,14 @@ export interface DanCourseDefinition {
   beatmaps: DanBeatmapDefinition[];
 }
 
-export interface LegacyStableScoreStats {
+export interface StableScoreStats {
   count300: number;
   count100: number;
   count50: number;
   countMiss: number;
 }
 
-export interface JudgedMapResult extends LegacyStableScoreStats {
+export interface JudgedMapResult extends StableScoreStats {
   id: string;
   resultId: string;
   gameId: number | null;

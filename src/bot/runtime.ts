@@ -11,7 +11,7 @@ import {
   type BanchoMod,
 } from "bancho.js";
 import { getDatabase, type AppDatabase } from "@/db/client";
-import { getDanCourseByRoute, storeDanRunResult } from "@/db/queries";
+import { getDanCourseByNameKey, storeDanRunResult } from "@/db/queries";
 import { parseDojoCommand } from "@/bot/command";
 import { noopLogger, type BotLogFields, type BotLogger } from "@/bot/logger";
 import {
@@ -20,7 +20,7 @@ import {
 } from "@/bot/osuApi";
 import { judgeDanRun, judgeThreshold } from "@/lib/judging";
 import { parseCourseMods, validateCourseMods } from "@/lib/mods";
-import { formatConditionValue } from "@/lib/format";
+import { formatConditionValue, kebabizeName } from "@/lib/format";
 import type { DanCourseDefinition, JudgedMapResult } from "@/lib/domain";
 
 if (existsSync(".env")) {
@@ -140,7 +140,6 @@ export interface CreateDojoBotOptions {
   ) => Promise<NormalizedPlayerMapScore>;
   restDurationMs?: number;
   firstMapCountdownSeconds?: number;
-  nextMapCountdownSeconds?: number;
   inactivityTimeoutMs?: number;
   finalGracePeriodMs?: number;
   connectOnStart?: boolean;
@@ -155,7 +154,6 @@ export interface RunEndedEvent {
 
 const DEFAULT_REST_DURATION_MS = 20_000;
 const DEFAULT_FIRST_MAP_COUNTDOWN_SECONDS = 10;
-const DEFAULT_NEXT_MAP_COUNTDOWN_SECONDS = 5;
 const DEFAULT_INACTIVITY_TIMEOUT_MS = 20 * 60 * 1000;
 const DEFAULT_FINAL_GRACE_PERIOD_MS = 60_000;
 const STANDARD_SCORE_FETCH_ATTEMPTS = 4;
@@ -212,7 +210,9 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
       runId: run.runId,
       userId: run.playerUserId,
       username: run.playerUsername,
-      courseRoute: `${run.course.danSystemSlug}/${run.course.courseSlug}`,
+      courseRoute: `${kebabizeName(run.course.danSystemName)}/${kebabizeName(
+        run.course.name,
+      )}`,
       ...fields,
     };
   }
@@ -353,7 +353,7 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
       void abortRun(
         run,
         "inactivity-timeout",
-        "Run aborted: the room was inactive for too long. Start again with !dojo start <systemSlug> <courseSlug>.",
+        "Run aborted: the room was inactive for too long. Start again with !dojo start <system-name> <course-name>.",
       ).catch((error) => {
         logger.error("dojo inactivity abort failed", getRunLogFields(run, { error }));
       });
@@ -401,8 +401,8 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
     const database = await getDb();
     const playerIdentity = await resolvePlayerIdentity(message.user);
     logger.info("dojo command received", {
-      systemSlug: command.systemSlug,
-      courseSlug: command.courseSlug,
+      systemNameKey: command.systemNameKey,
+      courseNameKey: command.courseNameKey,
       userId: playerIdentity.userId,
       username: playerIdentity.username,
     });
@@ -412,7 +412,9 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
       logger.warn("dojo active run rejected", {
         userId: playerIdentity.userId,
         username: playerIdentity.username,
-        existingCourse: `${existingRun.course.danSystemSlug}/${existingRun.course.courseSlug}`,
+        existingCourse: `${kebabizeName(
+          existingRun.course.danSystemName,
+        )}/${kebabizeName(existingRun.course.name)}`,
       });
       await safeSendUserMessage(
         message.user,
@@ -421,21 +423,21 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
       return;
     }
 
-    const course = await getDanCourseByRoute(
-      command.systemSlug,
-      command.courseSlug,
+    const course = await getDanCourseByNameKey(
+      command.systemNameKey,
+      command.courseNameKey,
       database,
     );
     if (!course) {
       logger.warn("dojo unknown route", {
-        systemSlug: command.systemSlug,
-        courseSlug: command.courseSlug,
+        systemNameKey: command.systemNameKey,
+        courseNameKey: command.courseNameKey,
         userId: playerIdentity.userId,
         username: playerIdentity.username,
       });
       await safeSendUserMessage(
         message.user,
-        `Unknown dan route "${command.systemSlug} ${command.courseSlug}".`,
+        `Unknown dan route "${command.systemNameKey} ${command.courseNameKey}".`,
       );
       return;
     }
@@ -461,7 +463,7 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
     try {
       await safeSendUserMessage(
         message.user,
-        `Creating multiplayer room for ${course.name}. Download the maps before joining: ${getCoursePageUrl(course.danSystemSlug, course.courseSlug)}. Watch for an invite from BanchoBot.`,
+        `Creating multiplayer room for ${course.name}. Download the maps before joining: ${getCoursePageUrl(course)}. Watch for an invite from BanchoBot.`,
       );
 
       const lobbyChannel = await client.createLobby(`osu!dojo: ${course.name}`);
@@ -1265,9 +1267,11 @@ function defaultSleep(milliseconds: number) {
   });
 }
 
-function getCoursePageUrl(systemSlug: string, courseSlug: string) {
+function getCoursePageUrl(course: DanCourseDefinition) {
   const baseUrl = (process.env.DOJO_SITE_URL ?? "http://localhost:3000").replace(/\/$/, "");
-  return `${baseUrl}/dan/${encodeURIComponent(systemSlug)}?course=${encodeURIComponent(courseSlug)}`;
+  return `${baseUrl}/dan/${encodeURIComponent(
+    kebabizeName(course.danSystemName),
+  )}?course=${encodeURIComponent(kebabizeName(course.name))}`;
 }
 
 function loadEnvFallback(filePath: string) {

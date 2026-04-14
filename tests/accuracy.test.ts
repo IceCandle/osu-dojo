@@ -14,20 +14,6 @@ test("calculateAccuracy uses osu stable standard hit windows only", () => {
   assert.equal(accuracy?.toFixed(4), "92.7032");
 });
 
-test("calculateAccuracy returns null for unsupported score variants", () => {
-  const accuracy = calculateAccuracy(
-    {
-      count300: 900,
-      count100: 90,
-      count50: 10,
-      countMiss: 5,
-    },
-    { ruleset: "osu", client: "lazer" },
-  );
-
-  assert.equal(accuracy, null);
-});
-
 test("calculateAccuracy returns 0 when there are no hits to score", () => {
   const accuracy = calculateAccuracy({
     count300: 0,

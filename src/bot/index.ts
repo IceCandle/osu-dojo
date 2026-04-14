@@ -34,7 +34,7 @@ bot
   .start()
   .then(() => {
     logger.info("dojo bot connected", {
-      command: "!dojo start <systemSlug> <courseSlug>",
+      command: "!dojo start <system-name> <course-name>",
     });
   })
   .catch((error) => {

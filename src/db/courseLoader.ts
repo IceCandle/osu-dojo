@@ -1,7 +1,10 @@
 import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import type { DanScoreModel, PassConditionType } from "@/lib/domain";
+import { kebabizeName } from "@/lib/format";
 import { validateCourseMods } from "@/lib/mods";
+
+const DISPLAY_NAME_PATTERN = /^[A-Za-z0-9]+(?: [A-Za-z0-9]+)*$/;
 
 interface CourseBeatmapSeed {
   id: string;
@@ -44,7 +47,7 @@ export function loadCoursesFromDir(dir: string): CourseSystemSeed[] {
     .filter((name) => name.endsWith(".json"))
     .sort((left, right) => left.localeCompare(right));
 
-  return filenames.map((filename) => {
+  const systems = filenames.map((filename) => {
     const filePath = path.join(directory, filename);
     const raw = readFileSync(filePath, "utf8");
 
@@ -58,6 +61,9 @@ export function loadCoursesFromDir(dir: string): CourseSystemSeed[] {
       throw error;
     }
   });
+
+  assertUniqueNameKeys(systems);
+  return systems;
 }
 
 function parseCourseSystem(value: unknown, source: string): CourseSystemSeed {
@@ -65,7 +71,7 @@ function parseCourseSystem(value: unknown, source: string): CourseSystemSeed {
 
   return {
     id: expectString(record.id, "id", source),
-    name: expectString(record.name, "name", source),
+    name: expectDisplayName(record.name, "name", source),
     slug: expectString(record.slug, "slug", source),
     description: expectString(record.description, "description", source),
     dans: expectArray(record.dans, "dans", source).map((dan, index) =>
@@ -79,7 +85,7 @@ function parseCourseDan(value: unknown, source: string): CourseDanSeed {
 
   return {
     id: expectString(record.id, "id", source),
-    name: expectString(record.name, "name", source),
+    name: expectDisplayName(record.name, "name", source),
     courseSlug: expectString(record.courseSlug, "courseSlug", source),
     description: expectString(record.description, "description", source),
     ordinal: expectInteger(record.ordinal, "ordinal", source),
@@ -153,6 +159,18 @@ function expectString(value: unknown, field: string, source: string): string {
   }
 
   return value;
+}
+
+function expectDisplayName(value: unknown, field: string, source: string): string {
+  const name = expectString(value, field, source);
+
+  if (!DISPLAY_NAME_PATTERN.test(name)) {
+    throw new Error(
+      `${source} field "${field}" must match ${DISPLAY_NAME_PATTERN}.`,
+    );
+  }
+
+  return name;
 }
 
 function optionalString(
@@ -244,4 +262,31 @@ function expectScoreModel(
   throw new Error(
     `${source} field "${field}" must be "scorev1" or "scorev2".`,
   );
+}
+
+function assertUniqueNameKeys(systems: CourseSystemSeed[]) {
+  const systemKeys = new Map<string, string>();
+
+  for (const system of systems) {
+    const systemNameKey = kebabizeName(system.name);
+    const existingSystemName = systemKeys.get(systemNameKey);
+    if (existingSystemName) {
+      throw new Error(
+        `Duplicate system display name key "${systemNameKey}" from "${existingSystemName}" and "${system.name}".`,
+      );
+    }
+    systemKeys.set(systemNameKey, system.name);
+
+    const courseKeys = new Map<string, string>();
+    for (const dan of system.dans) {
+      const courseNameKey = kebabizeName(dan.name);
+      const existingCourseName = courseKeys.get(courseNameKey);
+      if (existingCourseName) {
+        throw new Error(
+          `Duplicate course display name key "${courseNameKey}" in system "${system.name}" from "${existingCourseName}" and "${dan.name}".`,
+        );
+      }
+      courseKeys.set(courseNameKey, dan.name);
+    }
+  }
 }

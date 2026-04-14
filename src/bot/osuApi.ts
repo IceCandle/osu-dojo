@@ -1,5 +1,4 @@
-import { DEFAULT_ACCURACY_VARIANT, type AccuracyVariant } from "@/lib/domain";
-import { requireAccuracy } from "@/lib/accuracy";
+import { calculateAccuracy } from "@/lib/accuracy";
 
 interface LegacyMultiScore {
   userId: number;
@@ -22,7 +21,6 @@ interface FetchScoreOptions {
   beatmapId: number;
   userId: number;
   processedGameIds: Set<number>;
-  variant?: AccuracyVariant;
   attempts?: number;
   delayMs?: number;
 }
@@ -69,11 +67,7 @@ export async function fetchLatestPlayerMapScore(
       );
 
       if (playerScore) {
-        return normalizePlayerMapScore(
-          game,
-          playerScore,
-          options.variant ?? DEFAULT_ACCURACY_VARIANT,
-        );
+        return normalizePlayerMapScore(game, playerScore);
       }
 
       lastError = new Error(
@@ -96,22 +90,18 @@ export async function fetchLatestPlayerMapScore(
 function normalizePlayerMapScore(
   game: LegacyMultiGame,
   score: LegacyMultiScore,
-  variant: AccuracyVariant,
 ): NormalizedPlayerMapScore {
   return {
     gameId: game.id,
     beatmapId: game.beatmapId,
     userId: score.userId,
     score: score.score,
-    accuracy: requireAccuracy(
-      {
-        count300: score.count300,
-        count100: score.count100,
-        count50: score.count50,
-        countMiss: score.countMiss,
-      },
-      variant,
-    ),
+    accuracy: calculateAccuracy({
+      count300: score.count300,
+      count100: score.count100,
+      count50: score.count50,
+      countMiss: score.countMiss,
+    }),
     maxCombo: score.maxCombo,
     count300: score.count300,
     count100: score.count100,

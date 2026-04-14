@@ -1,7 +1,7 @@
 export interface StartCommand {
   type: "start";
-  systemSlug: string;
-  courseSlug: string;
+  systemNameKey: string;
+  courseNameKey: string;
 }
 
 export function parseDojoCommand(message: string): StartCommand | null {
@@ -15,7 +15,7 @@ export function parseDojoCommand(message: string): StartCommand | null {
 
   return {
     type: "start",
-    systemSlug: match[1].toLowerCase(),
-    courseSlug: match[2].toLowerCase(),
+    systemNameKey: match[1].toLowerCase(),
+    courseNameKey: match[2].toLowerCase(),
   };
 }

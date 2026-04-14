@@ -1,6 +1,7 @@
 import React from "react";
 import Link from "next/link";
 import { listDanSystemsWithDans } from "@/db/queries";
+import { kebabizeName } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
@@ -28,7 +29,11 @@ export default async function DanSystemsPage() {
 
       <section className="systems-grid systems-grid-index">
         {systems.map((system) => (
-          <Link className="system-link-card" href={`/dan/${system.slug}`} key={system.id}>
+          <Link
+            className="system-link-card"
+            href={`/dan/${kebabizeName(system.name)}`}
+            key={system.id}
+          >
             <article className="system-card system-card-index">
               <div className="system-heading">
                 <h2>{system.name}</h2>

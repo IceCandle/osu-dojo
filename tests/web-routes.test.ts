@@ -7,15 +7,15 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { createTestDatabase } from "@/db/client";
 import { loadCoursesFromDir, type CourseSystemSeed } from "@/db/courseLoader";
 import {
-  getDanCourseByRoute,
-  getRankingByRoute,
+  getDanCourseByNameKey,
+  getRankingByNameKey,
   storeDanRunResult,
 } from "@/db/queries";
 import { clearAllData, cloneCourseSystems, seedDatabase } from "@/db/seed";
-import DanCoursePage from "@/app/dan/[systemSlug]/page";
+import DanCoursePage from "@/app/dan/[systemNameKey]/page";
 import type { DanCourseDefinition, JudgedMapResult } from "@/lib/domain";
 
-const SEEDED_SYSTEM_SLUG = "test";
+const SEEDED_SYSTEM_NAME_KEY = "test";
 const SEEDED_COURSE_SLUG = "test-1dan";
 
 function createTempDatabaseUrl() {
@@ -42,7 +42,7 @@ async function seedRankingCourses(databaseUrl: string) {
   system.dans.push(
     cloneCourse(baseCourse, {
       id: "dan-ranking-acc",
-      name: "ranking-acc",
+      name: "Ranking Acc",
       courseSlug: "ranking-acc",
       description: "Accuracy-ranked test dan for the integrated leaderboard.",
       scoreModel: "scorev1",
@@ -51,7 +51,7 @@ async function seedRankingCourses(databaseUrl: string) {
     }),
     cloneCourse(baseCourse, {
       id: "dan-ranking-sv2",
-      name: "ranking-sv2",
+      name: "Ranking Sv2",
       courseSlug: "ranking-sv2",
       description: "Score-ranked test dan for the integrated leaderboard.",
       scoreModel: "scorev2",
@@ -60,7 +60,7 @@ async function seedRankingCourses(databaseUrl: string) {
     }),
     cloneCourse(baseCourse, {
       id: "dan-ranking-empty",
-      name: "ranking-empty",
+      name: "Ranking Empty",
       courseSlug: "ranking-empty",
       description: "Empty test dan for the integrated leaderboard.",
       scoreModel: "scorev2",
@@ -72,9 +72,21 @@ async function seedRankingCourses(databaseUrl: string) {
   await clearAllData(db);
   await seedDatabase(db, systems);
 
-  const accCourse = await getDanCourseByRoute(SEEDED_SYSTEM_SLUG, "ranking-acc", db);
-  const sv2Course = await getDanCourseByRoute(SEEDED_SYSTEM_SLUG, "ranking-sv2", db);
-  const emptyCourse = await getDanCourseByRoute(SEEDED_SYSTEM_SLUG, "ranking-empty", db);
+  const accCourse = await getDanCourseByNameKey(
+    SEEDED_SYSTEM_NAME_KEY,
+    "ranking-acc",
+    db,
+  );
+  const sv2Course = await getDanCourseByNameKey(
+    SEEDED_SYSTEM_NAME_KEY,
+    "ranking-sv2",
+    db,
+  );
+  const emptyCourse = await getDanCourseByNameKey(
+    SEEDED_SYSTEM_NAME_KEY,
+    "ranking-empty",
+    db,
+  );
 
   assert.ok(accCourse);
   assert.ok(sv2Course);
@@ -181,7 +193,7 @@ function buildMapResult(
   };
 }
 
-test("getRankingByRoute sorts scorev1 courses by status then summed passed-map accuracy", async () => {
+test("getRankingByNameKey sorts scorev1 courses by status then summed passed-map accuracy", async () => {
   const temp = createTempDatabaseUrl();
 
   try {
@@ -309,7 +321,11 @@ test("getRankingByRoute sorts scorev1 courses by status then summed passed-map a
       db,
     );
 
-    const ranking = await getRankingByRoute(SEEDED_SYSTEM_SLUG, "ranking-acc", db);
+    const ranking = await getRankingByNameKey(
+      SEEDED_SYSTEM_NAME_KEY,
+      "ranking-acc",
+      db,
+    );
 
     assert.ok(ranking);
     assert.deepEqual(
@@ -327,7 +343,7 @@ test("getRankingByRoute sorts scorev1 courses by status then summed passed-map a
   }
 });
 
-test("getRankingByRoute sorts scorev2 courses by status then total score", async () => {
+test("getRankingByNameKey sorts scorev2 courses by status then total score", async () => {
   const temp = createTempDatabaseUrl();
 
   try {
@@ -432,7 +448,11 @@ test("getRankingByRoute sorts scorev2 courses by status then total score", async
       db,
     );
 
-    const ranking = await getRankingByRoute(SEEDED_SYSTEM_SLUG, "ranking-sv2", db);
+    const ranking = await getRankingByNameKey(
+      SEEDED_SYSTEM_NAME_KEY,
+      "ranking-sv2",
+      db,
+    );
 
     assert.ok(ranking);
     assert.deepEqual(
@@ -447,7 +467,7 @@ test("getRankingByRoute sorts scorev2 courses by status then total score", async
   }
 });
 
-test("getRankingByRoute keeps only each player's best run", async () => {
+test("getRankingByNameKey keeps only each player's best run", async () => {
   const temp = createTempDatabaseUrl();
 
   try {
@@ -552,7 +572,11 @@ test("getRankingByRoute keeps only each player's best run", async () => {
       db,
     );
 
-    const ranking = await getRankingByRoute(SEEDED_SYSTEM_SLUG, "ranking-acc", db);
+    const ranking = await getRankingByNameKey(
+      SEEDED_SYSTEM_NAME_KEY,
+      "ranking-acc",
+      db,
+    );
 
     assert.ok(ranking);
     assert.equal(ranking.results.length, 2);
@@ -614,7 +638,7 @@ test("DanCoursePage renders the integrated leaderboard and empty state on the sy
     const courseHtml = renderToStaticMarkup(
       await DanCoursePage({
         params: Promise.resolve({
-          systemSlug: accCourse.danSystemSlug,
+          systemNameKey: SEEDED_SYSTEM_NAME_KEY,
         }),
         searchParams: Promise.resolve({
           course: "ranking-acc",
@@ -624,7 +648,7 @@ test("DanCoursePage renders the integrated leaderboard and empty state on the sy
     const emptyHtml = renderToStaticMarkup(
       await DanCoursePage({
         params: Promise.resolve({
-          systemSlug: emptyCourse.danSystemSlug,
+          systemNameKey: SEEDED_SYSTEM_NAME_KEY,
         }),
         searchParams: Promise.resolve({
           course: "ranking-empty",

@@ -2,11 +2,11 @@
   "id": "system-test",
   "name": "test",
   "slug": "test",
-  "description": "Sample dan system for the MVP. Accuracy handling is currently implemented for osu!standard stable multiplayer scores only.",
+  "description": "Sample dan system for the MVP.",
   "dans": [
     {
       "id": "dan-test-1dan",
-      "name": "test-1",
+      "name": "1st",
       "courseSlug": "test-1dan",
       "description": "Two-map smoke-test sample course with short beatmaps and zeroed thresholds for quick manual verification.",
       "ordinal": 1,
@@ -31,6 +31,27 @@
           "passConditionThreshold": 10000,
           "ordinal": 2,
           "annotations": ["speed"]
+        }
+      ]
+    },
+    {
+      "id": "test-2dan",
+      "name": "2nd",
+      "courseSlug": "test-2dan",
+      "description": "One-map scorev1 smoke-test sample course with a low accuracy threshold for quick manual verification.",
+      "ordinal": 2,
+      "scoreModel": "scorev1",
+      "overallPassType": "acc",
+      "overallPassThreshold": 30,
+      "beatmaps": [
+        {
+          "id": "beatmap-test-2dan-1",
+          "beatmapId": 4923775,
+          "mods": "",
+          "passConditionType": "acc",
+          "passConditionThreshold": 30,
+          "ordinal": 1,
+          "annotations": ["aimslop"]
         }
       ]
     }

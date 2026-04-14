@@ -7,7 +7,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { BanchoLobbyPlayerStates, BanchoLobbyWinConditions } from "bancho.js";
 import type { BotLogger } from "@/bot/logger";
 import { createTestDatabase } from "@/db/client";
-import { getDanCourseByRoute, listDanResultsByRoute } from "@/db/queries";
+import { getDanCourseByNameKey, listDanResultsByNameKey } from "@/db/queries";
 import {
   createDojoBot,
   type BotClientLike,
@@ -26,9 +26,10 @@ function createTempDatabaseUrl() {
   };
 }
 
-const SEEDED_SYSTEM_SLUG = "test";
+const SEEDED_SYSTEM_NAME_KEY = "test";
+const SEEDED_COURSE_NAME_KEY = "1st";
 const SEEDED_COURSE_SLUG = "test-1dan";
-const SEEDED_START_COMMAND = `!dojo start ${SEEDED_SYSTEM_SLUG} ${SEEDED_COURSE_SLUG}`;
+const SEEDED_START_COMMAND = `!dojo start ${SEEDED_SYSTEM_NAME_KEY} ${SEEDED_COURSE_NAME_KEY}`;
 
 type FakeLobbyPlayer = {
   user: BotUserLike;
@@ -265,7 +266,11 @@ function latestMeaningfulLobbyMessage(lobby: FakeLobby) {
 }
 
 async function getSeededBeatmapIds(db: Awaited<ReturnType<typeof createTestDatabase>>["db"]) {
-  const course = await getDanCourseByRoute(SEEDED_SYSTEM_SLUG, SEEDED_COURSE_SLUG, db);
+  const course = await getDanCourseByNameKey(
+    SEEDED_SYSTEM_NAME_KEY,
+    SEEDED_COURSE_NAME_KEY,
+    db,
+  );
 
   if (!course) {
     throw new Error("Missing seeded test course.");
@@ -351,7 +356,6 @@ test("bot runs the seeded course, forces NF, switches to ScoreV2, and stores the
       restDurationMs: 0,
       finalGracePeriodMs: 0,
       firstMapCountdownSeconds: 0,
-      nextMapCountdownSeconds: 1,
       sleep: async () => {},
       fetchScore: async () => {
         const next = fetchedScores.shift();
@@ -372,7 +376,7 @@ test("bot runs the seeded course, forces NF, switches to ScoreV2, and stores the
     assert.equal(client.lobby.lockHistory, 1);
     assert.match(
       user.messages[0] ?? "",
-      /http:\/\/localhost:3000\/dan\/test\?course=test-1dan/i,
+      /http:\/\/localhost:3000\/dan\/test\?course=1st/i,
     );
 
     client.lobby.emit("playerJoined", {
@@ -396,13 +400,17 @@ test("bot runs the seeded course, forces NF, switches to ScoreV2, and stores the
       client.lobby.settingsHistory[1]?.winCondition,
       BanchoLobbyWinConditions.ScoreV2,
     );
-    assert.match(latestMeaningfulLobbyMessage(client.lobby), /test-1: PASS/i);
+    assert.match(latestMeaningfulLobbyMessage(client.lobby), /1st: PASS/i);
     assert.equal(client.lobby.closeLobbyCalls, 1);
     assert.equal(endedEvents[0]?.result, "completed");
     assert.equal(endedEvents[0]?.reason, undefined);
 
-    const results = await listDanResultsByRoute(SEEDED_SYSTEM_SLUG, SEEDED_COURSE_SLUG, db);
-    assert.equal(results?.results.length, 2);
+    const results = await listDanResultsByNameKey(
+      SEEDED_SYSTEM_NAME_KEY,
+      SEEDED_COURSE_NAME_KEY,
+      db,
+    );
+    assert.equal(results?.results.length, 1);
     assert.equal(results?.results[0]?.username, "PlayerOne");
     assert.equal(results?.results[0]?.matchId, client.lobby.id);
     assert.equal(results?.results[0]?.maps[0]?.gameId, 1);
@@ -436,7 +444,6 @@ test("bot switches lobby scoring to ScoreV1 when the course requests it", async 
       restDurationMs: 0,
       finalGracePeriodMs: 0,
       firstMapCountdownSeconds: 0,
-      nextMapCountdownSeconds: 0,
       sleep: async () => {},
       fetchScore: async (_lobby, options) => ({
         gameId: options.beatmapId,
@@ -487,7 +494,6 @@ test("bot uses the confirmed-finish score fetch policy and completes the run", a
       restDurationMs: 0,
       finalGracePeriodMs: 0,
       firstMapCountdownSeconds: 0,
-      nextMapCountdownSeconds: 1,
       sleep: async () => {},
       fetchScore: async (_lobby, options) => {
         calls.push({
@@ -559,7 +565,7 @@ test("bot uses the confirmed-finish score fetch policy and completes the run", a
         delayMs: 1000,
       },
     ]);
-    assert.match(latestMeaningfulLobbyMessage(client.lobby), /test-1: PASS/i);
+    assert.match(latestMeaningfulLobbyMessage(client.lobby), /1st: PASS/i);
   } finally {
     temp.cleanup();
   }
@@ -648,7 +654,11 @@ test("bot aborts immediately when the target player leaves between maps", async 
     assert.match(latestMeaningfulLobbyMessage(client.lobby), /player left the room/i);
     assert.equal(bot.activeRunsByUserId.has(42), false);
 
-    const results = await listDanResultsByRoute(SEEDED_SYSTEM_SLUG, SEEDED_COURSE_SLUG, db);
+    const results = await listDanResultsByNameKey(
+      SEEDED_SYSTEM_NAME_KEY,
+      SEEDED_COURSE_NAME_KEY,
+      db,
+    );
     assert.equal(results?.results[0]?.status, "dnf");
     assert.equal(results?.results[0]?.maps.length, 1);
   } finally {
@@ -698,9 +708,13 @@ test("bot halts the course immediately when a map fails", async () => {
     await flushAsyncWork(8);
 
     assert.equal(client.lobby.startHistory.length, 1);
-    assert.match(latestMeaningfulLobbyMessage(client.lobby), /test-1: FAIL/i);
+    assert.match(latestMeaningfulLobbyMessage(client.lobby), /1st: FAIL/i);
 
-    const results = await listDanResultsByRoute(SEEDED_SYSTEM_SLUG, SEEDED_COURSE_SLUG, db);
+    const results = await listDanResultsByNameKey(
+      SEEDED_SYSTEM_NAME_KEY,
+      SEEDED_COURSE_NAME_KEY,
+      db,
+    );
     assert.equal(results?.results[0]?.status, "fail");
     assert.equal(results?.results[0]?.maps.length, 1);
     assert.equal(results?.results[0]?.maps[0]?.passed, false);
@@ -864,7 +878,6 @@ test("bot cleanup does not block forever when closeLobby hangs", async () => {
       restDurationMs: 0,
       finalGracePeriodMs: 0,
       firstMapCountdownSeconds: 0,
-      nextMapCountdownSeconds: 1,
       sleep: async () => {},
       fetchScore: async () => {
         const next = fetchedScores.shift();

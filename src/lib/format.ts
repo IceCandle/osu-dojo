@@ -8,13 +8,8 @@ export function formatInteger(value: number): string {
   return new Intl.NumberFormat("en-US").format(Math.round(value));
 }
 
-export function formatCondition(
-  type: PassConditionType,
-  threshold: number,
-): string {
-  return type === "acc"
-    ? `${formatPercentage(threshold)} accuracy`
-    : `${formatInteger(threshold)} score`;
+export function kebabizeName(name: string): string {
+  return name.trim().toLowerCase().replace(/\s+/g, "-").replace(/^-+|-+$/g, "");
 }
 
 export function formatConditionCompact(
@@ -31,19 +26,6 @@ export function formatConditionValue(
   value: number,
 ): string {
   return type === "acc" ? formatPercentage(value) : formatInteger(value);
-}
-
-export function formatTimestamp(timestamp: number): string {
-  return new Date(timestamp).toLocaleString("en-US", {
-    dateStyle: "medium",
-    timeStyle: "short",
-  });
-}
-
-export function formatDate(timestamp: number): string {
-  return new Date(timestamp).toLocaleDateString("en-US", {
-    dateStyle: "medium",
-  });
 }
 
 export function formatMods(mods: string): string {

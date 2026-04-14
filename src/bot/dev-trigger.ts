@@ -2,8 +2,8 @@
  * Dev-only script: triggers a dan run for your own account
  * without needing a second account to send the !dojo DM.
  *
- * Usage: pnpm bot:dev <systemSlug> <courseSlug>
- *   e.g. pnpm bot:dev test test-1dan
+ * Usage: pnpm bot:dev <system-name> <course-name>
+ *   e.g. pnpm bot:dev test 1st
  */
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -46,11 +46,11 @@ export function attachDelayedRunEndedExit(options: {
 }
 
 async function main() {
-  const systemSlug = process.argv[2];
-  const courseSlug = process.argv[3];
+  const systemNameKey = process.argv[2];
+  const courseNameKey = process.argv[3];
 
-  if (!systemSlug || !courseSlug) {
-    console.error("Usage: pnpm bot:dev <systemSlug> <courseSlug>");
+  if (!systemNameKey || !courseNameKey) {
+    console.error("Usage: pnpm bot:dev <system-name> <course-name>");
     process.exit(1);
   }
 
@@ -116,7 +116,7 @@ async function main() {
         return null; // Don't actually send to selfUser to avoid silent drops
       },
     },
-    message: `!dojo start ${systemSlug} ${courseSlug}`,
+    message: `!dojo start ${systemNameKey} ${courseNameKey}`,
     self: false,
   });
 
@@ -130,7 +130,7 @@ async function main() {
     console.log(`👉 osump://${run.lobby.id}/`);
     console.log(`======================================================\n`);
   } else {
-    console.log(`Dev trigger sent: !dojo start ${systemSlug} ${courseSlug}`);
+    console.log(`Dev trigger sent: !dojo start ${systemNameKey} ${courseNameKey}`);
   }
 
   console.log("Waiting for you to join the lobby. Press Ctrl+C to quit.");

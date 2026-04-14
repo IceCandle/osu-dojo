@@ -23,10 +23,11 @@ test("course loader reads the seeded test course json", () => {
   assert.equal(courseSystem?.dans[0]?.courseSlug, "test-1dan");
   assert.equal(courseSystem?.dans[0]?.scoreModel, "scorev2");
   assert.equal(courseSystem?.dans[0]?.beatmaps[0]?.mods, "HR");
-  assert.deepEqual(courseSystem?.dans[0]?.beatmaps[0]?.annotations, [
-    "aim",
-    "opening consistency",
-  ]);
+  assert.deepEqual(courseSystem?.dans[0]?.beatmaps[0]?.annotations, ["aim"]);
+  assert.equal(courseSystem?.dans[1]?.courseSlug, "test-2dan");
+  assert.equal(courseSystem?.dans[1]?.scoreModel, "scorev1");
+  assert.equal(courseSystem?.dans[1]?.beatmaps[0]?.beatmapId, 4923775);
+  assert.equal(courseSystem?.dans[1]?.beatmaps[0]?.passConditionThreshold, 30);
 });
 
 test("mod validator accepts the full ranked stable mod set we support in course json", () => {
@@ -146,13 +147,13 @@ test("course loader rejects unsupported score models", () => {
       path.join(temp.directory, "invalid-score.json"),
       JSON.stringify({
         id: "system-invalid-score",
-        name: "invalid-score",
+        name: "invalid score",
         slug: "invalid-score",
         description: "invalid-score",
         dans: [
           {
             id: "dan-invalid-score",
-            name: "invalid-score",
+            name: "invalid score",
             courseSlug: "invalid-score-1",
             description: "invalid-score",
             ordinal: 1,
@@ -197,13 +198,13 @@ test("course loader rejects non-array annotations", () => {
       path.join(temp.directory, "invalid-annotations.json"),
       JSON.stringify({
         id: "system-invalid-annotations",
-        name: "invalid-annotations",
+        name: "invalid annotations",
         slug: "invalid-annotations",
         description: "invalid-annotations",
         dans: [
           {
             id: "dan-invalid-annotations",
-            name: "invalid-annotations",
+            name: "invalid annotations",
             courseSlug: "invalid-annotations-1",
             description: "invalid-annotations",
             ordinal: 1,
@@ -234,6 +235,119 @@ test("course loader rejects non-array annotations", () => {
     assert.throws(
       () => loadCoursesFromDir(temp.directory),
       /field "annotations" must be an array of strings/,
+    );
+  } finally {
+    temp.cleanup();
+  }
+});
+
+test("course loader rejects display names outside the public key contract", () => {
+  const temp = createTempDirectory();
+
+  try {
+    writeFileSync(
+      path.join(temp.directory, "invalid-name.json"),
+      JSON.stringify({
+        id: "system-invalid-name",
+        name: "Invalid-Name",
+        slug: "invalid-name",
+        description: "invalid",
+        dans: [
+          {
+            id: "dan-invalid-name",
+            name: "Valid Name",
+            courseSlug: "invalid-name-1",
+            description: "invalid",
+            ordinal: 1,
+            scoreModel: "scorev2",
+            overallPassType: "acc",
+            overallPassThreshold: 95,
+            beatmaps: [
+              {
+                id: "beatmap-invalid-name",
+                beatmapId: 1,
+                mods: "",
+                passConditionType: "acc",
+                passConditionThreshold: 95,
+                ordinal: 1,
+                annotations: ["x"],
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    assert.throws(
+      () => loadCoursesFromDir(temp.directory),
+      /field "name" must match/,
+    );
+  } finally {
+    temp.cleanup();
+  }
+});
+
+test("course loader rejects duplicate display name keys", () => {
+  const temp = createTempDirectory();
+
+  try {
+    writeFileSync(
+      path.join(temp.directory, "duplicates.json"),
+      JSON.stringify({
+        id: "system-duplicates",
+        name: "duplicates",
+        slug: "duplicates",
+        description: "duplicates",
+        dans: [
+          {
+            id: "dan-duplicates-1",
+            name: "First Dan",
+            courseSlug: "first-dan",
+            description: "duplicates",
+            ordinal: 1,
+            scoreModel: "scorev2",
+            overallPassType: "acc",
+            overallPassThreshold: 95,
+            beatmaps: [
+              {
+                id: "beatmap-duplicates-1",
+                beatmapId: 1,
+                mods: "",
+                passConditionType: "acc",
+                passConditionThreshold: 95,
+                ordinal: 1,
+                annotations: ["x"],
+              },
+            ],
+          },
+          {
+            id: "dan-duplicates-2",
+            name: "first dan",
+            courseSlug: "first-dan-copy",
+            description: "duplicates",
+            ordinal: 2,
+            scoreModel: "scorev2",
+            overallPassType: "acc",
+            overallPassThreshold: 95,
+            beatmaps: [
+              {
+                id: "beatmap-duplicates-2",
+                beatmapId: 2,
+                mods: "",
+                passConditionType: "acc",
+                passConditionThreshold: 95,
+                ordinal: 1,
+                annotations: ["x"],
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    assert.throws(
+      () => loadCoursesFromDir(temp.directory),
+      /Duplicate course display name key "first-dan"/,
     );
   } finally {
     temp.cleanup();
