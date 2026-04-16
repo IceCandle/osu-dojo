@@ -1,40 +1,44 @@
 # Roadmap
 
-This is an aspirational direction pin, not committed scope. Current scope stays in `docs/product-contract.md`; queued work stays in `docs/kanban.md`.
+이 문서는 방향을 잡아 두는 aspirational note입니다. 현재 제품 범위는 `docs/product-contract.md`, queued work는 `docs/kanban.md`를 기준으로 봅니다.
 
 ## Vision
 
-osu!dojo's value is automated forced-start dan lobby flow: a player requests a course, the bot creates and runs the multiplayer room, and the site records the result. The project should not drift into recreating tosu, osu!collector, or generic real-time leaderboard surfaces.
+osu!dojo의 핵심 가치는 자동 forced-start dan lobby flow입니다. player가 course를 요청하면 bot이 multiplayer room을 만들고 운영하며, site가 결과를 기록합니다.
 
 ## Phase 1: Current Shipped Scope
 
-- Automated dan lobbies through Bancho IRC. Source: `docs/product-contract.md` AC1-AC2.
-- osu!standard stable multiplayer score ingestion and judgment. Source: `docs/product-contract.md` AC3-AC4.
-- Read-only course and result catalog at `/`, `/dan`, and `/dan/[systemNameKey]?course=<courseNameKey>`. Source: `docs/product-contract.md` AC5.
+- Bancho IRC 기반 자동 dan lobby. Source: `docs/product-contract.md` AC1-AC2
+- stable osu!standard multiplayer score ingestion과 judgment. Source: `docs/product-contract.md` AC3-AC4
+- `/`, `/dan`, `/dan/[systemNameKey]?course=<courseNameKey>`의 read-only course/result catalog. Source: `docs/product-contract.md` AC5
 
 ## Phase 2: Near-Term Hardening
 
-- Bot reliability improvements such as clearer abort reasons, score-resolution diagnostics, restart-safe manual checks, and command/help consistency.
-- Course authoring guide and validation checklist. Source: `docs/kanban.md`.
-- Per-beatmap freemod course field. Source: `docs/kanban.md`.
-- Multiple pass conditions per map/course. Source: `docs/kanban.md`.
-- `!ready` skip-rest command for target players between maps. Source: `docs/kanban.md`.
+- abort reason, score-resolution diagnostics, restart-safe manual check, command/help consistency 같은 bot reliability 개선
+- course authoring guide와 validation checklist. Source: `docs/kanban.md`
+- per-beatmap freemod course field. Source: `docs/kanban.md`
+- map/course별 multiple pass conditions. Source: `docs/kanban.md`
+- map 사이 target player가 rest를 건너뛰는 `!ready` command. Source: `docs/kanban.md`
 
 ## Phase 3: Judgment and Proof Policy
 
-- Multi-ruleset and lazer accuracy support through an explicit score-interpretation layer. Source: `docs/kanban.md`.
-- Mode-specific judgment counters behind normalized score stats. Source: `docs/kanban.md`.
-- Staff proof review policy decision for replay files or handcam video. Source: `docs/kanban.md`.
+- explicit score-interpretation layer를 통한 multi-ruleset과 lazer accuracy support. Source: `docs/kanban.md`
+- normalized score stats 뒤의 mode-specific judgment counters. Source: `docs/kanban.md`
+- replay file 또는 handcam video를 staff proof review에 포함할지 결정. Source: `docs/kanban.md`
+- normal/gold pass 같은 pass grade 정책. Source: `docs/kanban.md`
 
-## Phase 4: Larger Product Expansion
+## Phase 4: Product Expansion
 
-- Lazer/API v2 room-control research before implementation.
-- Dynamic profile banner generation after hosting, verification URL, abuse handling, and proof semantics are defined. Source: `docs/kanban.md`.
-- Custom course creation UI after auth, ownership, moderation, validation, and persistence decisions are explicit. Source: `docs/kanban.md`.
+- 구현 전 lazer/API v2 room-control research
+- dan catalog search
+- admin auth account와 운영 도구
+- difficulty와 skillset voting
+- hosting, verification URL, abuse handling, proof semantics가 정의된 뒤 dynamic profile banner generation
+- auth, ownership, moderation, validation, persistence decision이 명확해진 뒤 custom course creation UI
 
 ## Not Current Direction
 
-- Pacemaker overlays.
-- Real-time leaderboard surfaces.
-
-Do not reopen these without a new problem statement. The current product direction is bot-run course attempts and recorded outcomes, not live telemetry.
+- pacemaker overlay
+- generic real-time leaderboard surface
+- 현재 product contract 밖의 write UI
+- 구현 전 정책이 정해지지 않은 replay-upload proof flow

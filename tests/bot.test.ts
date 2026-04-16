@@ -1,13 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import os from "node:os";
-import path from "node:path";
 import { EventEmitter } from "node:events";
-import { mkdtempSync, rmSync } from "node:fs";
 import { BanchoLobbyPlayerStates, BanchoLobbyWinConditions } from "bancho.js";
 import type { BotLogger } from "@/bot/logger";
 import { createTestDatabase } from "@/db/client";
 import { getDanCourseByNameKey, listDanResultsByNameKey } from "@/db/queries";
+import { createTempDatabaseUrl as createTempDatabaseUrlWithPrefix } from "./helpers/tempDatabase";
 import {
   createDojoBot,
   type BotClientLike,
@@ -16,15 +14,7 @@ import {
   type PrivateMessageLike,
 } from "@/bot/runtime";
 
-function createTempDatabaseUrl() {
-  const directory = mkdtempSync(path.join(os.tmpdir(), "osudojo-bot-"));
-  return {
-    url: `file:${path.join(directory, "dojo.sqlite")}`,
-    cleanup() {
-      rmSync(directory, { force: true, recursive: true });
-    },
-  };
-}
+const createTempDatabaseUrl = () => createTempDatabaseUrlWithPrefix("osudojo-bot-");
 
 const SEEDED_SYSTEM_NAME_KEY = "test";
 const SEEDED_COURSE_NAME_KEY = "1st";

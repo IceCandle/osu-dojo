@@ -1,28 +1,28 @@
-# Contributor Onboarding
+# 온보딩
 
-Use this path for a clean clone. It keeps live credentials local and gets you to a small first task without changing product scope.
+깨끗한 clone에서 로컬 실행까지 가는 절차입니다. live credential은 로컬에만 둡니다.
 
-## Requirements
+## 요구사항
 
 - Node.js 20+
 - pnpm 10.6+
-- osu! legacy API key and IRC credentials if you need to run the live bot
+- live bot을 실행하려면 osu! legacy API key와 IRC credential
 
-## Setup
+## 로컬 실행
 
-1. Install dependencies:
+1. 의존성 설치
 
    ```bash
    pnpm install
    ```
 
-2. Create `.env` from `.env.example`:
+2. `.env` 생성
 
    ```bash
    cp .env.example .env
    ```
 
-3. Fill in local credentials:
+3. credential 입력
 
    ```env
    OSU_IRC_USERNAME=
@@ -31,38 +31,44 @@ Use this path for a clean clone. It keeps live credentials local and gets you to
    DATABASE_URL=file:./dojo.db
    ```
 
-   Never commit `.env`, `dojo.db`, logs, or live credentials.
+   `.env`, `dojo.db`, log, live credential은 커밋하지 않습니다.
 
-4. Run the automated checks:
+4. 자동 검증
 
    ```bash
    pnpm test
    pnpm build
    ```
 
-5. Start the website:
+5. 웹사이트 실행
 
    ```bash
    pnpm dev
    ```
 
-   Visit `http://localhost:3000/`, `http://localhost:3000/dan`, and `http://localhost:3000/dan/test?course=1st`.
+6. 브라우저 확인
 
-## Bot Checks
+   - `http://localhost:3000/`
+   - `http://localhost:3000/dan`
+   - `http://localhost:3000/dan/test?course=1st`
 
-`pnpm bot` runs the live IRC bot process. It requires real osu! IRC/API credentials.
+## 봇 확인
 
-`pnpm bot:dev test 1st` is an optional live Bancho dev trigger for your own account. It is not an offline test. It connects to Bancho, injects `!dojo start test 1st`, and prints the multiplayer room link in the terminal.
+`pnpm bot`은 live IRC bot process를 실행합니다. 실제 osu! IRC/API credential이 필요합니다.
 
-## Entry Points
+`pnpm bot:dev test 1st`는 본인 계정으로 Bancho에 연결해서 `!dojo start test 1st`를 주입하는 live dev trigger입니다. 오프라인 테스트가 아니며, 성공하면 terminal에 multiplayer room link가 출력됩니다.
 
-- Website: `src/app/`
-- Bot process: `src/bot/index.ts`
-- Bot factory and test seam: `src/bot/runtime.ts`
-- Course data: `data/courses/`
-- Course authoring guide: `docs/course-authoring.md`
-- Domain and judging logic: `src/lib/`
+## 주요 위치
 
-## First Task
+- 웹사이트: `src/app/`
+- 봇 process: `src/bot/index.ts`
+- 봇 factory와 test seam: `src/bot/runtime.ts`
+- 코스 데이터: `data/courses/`
+- 코스 작성 가이드: `docs/course-authoring.md`
+- 도메인과 판정 로직: `src/lib/`
 
-Pick a low-priority Backlog card in `docs/kanban.md`, or ask for one card to be moved into Next with an owner and verifier. If the task touches course JSON, follow `docs/course-authoring.md`. Keep the PR scoped to that task, run `pnpm build && pnpm test`, and include the exact commands you ran in the PR notes.
+## 첫 작업 고르기
+
+처음에는 `docs/kanban.md`의 낮은 우선순위 Backlog 카드부터 보는 편이 좋습니다. 작업을 시작하기 전에 owner와 verifier shape이 명확한지 확인합니다.
+
+코스 JSON을 만지는 작업이면 `docs/course-authoring.md`를 먼저 읽습니다. PR은 한 가지 일만 담고, handoff 전에 `pnpm build && pnpm test` 결과와 필요한 manual check를 적습니다.

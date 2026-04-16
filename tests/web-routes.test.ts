@@ -1,8 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import os from "node:os";
 import path from "node:path";
-import { mkdtempSync, rmSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createTestDatabase } from "@/db/client";
 import { loadCoursesFromDir, type CourseSystemSeed } from "@/db/courseLoader";
@@ -14,19 +12,12 @@ import {
 import { clearAllData, cloneCourseSystems, seedDatabase } from "@/db/seed";
 import DanCoursePage from "@/app/dan/[systemNameKey]/page";
 import type { DanCourseDefinition, JudgedMapResult } from "@/lib/domain";
+import { createTempDatabaseUrl as createTempDatabaseUrlWithPrefix } from "./helpers/tempDatabase";
 
 const SEEDED_SYSTEM_NAME_KEY = "test";
 const SEEDED_COURSE_SLUG = "test-1dan";
 
-function createTempDatabaseUrl() {
-  const directory = mkdtempSync(path.join(os.tmpdir(), "osudojo-web-"));
-  return {
-    url: `file:${path.join(directory, "dojo.sqlite")}`,
-    cleanup() {
-      rmSync(directory, { force: true, recursive: true });
-    },
-  };
-}
+const createTempDatabaseUrl = () => createTempDatabaseUrlWithPrefix("osudojo-web-");
 
 async function seedRankingCourses(databaseUrl: string) {
   const { db } = await createTestDatabase(databaseUrl);

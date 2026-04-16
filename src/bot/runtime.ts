@@ -275,30 +275,6 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
     run.status = status;
   }
 
-  function transitionRunToCountdown(run: ActiveRun) {
-    transitionRunStatus(run, "countdown");
-  }
-
-  function transitionRunToBetweenMaps(run: ActiveRun) {
-    transitionRunStatus(run, "between_maps");
-  }
-
-  function transitionRunToPlaying(run: ActiveRun) {
-    transitionRunStatus(run, "playing_map");
-  }
-
-  function transitionRunToResolving(run: ActiveRun) {
-    transitionRunStatus(run, "resolving_map");
-  }
-
-  function transitionRunToFinalizing(run: ActiveRun) {
-    transitionRunStatus(run, "finalizing");
-  }
-
-  function transitionRunToAborted(run: ActiveRun) {
-    transitionRunStatus(run, "aborted");
-  }
-
   function isWaitingToStart(run: ActiveRun) {
     return run.status === "countdown" || run.status === "between_maps";
   }
@@ -321,10 +297,6 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
     }
   }
 
-  function clearInactivityTimeout(run: ActiveRun) {
-    clearRunTimer(run, "inactivityTimer");
-  }
-
   function isTrackedRun(run: ActiveRun) {
     return activeRunsByUserId.get(run.playerUserId) === run;
   }
@@ -343,7 +315,7 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
   }
 
   function scheduleInactivityTimeout(run: ActiveRun) {
-    clearInactivityTimeout(run);
+    clearRunTimer(run, "inactivityTimer");
 
     if (!isActiveRun(run)) {
       return;
@@ -494,7 +466,7 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
         message.user,
         `Failed to create the multiplayer room: ${toErrorMessage(error)}`,
       );
-      transitionRunToAborted(run);
+      transitionRunStatus(run, "aborted");
       await releaseRun(run, "room-creation-failed");
       await closeLobbyBestEffort(run);
       emitRunEnded(run, {
@@ -534,7 +506,7 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
         return;
       }
 
-      transitionRunToPlaying(run);
+      transitionRunStatus(run, "playing_map");
       touchRunProgress(run);
     };
 
@@ -580,7 +552,7 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
         return;
       }
 
-      transitionRunToResolving(run);
+      transitionRunStatus(run, "resolving_map");
       touchRunProgress(run);
       try {
         await handleMatchFinished(run);
@@ -799,9 +771,9 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
 
     run.targetPlayerFinishedCurrentMap = null;
     if (status === "countdown") {
-      transitionRunToCountdown(run);
+      transitionRunStatus(run, "countdown");
     } else {
-      transitionRunToBetweenMaps(run);
+      transitionRunStatus(run, "between_maps");
     }
     await run.lobby.setMap(beatmap.beatmapId);
     await run.lobby.setMods(normalizeLobbyMods(beatmap.mods));
@@ -982,7 +954,7 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
         return;
       }
 
-      clearInactivityTimeout(run);
+      clearRunTimer(run, "inactivityTimer");
       clearRunTimer(run, "countdownTimer");
 
       for (const dispose of run.disposeListeners.splice(0)) {
@@ -1055,9 +1027,9 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
     }
 
     if (plan.transition === "aborted") {
-      transitionRunToAborted(run);
+      transitionRunStatus(run, "aborted");
     } else {
-      transitionRunToFinalizing(run);
+      transitionRunStatus(run, "finalizing");
     }
 
     if (plan.beforePersistLobbyMessage && run.lobby) {
@@ -1185,7 +1157,7 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
 
       const activeRuns = [...activeRunsByUserId.values()];
       for (const run of activeRuns) {
-        transitionRunToAborted(run);
+        transitionRunStatus(run, "aborted");
       }
 
       await Promise.all(activeRuns.map((run) => releaseRun(run, "stopped")));
