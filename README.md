@@ -16,15 +16,14 @@
 
 현재 display name은 영문/숫자와 공백만 지원합니다. 예를 들어 `First Dan`은 public name key `first-dan`으로 사용합니다.
 
-## 먼저 읽을 문서
+## Contributor Entry Path
 
-- 현재 제품 범위: [`docs/product-contract.md`](docs/product-contract.md)
-- 작업 현황과 백로그: [`docs/kanban.md`](docs/kanban.md)
-- 새 기여자 온보딩: [`docs/onboarding.md`](docs/onboarding.md)
-- PR 규칙: [`docs/contributing.md`](docs/contributing.md)
-- 작업 컨벤션: [`docs/conventions.md`](docs/conventions.md)
-- 코스 JSON 작성법: [`docs/course-authoring.md`](docs/course-authoring.md)
-- 장기 방향: [`docs/roadmap.md`](docs/roadmap.md)
+1. 현재 제품 범위: [`docs/product-contract.md`](docs/product-contract.md)
+2. 작업 현황과 백로그: [GitHub Issues](https://github.com/IceCandle/osu-dojo/issues)
+3. 로컬 실행: [`docs/onboarding.md`](docs/onboarding.md)
+4. PR/작업 규칙: [`docs/conventions.md`](docs/conventions.md)
+5. 코스 JSON 작성법: [`docs/course-authoring.md`](docs/course-authoring.md)
+6. 장기 방향: [`docs/roadmap.md`](docs/roadmap.md)
 
 ## 자주 쓰는 명령
 
@@ -51,7 +50,7 @@ pnpm test
 5. `pnpm build`
 6. `pnpm dev`
 
-SQLite DB는 첫 실행 시 `data/courses/*.json`과 demo result data로 로컬에 생성됩니다. `.env`, `dojo.db`, dev log 같은 로컬 런타임 파일은 커밋하지 않습니다.
+SQLite DB는 첫 실행 시 `data/courses/*.json`과 demo result data로 로컬에 생성됩니다.
 
 ## 기술 스택
 

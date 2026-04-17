@@ -8,22 +8,13 @@
 
 ## Scope
 
-영향을 받는 lane:
-- [ ] Bot Runtime
-- [ ] Judgment
-- [ ] Course Data
-- [ ] Web Catalog
+영향을 받는 area:
+- [ ] Bot
+- [ ] DB
+- [ ] Web
 - [ ] Docs
 
-관련 있는 card/issue:
-
-## Constraints
-
-- 
-
-## Rejected Options
-
-- 
+관련 issue:
 
 ## Verification
 
@@ -39,20 +30,6 @@ Manual checks:
 - [ ] No unrelated files were changed
 - [ ] No new dependencies were added without justification
 
-## Not Tested:
+## Not Tested
 
 - 
-
-## Risk
-
-- [ ] Narrow
-- [ ] Moderate
-- [ ] Broad
-
-알고 있는 리스크나 follow-up:
-
--
-
-## Reviewer Notes
-
-실수로 바꾸지 말아야 하는 것들이 있을까요?
