@@ -13,6 +13,7 @@ import {
   type LobbyLike,
   type PrivateMessageLike,
 } from "@/bot/runtime";
+import { DOJO_USAGE_LINE } from "@/bot/command";
 
 const createTempDatabaseUrl = () => createTempDatabaseUrlWithPrefix("osudojo-bot-");
 
@@ -178,11 +179,19 @@ class FakeLobby extends EventEmitter implements LobbyLike {
 class FakeClient extends EventEmitter implements BotClientLike {
   lobby = new FakeLobby();
   createLobbyCalls: Array<{ name: string; privateLobby?: boolean }> = [];
+  createLobbyHandler?: (
+    name: string,
+    privateLobby?: boolean,
+  ) => Promise<{ lobby: FakeLobby }>;
   disconnectCalls = 0;
   connectCalls = 0;
 
   async createLobby(name: string, privateLobby?: boolean) {
     this.createLobbyCalls.push({ name, privateLobby });
+    if (this.createLobbyHandler) {
+      return this.createLobbyHandler(name, privateLobby);
+    }
+
     return { lobby: this.lobby };
   }
 
@@ -273,6 +282,65 @@ function createSeededStartMessage(user: BotUserLike) {
   return createPrivateMessage(user, SEEDED_START_COMMAND);
 }
 
+test("bot sends concise help without creating a lobby", async () => {
+  const client = new FakeClient();
+  const bot = createDojoBot({
+    client,
+    connectOnStart: false,
+  });
+  const user = new FakeUser(42, "PlayerOne");
+
+  await bot.handlePrivateMessage(createPrivateMessage(user, "!dojo help"));
+
+  assert.deepEqual(user.messages, [DOJO_USAGE_LINE]);
+  assert.equal(client.createLobbyCalls.length, 0);
+});
+
+test("bot replies to invalid dojo commands without creating a lobby", async () => {
+  const client = new FakeClient();
+  const bot = createDojoBot({
+    client,
+    connectOnStart: false,
+  });
+  const user = new FakeUser(42, "PlayerOne");
+
+  await bot.handlePrivateMessage(createPrivateMessage(user, "!dojo wat"));
+
+  assert.equal(user.messages.at(-1), "Invalid command. Use !dojo help for a guide.");
+  assert.equal(client.createLobbyCalls.length, 0);
+});
+
+test("bot ignores non-dojo private messages", async () => {
+  const client = new FakeClient();
+  const bot = createDojoBot({
+    client,
+    connectOnStart: false,
+  });
+  const user = new FakeUser(42, "PlayerOne");
+
+  await bot.handlePrivateMessage(createPrivateMessage(user, "hello !dojo"));
+
+  assert.deepEqual(user.messages, []);
+  assert.equal(client.createLobbyCalls.length, 0);
+});
+
+test("bot reports no previous command when prev has no history", async () => {
+  const client = new FakeClient();
+  const bot = createDojoBot({
+    client,
+    connectOnStart: false,
+  });
+  const user = new FakeUser(42, "PlayerOne");
+
+  await bot.handlePrivateMessage(createPrivateMessage(user, "!dojo prev"));
+
+  assert.equal(
+    user.messages.at(-1),
+    "No previous command. Use !dojo start <system-name> <course-name> to begin.",
+  );
+  assert.equal(client.createLobbyCalls.length, 0);
+});
+
 test("bot rejects unknown dan routes", async () => {
   const temp = createTempDatabaseUrl();
 
@@ -289,6 +357,115 @@ test("bot rejects unknown dan routes", async () => {
     await bot.handlePrivateMessage(createPrivateMessage(user, "!dojo start nope nope"));
 
     assert.match(user.messages.at(-1) ?? "", /Unknown dan route/i);
+    assert.equal(client.createLobbyCalls.length, 0);
+
+    await bot.handlePrivateMessage(createPrivateMessage(user, "!dojo prev"));
+
+    assert.equal(
+      user.messages.at(-1),
+      "No previous command. Use !dojo start <system-name> <course-name> to begin.",
+    );
+  } finally {
+    temp.cleanup();
+  }
+});
+
+test("bot keeps previous command history per player", async () => {
+  const temp = createTempDatabaseUrl();
+
+  try {
+    const { db } = await createTestDatabase(temp.url);
+    const client = new FakeClient();
+    const bot = createDojoBot({
+      client,
+      db,
+      connectOnStart: false,
+    });
+    const playerOne = new FakeUser(42, "PlayerOne");
+    const playerTwo = new FakeUser(99, "PlayerTwo");
+
+    await bot.handlePrivateMessage(createSeededStartMessage(playerOne));
+    await bot.handlePrivateMessage(createPrivateMessage(playerTwo, "!dojo prev"));
+
+    assert.equal(client.createLobbyCalls.length, 1);
+    assert.equal(
+      playerTwo.messages.at(-1),
+      "No previous command. Use !dojo start <system-name> <course-name> to begin.",
+    );
+  } finally {
+    temp.cleanup();
+  }
+});
+
+test("bot replays the previous start command after the active run is released", async () => {
+  const temp = createTempDatabaseUrl();
+
+  try {
+    const { db } = await createTestDatabase(temp.url);
+    const client = new FakeClient();
+    const bot = createDojoBot({
+      client,
+      db,
+      connectOnStart: false,
+      finalGracePeriodMs: 0,
+    });
+    const user = new FakeUser(42, "PlayerOne");
+
+    await bot.handlePrivateMessage(createSeededStartMessage(user));
+
+    const player = client.lobby.registerPlayer(user);
+    client.lobby.emit("playerJoined", { player });
+    await flushAsyncWork();
+    client.lobby.emit("playerLeft", player);
+    await flushAsyncWork();
+
+    assert.equal(bot.activeRunsByUserId.size, 0);
+
+    await bot.handlePrivateMessage(createPrivateMessage(user, "!dojo prev"));
+
+    assert.equal(client.createLobbyCalls.length, 2);
+    assert.deepEqual(
+      client.createLobbyCalls.map((call) => call.name),
+      ["osu!dojo: test / 1st", "osu!dojo: test / 1st"],
+    );
+    assert.match(user.messages.at(-1) ?? "", /Room ready: osu!dojo: test \/ 1st/i);
+  } finally {
+    temp.cleanup();
+  }
+});
+
+test("bot remembers a valid start command when lobby creation fails", async () => {
+  const temp = createTempDatabaseUrl();
+
+  try {
+    const { db } = await createTestDatabase(temp.url);
+    const client = new FakeClient();
+    let createLobbyAttempts = 0;
+    client.createLobbyHandler = async () => {
+      createLobbyAttempts += 1;
+      if (createLobbyAttempts === 1) {
+        throw new Error("Bancho unavailable");
+      }
+
+      return { lobby: client.lobby };
+    };
+
+    const bot = createDojoBot({
+      client,
+      db,
+      connectOnStart: false,
+    });
+    const user = new FakeUser(42, "PlayerOne");
+
+    await bot.handlePrivateMessage(createSeededStartMessage(user));
+
+    assert.match(user.messages.at(-1) ?? "", /Failed to create the multiplayer room/i);
+    assert.equal(bot.activeRunsByUserId.size, 0);
+
+    await bot.handlePrivateMessage(createPrivateMessage(user, "!dojo prev"));
+
+    assert.equal(client.createLobbyCalls.length, 2);
+    assert.match(user.messages.at(-1) ?? "", /Join the invite to begin/i);
   } finally {
     temp.cleanup();
   }

@@ -4,11 +4,12 @@
 
 ## What Changed
 
-- 
+-
 
 ## Scope
 
 영향을 받는 area:
+
 - [ ] Bot
 - [ ] DB
 - [ ] Web
@@ -32,4 +33,4 @@ Manual checks:
 
 ## Not Tested
 
-- 
+-

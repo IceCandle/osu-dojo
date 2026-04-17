@@ -50,7 +50,9 @@ Result (id, userId, danId, passed, timestamp, matchId?)
 ### AC1: Bot Start Flow
 
 - 플레이어가 bot IRC 계정에 DM으로 `!dojo start <system-name> <course-name>`를 보냅니다. 두 인자는 display-name key입니다.
-- bot은 `osu!dojo: <dan_name>` 제목의 멀티플레이어 방을 만듭니다.
+- 플레이어는 `!dojo help`로 간단한 사용법을 확인할 수 있고, 같은 bot process 안에서 이전에 성공적으로 확인된 시작 명령은 `!dojo prev`로 다시 실행할 수 있습니다.
+- bot은 `!dojo`로 시작하지만 알려진 명령이 아닌 DM에 사용법 안내를 보냅니다.
+- bot은 `osu!dojo: <system_name> / <course_name>` 제목의 멀티플레이어 방을 만듭니다.
 - bot은 플레이어를 초대하고, 플레이어가 방에 참가합니다.
 - system 또는 course name key가 잘못되었거나 알 수 없으면 bot은 오류 메시지를 보냅니다.
 

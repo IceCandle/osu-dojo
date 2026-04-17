@@ -7,7 +7,7 @@
 ## 지금 되는 것
 
 - 플레이어가 `!dojo start <system-name> <course-name>`를 봇 DM으로 보내 시작
-- 봇이 `osu!dojo: <dan_name>` 멀티방을 만들고 플레이어 초대
+- 봇이 `osu!dojo: <system_name> / <course_name>` 멀티방을 만들고 플레이어 초대
 - 코스에 맞는 beatmap과 mods 설정
 - 맵 종료 후 rest time 이후 다음 맵 자동 시작
 - 맵별 `accuracy` 또는 `score` 조건으로 pass/fail 판정
