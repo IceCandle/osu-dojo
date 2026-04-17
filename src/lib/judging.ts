@@ -48,7 +48,7 @@ export function judgeDanRun(
 
   const overallValue =
     course.overallPassType === "acc"
-      ? average(mapResults.map((result) => result.accuracy))
+      ? sum(mapResults.filter((result) => result.passed).map((result) => result.accuracy))
       : sum(mapResults.map((result) => result.score));
 
   const overall = {
@@ -63,14 +63,6 @@ export function judgeDanRun(
     allMapsPassed,
     overall,
   };
-}
-
-function average(values: number[]): number {
-  if (values.length === 0) {
-    return 0;
-  }
-
-  return sum(values) / values.length;
 }
 
 function sum(values: number[]): number {

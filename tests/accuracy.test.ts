@@ -60,7 +60,7 @@ test("judgeThreshold compares accuracy and score against the proper field", () =
   assert.equal(score.value, 905432);
 });
 
-test("judgeDanRun averages accuracy for dan acc thresholds", () => {
+test("judgeDanRun sums passed-map accuracy for dan acc thresholds", () => {
   const judged = judgeDanRun(
     {
       id: "dan-1",
@@ -74,7 +74,7 @@ test("judgeDanRun averages accuracy for dan acc thresholds", () => {
       ordinal: 1,
       scoreModel: "scorev2",
       overallPassType: "acc",
-      overallPassThreshold: 95,
+      overallPassThreshold: 190,
       beatmaps: [],
     },
     [
@@ -119,11 +119,11 @@ test("judgeDanRun averages accuracy for dan acc thresholds", () => {
     ],
   );
 
-  assert.equal(judged.overall?.value, 95.25);
+  assert.equal(judged.overall?.value, 190.5);
   assert.equal(judged.passed, true);
 });
 
-test("judgeDanRun fails when maps pass but average accuracy misses the overall threshold", () => {
+test("judgeDanRun fails when maps pass but summed passed-map accuracy misses the overall threshold", () => {
   const judged = judgeDanRun(
     {
       id: "dan-1",
@@ -137,7 +137,7 @@ test("judgeDanRun fails when maps pass but average accuracy misses the overall t
       ordinal: 1,
       scoreModel: "scorev2",
       overallPassType: "acc",
-      overallPassThreshold: 95,
+      overallPassThreshold: 190,
       beatmaps: [],
     },
     [
@@ -184,7 +184,72 @@ test("judgeDanRun fails when maps pass but average accuracy misses the overall t
 
   assert.equal(judged.allMapsPassed, true);
   assert.notEqual(judged.overall, null);
-  assert.equal(judged.overall?.value, 94.75);
+  assert.equal(judged.overall?.value, 189.5);
+  assert.equal(judged.overall?.passed, false);
+  assert.equal(judged.passed, false);
+});
+
+test("judgeDanRun excludes failed maps from course acc", () => {
+  const judged = judgeDanRun(
+    {
+      id: "dan-1",
+      danSystemId: "system-1",
+      danSystemName: "test",
+      danSystemSlug: "test",
+      danSystemDescription: "",
+      name: "test-1",
+      courseSlug: "test-1dan",
+      description: "",
+      ordinal: 1,
+      scoreModel: "scorev2",
+      overallPassType: "acc",
+      overallPassThreshold: 180,
+      beatmaps: [],
+    },
+    [
+      {
+        id: "map-1",
+        resultId: "result-1",
+        gameId: 1,
+        beatmapId: 1,
+        mods: "HDHRNF",
+        passConditionType: "acc",
+        passConditionThreshold: 94,
+        score: 900000,
+        accuracy: 95,
+        maxCombo: 1000,
+        count300: 1,
+        count100: 0,
+        count50: 0,
+        countMiss: 0,
+        passed: true,
+        ordinal: 1,
+        createdAt: 1,
+      },
+      {
+        id: "map-2",
+        resultId: "result-1",
+        gameId: 2,
+        beatmapId: 2,
+        mods: "HDDTNF",
+        passConditionType: "acc",
+        passConditionThreshold: 95,
+        score: 900000,
+        accuracy: 94.5,
+        maxCombo: 900,
+        count300: 1,
+        count100: 0,
+        count50: 0,
+        countMiss: 0,
+        passed: false,
+        ordinal: 2,
+        createdAt: 2,
+      },
+    ],
+  );
+
+  assert.equal(judged.allMapsPassed, false);
+  assert.equal(judged.overall?.value, 95);
   assert.equal(judged.overall?.passed, false);
   assert.equal(judged.passed, false);
 });
