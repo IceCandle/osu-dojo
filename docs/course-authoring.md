@@ -110,7 +110,7 @@ course data PR 전에 확인합니다.
 7. `pnpm build` 실행
 8. `pnpm dev`를 켜고 `/dan`, `/dan/<system-name-key>?course=<course-name-key>` 확인
 
-실제 Bancho 동작 확인(smoke check)이 필요하면 로컬 credential로 `pnpm bot:dev <system-name-key> <course-name-key>`를 실행합니다. Bancho에 연결하므로 일반 course-data PR에서는 선택 사항입니다.
+실제 Bancho 동작 확인(smoke check)이 필요하면 로컬 credential로 `pnpm bot:dev <system-name-key> <course-name-key>`를 실행합니다. 이 명령은 시작 명령을 한 번 주입한 뒤 REPL을 열어 `!dojo help`, `!dojo prev`, 잘못된 명령 등을 같은 bot process에서 확인할 수 있습니다. Bancho에 연결하므로 일반 course-data PR에서는 선택 사항입니다.
 
 ## Common Loader Failures
 

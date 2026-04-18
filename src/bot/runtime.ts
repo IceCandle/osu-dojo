@@ -12,7 +12,7 @@ import {
 } from "bancho.js";
 import { getDatabase, type AppDatabase } from "@/db/client";
 import { getDanCourseByNameKey, storeDanRunResult } from "@/db/queries";
-import { parseDojoCommand } from "@/bot/command";
+import { DOJO_USAGE_LINE, parseDojoCommand } from "@/bot/command";
 import { noopLogger, type BotLogFields, type BotLogger } from "@/bot/logger";
 import {
   fetchLatestPlayerMapScore,
@@ -123,6 +123,16 @@ interface ActiveRun {
   endEventEmitted?: boolean;
 }
 
+interface PreviousStartCommand {
+  systemNameKey: string;
+  courseNameKey: string;
+}
+
+interface PlayerIdentity {
+  userId: number;
+  username: string;
+}
+
 export interface CreateDojoBotOptions {
   client?: BotClientLike;
   db?: AppDatabase;
@@ -171,6 +181,9 @@ const IRC_DISCONNECTED_MESSAGE =
   "Run aborted: the bot disconnected from Bancho. Start a new run when the connection is back.";
 const MISSING_MAP_MESSAGE =
   "Run aborted: you do not have the map yet. Download it and start again.";
+const INVALID_COMMAND_MESSAGE = "Invalid command. Use !dojo help for a guide.";
+const NO_PREVIOUS_COMMAND_MESSAGE =
+  "No previous command. Use !dojo start <system-name> <course-name> to begin.";
 
 export function createLiveBanchoClient() {
   return new BanchoClient({
@@ -188,6 +201,7 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
   const events = new EventEmitter();
   const activeRunsByUserId = new Map<number, ActiveRun>();
   const activeRunsByLobbyId = new Map<number, ActiveRun>();
+  const previousStartByUserId = new Map<number, PreviousStartCommand>();
   const runsPendingLobbyClose = new Set<ActiveRun>();
   const timings = {
     inactivityTimeoutMs:
@@ -370,8 +384,49 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
       return;
     }
 
-    const database = await getDb();
+    if (command.type === "help") {
+      await safeSendUserMessage(message.user, DOJO_USAGE_LINE);
+      return;
+    }
+
+    if (command.type === "invalid") {
+      await safeSendUserMessage(message.user, INVALID_COMMAND_MESSAGE);
+      return;
+    }
+
     const playerIdentity = await resolvePlayerIdentity(message.user);
+
+    if (command.type === "prev") {
+      const previousStart = previousStartByUserId.get(playerIdentity.userId);
+      if (!previousStart) {
+        await safeSendUserMessage(message.user, NO_PREVIOUS_COMMAND_MESSAGE);
+        return;
+      }
+
+      await handleStartCommand(message.user, playerIdentity, previousStart, {
+        rememberStart: false,
+      });
+      return;
+    }
+
+    if (command.type === "start") {
+      await handleStartCommand(message.user, playerIdentity, command, {
+        rememberStart: true,
+      });
+      return;
+    }
+
+    const exhaustiveCommand: never = command;
+    return exhaustiveCommand;
+  };
+
+  async function handleStartCommand(
+    user: BotUserLike,
+    playerIdentity: PlayerIdentity,
+    command: PreviousStartCommand,
+    optionsForStart: { rememberStart: boolean },
+  ) {
+    const database = await getDb();
     logger.info("dojo command received", {
       systemNameKey: command.systemNameKey,
       courseNameKey: command.courseNameKey,
@@ -389,7 +444,7 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
         )}/${kebabizeName(existingRun.course.name)}`,
       });
       await safeSendUserMessage(
-        message.user,
+        user,
         `You already have an active run for ${existingRun.course.name}. Finish that room before starting another course.`,
       );
       return;
@@ -408,10 +463,17 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
         username: playerIdentity.username,
       });
       await safeSendUserMessage(
-        message.user,
+        user,
         `Unknown dan route "${command.systemNameKey} ${command.courseNameKey}".`,
       );
       return;
+    }
+
+    if (optionsForStart.rememberStart) {
+      previousStartByUserId.set(playerIdentity.userId, {
+        systemNameKey: command.systemNameKey,
+        courseNameKey: command.courseNameKey,
+      });
     }
 
     const run: ActiveRun = {
@@ -433,12 +495,13 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
     logger.info("dojo run created", getRunLogFields(run, { startedAt: run.startedAt }));
 
     try {
+      const lobbyTitle = getLobbyTitle(course);
       await safeSendUserMessage(
-        message.user,
-        `Creating multiplayer room for ${course.name}. Download the maps before joining: ${getCoursePageUrl(course)}. Watch for an invite from BanchoBot.`,
+        user,
+        `Creating multiplayer room ${lobbyTitle}. Download the maps before joining: ${getCoursePageUrl(course)}. Watch for an invite from BanchoBot.`,
       );
 
-      const lobbyChannel = await client.createLobby(`osu!dojo: ${course.name}`);
+      const lobbyChannel = await client.createLobby(lobbyTitle);
       run.lobby = lobbyChannel.lobby;
       activeRunsByLobbyId.set(run.lobby.id, run);
 
@@ -457,13 +520,13 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
       );
 
       await safeSendUserMessage(
-        message.user,
-        `Room ready: osu!dojo: ${course.name}. Join the invite to begin.`,
+        user,
+        `Room ready: ${lobbyTitle}. Join the invite to begin.`,
       );
     } catch (error) {
       logger.error("dojo room creation failed", getRunLogFields(run, { error }));
       await safeSendUserMessage(
-        message.user,
+        user,
         `Failed to create the multiplayer room: ${toErrorMessage(error)}`,
       );
       transitionRunStatus(run, "aborted");
@@ -476,7 +539,7 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
         reason: "room-creation-failed",
       });
     }
-  };
+  }
 
   function attachLobbyListeners(run: ActiveRun) {
     if (!run.lobby) {
@@ -1194,7 +1257,7 @@ function ensureNoFailModTokens(mods: string[]) {
   return mods.includes("NF") ? mods : [...mods, "NF"];
 }
 
-async function resolvePlayerIdentity(user: BotUserLike) {
+async function resolvePlayerIdentity(user: BotUserLike): Promise<PlayerIdentity> {
   if (typeof user.id === "number") {
     return {
       userId: user.id,
@@ -1244,6 +1307,10 @@ function getCoursePageUrl(course: DanCourseDefinition) {
   return `${baseUrl}/dan/${encodeURIComponent(
     kebabizeName(course.danSystemName),
   )}?course=${encodeURIComponent(kebabizeName(course.name))}`;
+}
+
+function getLobbyTitle(course: DanCourseDefinition) {
+  return `osu!dojo: ${course.danSystemName} / ${course.name}`;
 }
 
 function loadEnvFallback(filePath: string) {
