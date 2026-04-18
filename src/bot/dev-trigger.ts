@@ -2,16 +2,27 @@
  * Dev-only script: triggers a dan run for your own account
  * without needing a second account to send the !dojo DM.
  *
- * Usage: pnpm bot:dev <system-name> <course-name>
+ * Usage: pnpm bot:dev [<system-name> <course-name>]
  *   e.g. pnpm bot:dev test 1st
  */
 import path from "node:path";
+import { createInterface } from "node:readline/promises";
 import { pathToFileURL } from "node:url";
 import { createDevLogger } from "@/bot/logger";
 import { createDojoBot, createLiveBanchoClient, connectWithTimeout } from "@/bot/runtime";
 
 const DEV_TRIGGER_FINAL_GRACE_PERIOD_MS = 60_000;
 export const DEV_TRIGGER_EXIT_BUFFER_MS = 1_000;
+const USAGE_LINE = "Usage: pnpm bot:dev [<system-name> <course-name>]";
+
+type DevTriggerArgs =
+  | { type: "repl" }
+  | { type: "start"; systemNameKey: string; courseNameKey: string }
+  | { type: "usage-error" };
+
+type ActiveRunsByUserIdLike = {
+  get: (userId: number) => { lobby?: { id: number } } | undefined;
+};
 
 function isRoomCreatedPrivateMessage(message: string) {
   return /^Created the tournament match\b/i.test(message);
@@ -45,12 +56,55 @@ export function attachDelayedRunEndedExit(options: {
   });
 }
 
-async function main() {
-  const systemNameKey = process.argv[2];
-  const courseNameKey = process.argv[3];
+export function parseDevTriggerArgs(args: string[]): DevTriggerArgs {
+  if (args.length === 0) {
+    return { type: "repl" };
+  }
 
-  if (!systemNameKey || !courseNameKey) {
-    console.error("Usage: pnpm bot:dev <system-name> <course-name>");
+  if (args.length === 2) {
+    return {
+      type: "start",
+      systemNameKey: args[0],
+      courseNameKey: args[1],
+    };
+  }
+
+  return { type: "usage-error" };
+}
+
+export function getActiveLobbyId(
+  activeRunsByUserId: ActiveRunsByUserIdLike,
+  userId: number,
+) {
+  return activeRunsByUserId.get(userId)?.lobby?.id;
+}
+
+export function isNewLobbyCreated(
+  previousLobbyId: number | undefined,
+  nextLobbyId: number | undefined,
+): nextLobbyId is number {
+  return typeof nextLobbyId === "number" && nextLobbyId !== previousLobbyId;
+}
+
+function printRoomCreatedBanner(lobbyId: number) {
+  console.log(`\n======================================================`);
+  console.log(`ROOM CREATED!`);
+  console.log(`Since you are running the bot on your own account,`);
+  console.log(`Bancho routed the multiplayer invite to this terminal.`);
+  console.log(`To join the room, click or copy the following link:`);
+  console.log(`osump://${lobbyId}/`);
+  console.log(`======================================================\n`);
+}
+
+function toErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
+}
+
+async function main() {
+  const args = parseDevTriggerArgs(process.argv.slice(2));
+
+  if (args.type === "usage-error") {
+    console.error(USAGE_LINE);
     process.exit(1);
   }
 
@@ -78,15 +132,6 @@ async function main() {
     void exitCleanly(0);
   });
 
-  attachDelayedRunEndedExit({
-    bot,
-    exitCleanly,
-    finalGracePeriodMs: DEV_TRIGGER_FINAL_GRACE_PERIOD_MS,
-    log: (message) => {
-      console.log(message);
-    },
-  });
-
   // Intercept BanchoBot PMs because they are swallowed by this standalone IRC connection
   client.on("PM", (pm) => {
     if (pm.user.ircUsername === "BanchoBot") {
@@ -100,40 +145,69 @@ async function main() {
   });
 
   await connectWithTimeout(client);
-  console.log("Connected to Bancho. Injecting dev trigger...");
+  console.log("Connected to Bancho.");
 
   const selfUser = client.getSelf();
   const apiUser = await selfUser.fetchFromAPI();
-
-  await bot.handlePrivateMessage({
-    user: {
-      id: apiUser.id,
-      username: apiUser.username,
-      ircUsername: selfUser.ircUsername,
-      sendMessage: async (message) => {
-        // We log the DM to the console because self-PMs don't reliably show up in game
-        console.log(`[Bot DM to Game]: ${message}`);
-        return null; // Don't actually send to selfUser to avoid silent drops
-      },
+  const injectedUser = {
+    id: apiUser.id,
+    username: apiUser.username,
+    ircUsername: selfUser.ircUsername,
+    sendMessage: async (message: string) => {
+      // We log the DM to the console because self-PMs don't reliably show up in game.
+      console.log(`[Bot DM to Game]: ${message}`);
+      return null;
     },
-    message: `!dojo start ${systemNameKey} ${courseNameKey}`,
-    self: false,
-  });
+  };
 
-  const run = bot.activeRunsByUserId.get(apiUser.id);
-  if (run && run.lobby) {
-    console.log(`\n======================================================`);
-    console.log(`🚀 ROOM CREATED!`);
-    console.log(`Since you are running the bot on your own account,`);
-    console.log(`Bancho routed the multiplayer invite to this terminal.`);
-    console.log(`To join the room, click or copy the following link:`);
-    console.log(`👉 osump://${run.lobby.id}/`);
-    console.log(`======================================================\n`);
-  } else {
-    console.log(`Dev trigger sent: !dojo start ${systemNameKey} ${courseNameKey}`);
+  async function injectCommand(message: string) {
+    const previousLobbyId = getActiveLobbyId(bot.activeRunsByUserId, apiUser.id);
+
+    await bot.handlePrivateMessage({
+      user: injectedUser,
+      message,
+      self: false,
+    });
+
+    const nextLobbyId = getActiveLobbyId(bot.activeRunsByUserId, apiUser.id);
+    if (isNewLobbyCreated(previousLobbyId, nextLobbyId)) {
+      printRoomCreatedBanner(nextLobbyId);
+    }
   }
 
-  console.log("Waiting for you to join the lobby. Press Ctrl+C to quit.");
+  if (args.type === "start") {
+    const startCommand = `!dojo start ${args.systemNameKey} ${args.courseNameKey}`;
+    console.log(`Injecting dev trigger: ${startCommand}`);
+    await injectCommand(startCommand);
+  }
+
+  console.log("Type !dojo commands below. Press Ctrl+D or Ctrl+C to quit.");
+
+  const rl = createInterface({
+    input: process.stdin,
+    output: process.stdout,
+    prompt: "> ",
+  });
+  rl.on("SIGINT", () => {
+    void exitCleanly(0);
+  });
+
+  rl.prompt();
+  for await (const line of rl) {
+    const command = line.trim();
+
+    if (command) {
+      try {
+        await injectCommand(command);
+      } catch (error) {
+        console.log(`[error] ${toErrorMessage(error)}`);
+      }
+    }
+
+    rl.prompt();
+  }
+
+  await exitCleanly(0);
 }
 
 if (

@@ -49,7 +49,7 @@
 
 `pnpm bot`은 live IRC bot process를 실행합니다.
 
-`pnpm bot:dev test 1st`는 본인 계정으로 Bancho에 연결해서 `!dojo start test 1st`를 주입하는 live dev trigger입니다. 오프라인 테스트가 아니며, 성공하면 터미널에 멀티방 링크가 출력됩니다.
+`pnpm bot:dev test 1st`는 본인 계정으로 Bancho에 연결해서 `!dojo start test 1st`를 주입한 뒤 `!dojo` 명령을 직접 입력할 수 있는 REPL을 엽니다. `pnpm bot:dev`처럼 인자 없이 실행하면 시작 명령 주입 없이 REPL만 엽니다. 오프라인 테스트가 아니며, 방이 생성되면 터미널에 멀티방 링크가 출력됩니다.
 
 ## 주요 위치
 
