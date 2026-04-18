@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { index, integer, real, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { index, integer, real, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 import type { DanScoreModel, PassConditionType } from "@/lib/domain";
 
 export const danSystems = sqliteTable("dan_systems", {
@@ -9,15 +9,15 @@ export const danSystems = sqliteTable("dan_systems", {
   description: text("description").notNull(),
 });
 
-export const dans = sqliteTable(
-  "dans",
+export const courses = sqliteTable(
+  "courses",
   {
     id: text("id").primaryKey(),
     danSystemId: text("dan_system_id")
       .notNull()
       .references(() => danSystems.id),
     name: text("name").notNull(),
-    courseSlug: text("course_slug").notNull(),
+    slug: text("slug").notNull(),
     description: text("description").notNull().default(""),
     ordinal: integer("ordinal").notNull(),
     scoreModel: text("score_model").$type<DanScoreModel>().notNull(),
@@ -25,17 +25,18 @@ export const dans = sqliteTable(
     overallPassThreshold: real("overall_pass_threshold"),
   },
   (table) => [
-    index("dans_system_ordinal_idx").on(table.danSystemId, table.ordinal),
+    index("courses_system_ordinal_idx").on(table.danSystemId, table.ordinal),
+    uniqueIndex("courses_system_slug_unique").on(table.danSystemId, table.slug),
   ],
 );
 
-export const danBeatmaps = sqliteTable(
-  "dan_beatmaps",
+export const beatmaps = sqliteTable(
+  "beatmaps",
   {
     id: text("id").primaryKey(),
-    danId: text("dan_id")
+    courseId: text("course_id")
       .notNull()
-      .references(() => dans.id),
+      .references(() => courses.id),
     beatmapId: integer("beatmap_id").notNull(),
     mods: text("mods").notNull(),
     passConditionType: text("pass_condition_type")
@@ -51,26 +52,26 @@ export const danBeatmaps = sqliteTable(
     annotations: text("annotations").notNull().default("[]"),
   },
   (table) => [
-    index("dan_beatmaps_dan_ordinal_idx").on(table.danId, table.ordinal),
+    index("beatmaps_course_ordinal_idx").on(table.courseId, table.ordinal),
   ],
 );
 
-export const results = sqliteTable(
-  "results",
+export const runs = sqliteTable(
+  "runs",
   {
     id: text("id").primaryKey(),
     userId: integer("user_id").notNull(),
     username: text("username").notNull(),
-    danId: text("dan_id")
+    courseId: text("course_id")
       .notNull()
-      .references(() => dans.id),
+      .references(() => courses.id),
     passed: integer("passed", { mode: "boolean" }).notNull(),
     startedAt: integer("started_at").notNull(),
     completedAt: integer("completed_at").notNull(),
     matchId: integer("match_id"),
   },
   (table) => [
-    index("results_dan_completed_idx").on(table.danId, table.completedAt),
+    index("runs_course_completed_idx").on(table.courseId, table.completedAt),
   ],
 );
 
@@ -78,9 +79,9 @@ export const mapResults = sqliteTable(
   "map_results",
   {
     id: text("id").primaryKey(),
-    resultId: text("result_id")
+    runId: text("run_id")
       .notNull()
-      .references(() => results.id),
+      .references(() => runs.id),
     gameId: integer("game_id"),
     beatmapId: integer("beatmap_id").notNull(),
     mods: text("mods").notNull(),
@@ -102,6 +103,6 @@ export const mapResults = sqliteTable(
       .default(sql`(unixepoch() * 1000)`),
   },
   (table) => [
-    index("map_results_result_ordinal_idx").on(table.resultId, table.ordinal),
+    index("map_results_run_ordinal_idx").on(table.runId, table.ordinal),
   ],
 );

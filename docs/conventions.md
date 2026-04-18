@@ -21,6 +21,8 @@
 
 ## Shared Boundaries
 
+도메인 용어는 `DanSystem -> Course -> Beatmap`과 `CourseRun -> MapResult`를 기준으로 씁니다. `DanSystem`은 `danSystem*` prefix를 유지하고, 플레이 가능한 단위는 `dan`이 아니라 `course`로 부릅니다. system과 course 모두 자기 객체 안에서는 `slug`를 쓰며, 평탄화된 course 객체에서만 부모 system slug를 `danSystemSlug`로 구분합니다.
+
 `src/db/schema.ts` 또는 `src/lib/domain.ts`를 바꿔야 하면 PR notes에 영향 범위를 적습니다. 두 파일은 여러 area에 영향을 주므로 관련 issue나 tracking issue에서 먼저 경계를 분명히 합니다.
 
 새 dependency는 현재 stack으로 해결할 수 없는 이유가 있을 때만 추가합니다.

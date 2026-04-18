@@ -1,5 +1,5 @@
 /**
- * Dev-only script: triggers a dan run for your own account
+ * Dev-only script: triggers a course run for your own account
  * without needing a second account to send the !dojo DM.
  *
  * Usage: pnpm bot:dev [<system-name> <course-name>]
@@ -155,7 +155,7 @@ async function main() {
     ircUsername: selfUser.ircUsername,
     sendMessage: async (message: string) => {
       // We log the DM to the console because self-PMs don't reliably show up in game.
-      console.log(`[Bot DM to Game]: ${message}`);
+      console.log(`[Simulated Bot DM]: ${message}`);
       return null;
     },
   };

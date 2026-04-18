@@ -3,15 +3,15 @@ import assert from "node:assert/strict";
 import path from "node:path";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createTestDatabase } from "@/db/client";
-import { loadCoursesFromDir, type CourseSystemSeed } from "@/db/courseLoader";
+import { loadCoursesFromDir, type DanSystemSeed } from "@/db/courseLoader";
 import {
-  getDanCourseByNameKey,
+  getCourseByNameKey,
   getRankingByNameKey,
-  storeDanRunResult,
+  storeCourseRunResult,
 } from "@/db/queries";
 import { clearAllData, cloneCourseSystems, seedDatabase } from "@/db/seed";
 import DanCoursePage from "@/app/dan/[systemNameKey]/page";
-import type { DanCourseDefinition, JudgedMapResult } from "@/lib/domain";
+import type { CourseDefinition, JudgedMapResult } from "@/lib/domain";
 import { createTempDatabaseUrl as createTempDatabaseUrlWithPrefix } from "./helpers/tempDatabase";
 
 const SEEDED_SYSTEM_NAME_KEY = "test";
@@ -25,35 +25,35 @@ async function seedRankingCourses(databaseUrl: string) {
     loadCoursesFromDir(path.join(process.cwd(), "data/courses")),
   );
   const system = systems[0];
-  const baseCourse = system?.dans.find((entry) => entry.courseSlug === SEEDED_COURSE_SLUG);
+  const baseCourse = system?.courses.find((entry) => entry.slug === SEEDED_COURSE_SLUG);
 
   assert.ok(system);
   assert.ok(baseCourse);
 
-  system.dans.push(
+  system.courses.push(
     cloneCourse(baseCourse, {
-      id: "dan-ranking-acc",
+      id: "course-ranking-acc",
       name: "Ranking Acc",
-      courseSlug: "ranking-acc",
-      description: "Accuracy-ranked test dan for the integrated leaderboard.",
+      slug: "ranking-acc",
+      description: "Accuracy-ranked test course for the integrated leaderboard.",
       scoreModel: "scorev1",
       overallPassType: "acc",
       overallPassThreshold: 95,
     }),
     cloneCourse(baseCourse, {
-      id: "dan-ranking-sv2",
+      id: "course-ranking-sv2",
       name: "Ranking Sv2",
-      courseSlug: "ranking-sv2",
-      description: "Score-ranked test dan for the integrated leaderboard.",
+      slug: "ranking-sv2",
+      description: "Score-ranked test course for the integrated leaderboard.",
       scoreModel: "scorev2",
       overallPassType: "score",
       overallPassThreshold: 1_800_000,
     }),
     cloneCourse(baseCourse, {
-      id: "dan-ranking-empty",
+      id: "course-ranking-empty",
       name: "Ranking Empty",
-      courseSlug: "ranking-empty",
-      description: "Empty test dan for the integrated leaderboard.",
+      slug: "ranking-empty",
+      description: "Empty test course for the integrated leaderboard.",
       scoreModel: "scorev2",
       overallPassType: "acc",
       overallPassThreshold: 90,
@@ -63,17 +63,17 @@ async function seedRankingCourses(databaseUrl: string) {
   await clearAllData(db);
   await seedDatabase(db, systems);
 
-  const accCourse = await getDanCourseByNameKey(
+  const accCourse = await getCourseByNameKey(
     SEEDED_SYSTEM_NAME_KEY,
     "ranking-acc",
     db,
   );
-  const sv2Course = await getDanCourseByNameKey(
+  const sv2Course = await getCourseByNameKey(
     SEEDED_SYSTEM_NAME_KEY,
     "ranking-sv2",
     db,
   );
-  const emptyCourse = await getDanCourseByNameKey(
+  const emptyCourse = await getCourseByNameKey(
     SEEDED_SYSTEM_NAME_KEY,
     "ranking-empty",
     db,
@@ -87,18 +87,18 @@ async function seedRankingCourses(databaseUrl: string) {
 }
 
 function cloneCourse(
-  course: CourseSystemSeed["dans"][number],
+  course: DanSystemSeed["courses"][number],
   overrides: Pick<
-    CourseSystemSeed["dans"][number],
+    DanSystemSeed["courses"][number],
     | "id"
     | "name"
-    | "courseSlug"
+    | "slug"
     | "description"
     | "scoreModel"
     | "overallPassType"
     | "overallPassThreshold"
   >,
-): CourseSystemSeed["dans"][number] {
+): DanSystemSeed["courses"][number] {
   return {
     ...course,
     ...overrides,
@@ -110,7 +110,7 @@ function cloneCourse(
 }
 
 async function storeCourseRun(
-  course: DanCourseDefinition,
+  course: CourseDefinition,
   input: {
     userId: number;
     username: string;
@@ -135,11 +135,11 @@ async function storeCourseRun(
     .slice(0, input.maps.length)
     .map((beatmap, index) => buildMapResult(beatmap, input.maps[index]!, input.completedAt));
 
-  return storeDanRunResult(
+  return storeCourseRunResult(
     {
       userId: input.userId,
       username: input.username,
-      danId: course.id,
+      courseId: course.id,
       passed: input.passed,
       startedAt: input.completedAt - 120_000,
       completedAt: input.completedAt,
@@ -151,7 +151,7 @@ async function storeCourseRun(
 }
 
 function buildMapResult(
-  beatmap: DanCourseDefinition["beatmaps"][number],
+  beatmap: CourseDefinition["beatmaps"][number],
   stats: {
     gameId?: number;
     score: number;
@@ -164,7 +164,7 @@ function buildMapResult(
     passed: boolean;
   },
   completedAt: number,
-): Omit<JudgedMapResult, "id" | "resultId"> {
+): Omit<JudgedMapResult, "id" | "runId"> {
   return {
     gameId: stats.gameId ?? beatmap.ordinal,
     beatmapId: beatmap.beatmapId,

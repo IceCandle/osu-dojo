@@ -1,12 +1,12 @@
 import React from "react";
 import Link from "next/link";
-import { listDanSystemsWithDans } from "@/db/queries";
+import { listDanSystemsWithCourses } from "@/db/queries";
 import { kebabizeName } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
 export default async function DanSystemsPage() {
-  const systems = await listDanSystemsWithDans();
+  const systems = await listDanSystemsWithCourses();
 
   return (
     <main className="page-shell">
@@ -16,7 +16,7 @@ export default async function DanSystemsPage() {
           <div>
             <h1>Dan systems, archived cleanly.</h1>
             <p className="detail-copy">
-              Each system groups related dan courses under one scoring model.
+              Each dan system groups related courses under one scoring model.
             </p>
           </div>
           <div className="scope-panel">
@@ -43,7 +43,7 @@ export default async function DanSystemsPage() {
               <div className="system-card-meta">
                 <div>
                   <span>Courses</span>
-                  <strong>{system.dans.length}</strong>
+                  <strong>{system.courses.length}</strong>
                 </div>
               </div>
             </article>

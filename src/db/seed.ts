@@ -2,8 +2,8 @@ import path from "node:path";
 import { eq } from "drizzle-orm";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import * as schema from "@/db/schema";
-import { loadCoursesFromDir, type CourseSystemSeed } from "@/db/courseLoader";
-import { danBeatmaps, dans, danSystems, mapResults, results } from "@/db/schema";
+import { loadCoursesFromDir, type DanSystemSeed } from "@/db/courseLoader";
+import { beatmaps, courses, danSystems, mapResults, runs } from "@/db/schema";
 import type { BeatmapMetadata, MetadataResult } from "@/lib/beatmapMetadata";
 
 type SeedDatabase = BetterSQLite3Database<typeof schema>;
@@ -45,52 +45,52 @@ export async function seedDatabase(
         },
       });
 
-    for (const dan of system.dans) {
+    for (const course of system.courses) {
       await db
-        .insert(dans)
+        .insert(courses)
         .values({
-          id: dan.id,
+          id: course.id,
           danSystemId: system.id,
-          name: dan.name,
-          courseSlug: dan.courseSlug,
-          description: dan.description,
-          ordinal: dan.ordinal,
-          scoreModel: dan.scoreModel,
-          overallPassType: dan.overallPassType,
-          overallPassThreshold: dan.overallPassThreshold,
+          name: course.name,
+          slug: course.slug,
+          description: course.description,
+          ordinal: course.ordinal,
+          scoreModel: course.scoreModel,
+          overallPassType: course.overallPassType,
+          overallPassThreshold: course.overallPassThreshold,
         })
         .onConflictDoUpdate({
-          target: dans.id,
+          target: courses.id,
           set: {
             danSystemId: system.id,
-            name: dan.name,
-            courseSlug: dan.courseSlug,
-            description: dan.description,
-            ordinal: dan.ordinal,
-            scoreModel: dan.scoreModel,
-            overallPassType: dan.overallPassType,
-            overallPassThreshold: dan.overallPassThreshold,
+            name: course.name,
+            slug: course.slug,
+            description: course.description,
+            ordinal: course.ordinal,
+            scoreModel: course.scoreModel,
+            overallPassType: course.overallPassType,
+            overallPassThreshold: course.overallPassThreshold,
           },
         });
 
       const existingBeatmaps = await db
         .select({
-          id: danBeatmaps.id,
-          beatmapId: danBeatmaps.beatmapId,
-          title: danBeatmaps.title,
-          artist: danBeatmaps.artist,
-          difficultyName: danBeatmaps.difficultyName,
-          mapper: danBeatmaps.mapper,
-          coverUrl: danBeatmaps.coverUrl,
+          id: beatmaps.id,
+          beatmapId: beatmaps.beatmapId,
+          title: beatmaps.title,
+          artist: beatmaps.artist,
+          difficultyName: beatmaps.difficultyName,
+          mapper: beatmaps.mapper,
+          coverUrl: beatmaps.coverUrl,
         })
-        .from(danBeatmaps)
-        .where(eq(danBeatmaps.danId, dan.id));
+        .from(beatmaps)
+        .where(eq(beatmaps.courseId, course.id));
       const existingMetadataById = new Map(
         existingBeatmaps.map((beatmap) => [beatmap.id, beatmap]),
       );
       const beatmapValues = [];
 
-      for (const beatmap of dan.beatmaps) {
+      for (const beatmap of course.beatmaps) {
         const metadata = await resolveSeedBeatmapMetadata(
           beatmap,
           existingMetadataById.get(beatmap.id),
@@ -100,7 +100,7 @@ export async function seedDatabase(
 
         beatmapValues.push({
           id: beatmap.id,
-          danId: dan.id,
+          courseId: course.id,
           beatmapId: beatmap.beatmapId,
           mods: beatmap.mods,
           passConditionType: beatmap.passConditionType,
@@ -115,18 +115,18 @@ export async function seedDatabase(
         });
       }
 
-      await db.delete(danBeatmaps).where(eq(danBeatmaps.danId, dan.id));
-      await db.insert(danBeatmaps).values(beatmapValues);
+      await db.delete(beatmaps).where(eq(beatmaps.courseId, course.id));
+      await db.insert(beatmaps).values(beatmapValues);
     }
   }
 }
 
-export function cloneCourseSystems(systems: CourseSystemSeed[]) {
+export function cloneCourseSystems(systems: DanSystemSeed[]) {
   return systems.map((system) => ({
     ...system,
-    dans: system.dans.map((dan) => ({
-      ...dan,
-      beatmaps: dan.beatmaps.map((beatmap) => ({ ...beatmap })),
+    courses: system.courses.map((course) => ({
+      ...course,
+      beatmaps: course.beatmaps.map((beatmap) => ({ ...beatmap })),
     })),
   }));
 }
@@ -135,14 +135,14 @@ export async function clearAllData(
   db: SeedDatabase,
 ) {
   await db.delete(mapResults);
-  await db.delete(results);
-  await db.delete(danBeatmaps);
-  await db.delete(dans);
+  await db.delete(runs);
+  await db.delete(beatmaps);
+  await db.delete(courses);
   await db.delete(danSystems);
 }
 
 async function resolveSeedBeatmapMetadata(
-  beatmap: CourseSystemSeed["dans"][number]["beatmaps"][number],
+  beatmap: DanSystemSeed["courses"][number]["beatmaps"][number],
   existing: ExistingBeatmapMetadata | undefined,
   options: SeedOptions,
   metadataResolutionState: { requestCount: number },
@@ -182,7 +182,7 @@ async function resolveSeedBeatmapMetadata(
 }
 
 function hasReusableExistingMetadata(
-  beatmap: CourseSystemSeed["dans"][number]["beatmaps"][number],
+  beatmap: DanSystemSeed["courses"][number]["beatmaps"][number],
   existing: ExistingBeatmapMetadata | undefined,
 ): existing is ExistingBeatmapMetadata {
   return (

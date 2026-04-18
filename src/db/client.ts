@@ -28,22 +28,22 @@ CREATE TABLE IF NOT EXISTS dan_systems (
   description TEXT NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS dans (
+CREATE TABLE IF NOT EXISTS courses (
   id TEXT PRIMARY KEY,
   dan_system_id TEXT NOT NULL REFERENCES dan_systems(id),
   name TEXT NOT NULL,
-  course_slug TEXT NOT NULL,
+  slug TEXT NOT NULL,
   description TEXT NOT NULL DEFAULT '',
   ordinal INTEGER NOT NULL,
   score_model TEXT NOT NULL DEFAULT 'scorev2',
   overall_pass_type TEXT,
   overall_pass_threshold REAL,
-  UNIQUE(dan_system_id, course_slug)
+  UNIQUE(dan_system_id, slug)
 );
 
-CREATE TABLE IF NOT EXISTS dan_beatmaps (
+CREATE TABLE IF NOT EXISTS beatmaps (
   id TEXT PRIMARY KEY,
-  dan_id TEXT NOT NULL REFERENCES dans(id),
+  course_id TEXT NOT NULL REFERENCES courses(id),
   beatmap_id INTEGER NOT NULL,
   mods TEXT NOT NULL,
   pass_condition_type TEXT NOT NULL,
@@ -57,11 +57,11 @@ CREATE TABLE IF NOT EXISTS dan_beatmaps (
   annotations TEXT NOT NULL DEFAULT '[]'
 );
 
-CREATE TABLE IF NOT EXISTS results (
+CREATE TABLE IF NOT EXISTS runs (
   id TEXT PRIMARY KEY,
   user_id INTEGER NOT NULL,
   username TEXT NOT NULL,
-  dan_id TEXT NOT NULL REFERENCES dans(id),
+  course_id TEXT NOT NULL REFERENCES courses(id),
   passed INTEGER NOT NULL,
   started_at INTEGER NOT NULL,
   completed_at INTEGER NOT NULL,
@@ -70,7 +70,7 @@ CREATE TABLE IF NOT EXISTS results (
 
 CREATE TABLE IF NOT EXISTS map_results (
   id TEXT PRIMARY KEY,
-  result_id TEXT NOT NULL REFERENCES results(id),
+  run_id TEXT NOT NULL REFERENCES runs(id),
   game_id INTEGER,
   beatmap_id INTEGER NOT NULL,
   mods TEXT NOT NULL,
@@ -88,17 +88,17 @@ CREATE TABLE IF NOT EXISTS map_results (
   created_at INTEGER NOT NULL DEFAULT (unixepoch() * 1000)
 );
 
-CREATE INDEX IF NOT EXISTS dans_system_ordinal_idx
-  ON dans(dan_system_id, ordinal);
+CREATE INDEX IF NOT EXISTS courses_system_ordinal_idx
+  ON courses(dan_system_id, ordinal);
 
-CREATE INDEX IF NOT EXISTS dan_beatmaps_dan_ordinal_idx
-  ON dan_beatmaps(dan_id, ordinal);
+CREATE INDEX IF NOT EXISTS beatmaps_course_ordinal_idx
+  ON beatmaps(course_id, ordinal);
 
-CREATE INDEX IF NOT EXISTS results_dan_completed_idx
-  ON results(dan_id, completed_at);
+CREATE INDEX IF NOT EXISTS runs_course_completed_idx
+  ON runs(course_id, completed_at);
 
-CREATE INDEX IF NOT EXISTS map_results_result_ordinal_idx
-  ON map_results(result_id, ordinal);
+CREATE INDEX IF NOT EXISTS map_results_run_ordinal_idx
+  ON map_results(run_id, ordinal);
 `;
 
 function resolveDatabaseSource(url: string): string {

@@ -1,5 +1,5 @@
 import type {
-  DanCourseDefinition,
+  CourseDefinition,
   JudgedMapResult,
   PassConditionType,
 } from "@/lib/domain";
@@ -11,7 +11,7 @@ export interface JudgedThreshold {
   passed: boolean;
 }
 
-export interface JudgedDanResult {
+export interface JudgedCourseRunResult {
   passed: boolean;
   allMapsPassed: boolean;
   overall: JudgedThreshold | null;
@@ -32,10 +32,10 @@ export function judgeThreshold(
   };
 }
 
-export function judgeDanRun(
-  course: DanCourseDefinition,
+export function judgeCourseRun(
+  course: CourseDefinition,
   mapResults: JudgedMapResult[],
-): JudgedDanResult {
+): JudgedCourseRunResult {
   const allMapsPassed = mapResults.every((result) => result.passed);
 
   if (course.overallPassType === null || course.overallPassThreshold === null) {

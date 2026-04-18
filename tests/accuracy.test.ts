@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { calculateAccuracy } from "@/lib/accuracy";
-import { judgeDanRun, judgeThreshold } from "@/lib/judging";
+import { judgeCourseRun, judgeThreshold } from "@/lib/judging";
 
 test("calculateAccuracy uses osu stable standard hit windows only", () => {
   const accuracy = calculateAccuracy({
@@ -60,16 +60,16 @@ test("judgeThreshold compares accuracy and score against the proper field", () =
   assert.equal(score.value, 905432);
 });
 
-test("judgeDanRun sums passed-map accuracy for dan acc thresholds", () => {
-  const judged = judgeDanRun(
+test("judgeCourseRun sums passed-map accuracy for course acc thresholds", () => {
+  const judged = judgeCourseRun(
     {
-      id: "dan-1",
+      id: "course-1",
       danSystemId: "system-1",
       danSystemName: "test",
       danSystemSlug: "test",
       danSystemDescription: "",
       name: "test-1",
-      courseSlug: "test-1dan",
+      slug: "test-1dan",
       description: "",
       ordinal: 1,
       scoreModel: "scorev2",
@@ -80,7 +80,7 @@ test("judgeDanRun sums passed-map accuracy for dan acc thresholds", () => {
     [
       {
         id: "map-1",
-        resultId: "result-1",
+        runId: "result-1",
         gameId: 1,
         beatmapId: 1,
         mods: "HDHRNF",
@@ -99,7 +99,7 @@ test("judgeDanRun sums passed-map accuracy for dan acc thresholds", () => {
       },
       {
         id: "map-2",
-        resultId: "result-1",
+        runId: "result-1",
         gameId: 2,
         beatmapId: 2,
         mods: "HDDTNF",
@@ -123,16 +123,16 @@ test("judgeDanRun sums passed-map accuracy for dan acc thresholds", () => {
   assert.equal(judged.passed, true);
 });
 
-test("judgeDanRun fails when maps pass but summed passed-map accuracy misses the overall threshold", () => {
-  const judged = judgeDanRun(
+test("judgeCourseRun fails when maps pass but summed passed-map accuracy misses the overall threshold", () => {
+  const judged = judgeCourseRun(
     {
-      id: "dan-1",
+      id: "course-1",
       danSystemId: "system-1",
       danSystemName: "test",
       danSystemSlug: "test",
       danSystemDescription: "",
       name: "test-1",
-      courseSlug: "test-1dan",
+      slug: "test-1dan",
       description: "",
       ordinal: 1,
       scoreModel: "scorev2",
@@ -143,7 +143,7 @@ test("judgeDanRun fails when maps pass but summed passed-map accuracy misses the
     [
       {
         id: "map-1",
-        resultId: "result-1",
+        runId: "result-1",
         gameId: 1,
         beatmapId: 1,
         mods: "HDHRNF",
@@ -162,7 +162,7 @@ test("judgeDanRun fails when maps pass but summed passed-map accuracy misses the
       },
       {
         id: "map-2",
-        resultId: "result-1",
+        runId: "result-1",
         gameId: 2,
         beatmapId: 2,
         mods: "HDDTNF",
@@ -189,16 +189,16 @@ test("judgeDanRun fails when maps pass but summed passed-map accuracy misses the
   assert.equal(judged.passed, false);
 });
 
-test("judgeDanRun excludes failed maps from course acc", () => {
-  const judged = judgeDanRun(
+test("judgeCourseRun excludes failed maps from course acc", () => {
+  const judged = judgeCourseRun(
     {
-      id: "dan-1",
+      id: "course-1",
       danSystemId: "system-1",
       danSystemName: "test",
       danSystemSlug: "test",
       danSystemDescription: "",
       name: "test-1",
-      courseSlug: "test-1dan",
+      slug: "test-1dan",
       description: "",
       ordinal: 1,
       scoreModel: "scorev2",
@@ -209,7 +209,7 @@ test("judgeDanRun excludes failed maps from course acc", () => {
     [
       {
         id: "map-1",
-        resultId: "result-1",
+        runId: "result-1",
         gameId: 1,
         beatmapId: 1,
         mods: "HDHRNF",
@@ -228,7 +228,7 @@ test("judgeDanRun excludes failed maps from course acc", () => {
       },
       {
         id: "map-2",
-        resultId: "result-1",
+        runId: "result-1",
         gameId: 2,
         beatmapId: 2,
         mods: "HDDTNF",
@@ -254,16 +254,16 @@ test("judgeDanRun excludes failed maps from course acc", () => {
   assert.equal(judged.passed, false);
 });
 
-test("judgeDanRun sums score for dan score thresholds", () => {
-  const judged = judgeDanRun(
+test("judgeCourseRun sums score for course score thresholds", () => {
+  const judged = judgeCourseRun(
     {
-      id: "dan-1",
+      id: "course-1",
       danSystemId: "system-1",
       danSystemName: "test",
       danSystemSlug: "test",
       danSystemDescription: "",
       name: "test-1",
-      courseSlug: "test-1dan",
+      slug: "test-1dan",
       description: "",
       ordinal: 1,
       scoreModel: "scorev2",
@@ -274,7 +274,7 @@ test("judgeDanRun sums score for dan score thresholds", () => {
     [
       {
         id: "map-1",
-        resultId: "result-1",
+        runId: "result-1",
         gameId: 1,
         beatmapId: 1,
         mods: "NF",
@@ -293,7 +293,7 @@ test("judgeDanRun sums score for dan score thresholds", () => {
       },
       {
         id: "map-2",
-        resultId: "result-1",
+        runId: "result-1",
         gameId: 2,
         beatmapId: 2,
         mods: "NF",

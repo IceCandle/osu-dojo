@@ -10,7 +10,7 @@ export default async function HomePage() {
         <p className="masthead-kicker">osu!dojo</p>
         <div className="masthead-grid">
           <div>
-            <h1>Stable-hosted dan runs, judged automatically.</h1>
+            <h1>Stable-hosted course runs, judged automatically.</h1>
             <p className="masthead-copy">
               DM the bot with <code>!dojo start &lt;system&gt; &lt;course&gt;</code>,
               get invited into an automated multiplayer room, and let the course

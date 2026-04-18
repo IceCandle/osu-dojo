@@ -20,14 +20,14 @@ test("course loader reads the seeded test course json", () => {
   const systems = loadCoursesFromDir(path.join(process.cwd(), "data/courses"));
   const courseSystem = systems.find((system) => system.slug === "test");
 
-  assert.equal(courseSystem?.dans[0]?.courseSlug, "test-1dan");
-  assert.equal(courseSystem?.dans[0]?.scoreModel, "scorev2");
-  assert.equal(courseSystem?.dans[0]?.beatmaps[0]?.mods, "HR");
-  assert.deepEqual(courseSystem?.dans[0]?.beatmaps[0]?.annotations, ["aim"]);
-  assert.equal(courseSystem?.dans[1]?.courseSlug, "test-2dan");
-  assert.equal(courseSystem?.dans[1]?.scoreModel, "scorev1");
-  assert.equal(courseSystem?.dans[1]?.beatmaps[0]?.beatmapId, 4923775);
-  assert.equal(courseSystem?.dans[1]?.beatmaps[0]?.passConditionThreshold, 30);
+  assert.equal(courseSystem?.courses[0]?.slug, "test-1dan");
+  assert.equal(courseSystem?.courses[0]?.scoreModel, "scorev2");
+  assert.equal(courseSystem?.courses[0]?.beatmaps[0]?.mods, "HR");
+  assert.deepEqual(courseSystem?.courses[0]?.beatmaps[0]?.annotations, ["aim"]);
+  assert.equal(courseSystem?.courses[1]?.slug, "test-2dan");
+  assert.equal(courseSystem?.courses[1]?.scoreModel, "scorev1");
+  assert.equal(courseSystem?.courses[1]?.beatmaps[0]?.beatmapId, 4923775);
+  assert.equal(courseSystem?.courses[1]?.beatmaps[0]?.passConditionThreshold, 30);
 });
 
 test("mod validator accepts the full ranked stable mod set we support in course json", () => {
@@ -48,11 +48,11 @@ test("course loader rejects unsupported beatmap mods", () => {
         name: "invalid",
         slug: "invalid",
         description: "invalid",
-        dans: [
+        courses: [
           {
-            id: "dan-invalid",
+            id: "course-invalid",
             name: "invalid",
-            courseSlug: "invalid-1",
+            slug: "invalid-1",
             description: "invalid",
             ordinal: 1,
             scoreModel: "scorev2",
@@ -99,11 +99,11 @@ test("course loader allows beatmap metadata to be omitted", () => {
         name: "optional",
         slug: "optional",
         description: "optional",
-        dans: [
+        courses: [
           {
-            id: "dan-optional",
+            id: "course-optional",
             name: "optional",
-            courseSlug: "optional-1",
+            slug: "optional-1",
             description: "optional",
             ordinal: 1,
             scoreModel: "scorev2",
@@ -126,7 +126,7 @@ test("course loader allows beatmap metadata to be omitted", () => {
     );
 
     const systems = loadCoursesFromDir(temp.directory);
-    const beatmap = systems[0]?.dans[0]?.beatmaps[0];
+    const beatmap = systems[0]?.courses[0]?.beatmaps[0];
 
     assert.equal(beatmap?.title, "");
     assert.equal(beatmap?.artist, "");
@@ -134,6 +134,76 @@ test("course loader allows beatmap metadata to be omitted", () => {
     assert.equal(beatmap?.mapper, "");
     assert.equal(beatmap?.coverUrl, "");
     assert.deepEqual(beatmap?.annotations, ["metadata resolved at seed time"]);
+  } finally {
+    temp.cleanup();
+  }
+});
+
+test("course loader rejects legacy dans array key", () => {
+  const temp = createTempDirectory();
+
+  try {
+    writeFileSync(
+      path.join(temp.directory, "legacy-dans.json"),
+      JSON.stringify({
+        id: "system-legacy",
+        name: "legacy",
+        slug: "legacy",
+        description: "legacy",
+        dans: [],
+      }),
+    );
+
+    assert.throws(
+      () => loadCoursesFromDir(temp.directory),
+      /field "courses" must be an array/,
+    );
+  } finally {
+    temp.cleanup();
+  }
+});
+
+test("course loader rejects legacy courseSlug field", () => {
+  const temp = createTempDirectory();
+
+  try {
+    writeFileSync(
+      path.join(temp.directory, "legacy-course-slug.json"),
+      JSON.stringify({
+        id: "system-legacy-slug",
+        name: "legacy slug",
+        slug: "legacy-slug",
+        description: "legacy-slug",
+        courses: [
+          {
+            id: "course-legacy-slug",
+            name: "legacy",
+            courseSlug: "legacy-1",
+            description: "legacy",
+            ordinal: 1,
+            scoreModel: "scorev2",
+            overallPassType: "acc",
+            overallPassThreshold: 95,
+            beatmaps: [
+              {
+                id: "beatmap-legacy-slug",
+                beatmapId: 1,
+                mods: "",
+                passConditionType: "acc",
+                passConditionThreshold: 95,
+                ordinal: 1,
+                annotations: ["x"],
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    assert.throws(
+      () => loadCoursesFromDir(temp.directory),
+      /field "slug" must be a string/,
+    );
   } finally {
     temp.cleanup();
   }
@@ -150,11 +220,11 @@ test("course loader rejects unsupported score models", () => {
         name: "invalid score",
         slug: "invalid-score",
         description: "invalid-score",
-        dans: [
+        courses: [
           {
-            id: "dan-invalid-score",
+            id: "course-invalid-score",
             name: "invalid score",
-            courseSlug: "invalid-score-1",
+            slug: "invalid-score-1",
             description: "invalid-score",
             ordinal: 1,
             scoreModel: "legacy",
@@ -201,11 +271,11 @@ test("course loader rejects non-array annotations", () => {
         name: "invalid annotations",
         slug: "invalid-annotations",
         description: "invalid-annotations",
-        dans: [
+        courses: [
           {
-            id: "dan-invalid-annotations",
+            id: "course-invalid-annotations",
             name: "invalid annotations",
-            courseSlug: "invalid-annotations-1",
+            slug: "invalid-annotations-1",
             description: "invalid-annotations",
             ordinal: 1,
             scoreModel: "scorev2",
@@ -252,11 +322,11 @@ test("course loader rejects display names outside the public key contract", () =
         name: "Invalid-Name",
         slug: "invalid-name",
         description: "invalid",
-        dans: [
+        courses: [
           {
-            id: "dan-invalid-name",
+            id: "course-invalid-name",
             name: "Valid Name",
-            courseSlug: "invalid-name-1",
+            slug: "invalid-name-1",
             description: "invalid",
             ordinal: 1,
             scoreModel: "scorev2",
@@ -298,11 +368,11 @@ test("course loader rejects duplicate display name keys", () => {
         name: "duplicates",
         slug: "duplicates",
         description: "duplicates",
-        dans: [
+        courses: [
           {
-            id: "dan-duplicates-1",
+            id: "course-duplicates-1",
             name: "First Dan",
-            courseSlug: "first-dan",
+            slug: "first-dan",
             description: "duplicates",
             ordinal: 1,
             scoreModel: "scorev2",
@@ -321,9 +391,9 @@ test("course loader rejects duplicate display name keys", () => {
             ],
           },
           {
-            id: "dan-duplicates-2",
+            id: "course-duplicates-2",
             name: "first dan",
-            courseSlug: "first-dan-copy",
+            slug: "first-dan-copy",
             description: "duplicates",
             ordinal: 2,
             scoreModel: "scorev2",

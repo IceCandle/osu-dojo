@@ -11,17 +11,17 @@ import {
   type BanchoMod,
 } from "bancho.js";
 import { getDatabase, type AppDatabase } from "@/db/client";
-import { getDanCourseByNameKey, storeDanRunResult } from "@/db/queries";
+import { getCourseByNameKey, storeCourseRunResult } from "@/db/queries";
 import { DOJO_USAGE_LINE, parseDojoCommand } from "@/bot/command";
 import { noopLogger, type BotLogFields, type BotLogger } from "@/bot/logger";
 import {
   fetchLatestPlayerMapScore,
   type NormalizedPlayerMapScore,
 } from "@/bot/osuApi";
-import { judgeDanRun, judgeThreshold } from "@/lib/judging";
+import { judgeCourseRun, judgeThreshold } from "@/lib/judging";
 import { parseCourseMods, validateCourseMods } from "@/lib/mods";
 import { formatConditionValue, kebabizeName } from "@/lib/format";
-import type { DanCourseDefinition, JudgedMapResult } from "@/lib/domain";
+import type { CourseDefinition, JudgedMapResult } from "@/lib/domain";
 
 if (existsSync(".env")) {
   if (typeof loadEnvFile === "function") {
@@ -100,13 +100,13 @@ type ActiveRunStatus =
 
 interface ActiveRun {
   runId: string;
-  course: DanCourseDefinition;
+  course: CourseDefinition;
   playerUserId: number;
   playerUsername: string;
   startedAt: number;
   lobby?: LobbyLike;
   currentBeatmapIndex: number;
-  mapResults: Omit<JudgedMapResult, "id" | "resultId">[];
+  mapResults: Omit<JudgedMapResult, "id" | "runId">[];
   processedGameIds: Set<number>;
   status: ActiveRunStatus;
   lastProgressAt: number;
@@ -450,7 +450,7 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
       return;
     }
 
-    const course = await getDanCourseByNameKey(
+    const course = await getCourseByNameKey(
       command.systemNameKey,
       command.courseNameKey,
       database,
@@ -464,7 +464,7 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
       });
       await safeSendUserMessage(
         user,
-        `Unknown dan route "${command.systemNameKey} ${command.courseNameKey}".`,
+        `Unknown course "${command.systemNameKey} ${command.courseNameKey}".`,
       );
       return;
     }
@@ -743,7 +743,7 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
       countMiss: fetchedScore.countMiss,
       passed: threshold.passed,
       createdAt: Date.now(),
-    } satisfies Omit<JudgedMapResult, "id" | "resultId">;
+    } satisfies Omit<JudgedMapResult, "id" | "runId">;
 
     run.mapResults.push(judgedMapResult);
     logger.info(
@@ -972,7 +972,7 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
       return { passed: false, overall: null };
     }
 
-    return judgeDanRun(run.course, run.mapResults as JudgedMapResult[]);
+    return judgeCourseRun(run.course, run.mapResults as JudgedMapResult[]);
   }
 
   function getLobbyClosingMessage(delayMs: number) {
@@ -1067,11 +1067,11 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
       return;
     }
 
-    await storeDanRunResult(
+    await storeCourseRunResult(
       {
         userId: run.playerUserId,
         username: run.playerUsername,
-        danId: run.course.id,
+        courseId: run.course.id,
         passed: plan.passed,
         startedAt: run.startedAt,
         completedAt: Date.now(),
@@ -1236,7 +1236,7 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
   };
 }
 
-function getLobbyWinCondition(scoreModel: DanCourseDefinition["scoreModel"]) {
+function getLobbyWinCondition(scoreModel: CourseDefinition["scoreModel"]) {
   return scoreModel === "scorev1"
     ? BanchoLobbyWinConditions.Score
     : BanchoLobbyWinConditions.ScoreV2;
@@ -1302,14 +1302,14 @@ function defaultSleep(milliseconds: number) {
   });
 }
 
-function getCoursePageUrl(course: DanCourseDefinition) {
+function getCoursePageUrl(course: CourseDefinition) {
   const baseUrl = (process.env.DOJO_SITE_URL ?? "http://localhost:3000").replace(/\/$/, "");
   return `${baseUrl}/dan/${encodeURIComponent(
     kebabizeName(course.danSystemName),
   )}?course=${encodeURIComponent(kebabizeName(course.name))}`;
 }
 
-function getLobbyTitle(course: DanCourseDefinition) {
+function getLobbyTitle(course: CourseDefinition) {
   return `osu!dojo: ${course.danSystemName} / ${course.name}`;
 }
 

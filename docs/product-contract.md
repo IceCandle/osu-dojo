@@ -20,16 +20,16 @@ osu! dan course를 자동 멀티플레이어 방에서 진행하는 IRC bot, pas
 
 ```text
 DanSystem (id, name, slug, description)
-  has many Dan (id, name, courseSlug, danSystemId, ordinal, scoreModel: "scorev1"|"scorev2")
-    has many DanBeatmap (id, danId, beatmapId, mods, passCondition: {type: "acc"|"score", threshold: number}, ordinal)
+  has many Course (id, name, slug, danSystemId, ordinal, scoreModel: "scorev1"|"scorev2")
+    has many Beatmap (id, courseId, beatmapId, mods, passCondition: {type: "acc"|"score", threshold: number}, ordinal)
 
-Result (id, userId, danId, passed, timestamp, matchId?)
-  has many MapResult (id, resultId, gameId?, beatmapId, score, accuracy, passed)
+CourseRun (id, userId, courseId, passed, timestamp, matchId?)
+  has many MapResult (id, runId, gameId?, beatmapId, score, accuracy, passed)
 ```
 
-- Dan은 course입니다. N개의 map을 순서대로 플레이하고, 각 map은 자체 통과 조건(pass condition)을 가집니다.
-- DanSystem은 `test`, `tr1ple`처럼 관련된 dan을 묶습니다.
-- `slug`와 `courseSlug`는 내부 seed/database 식별자입니다. 공개 명령어와 URL은 display-name key를 사용합니다.
+- DanSystem은 `test`, `tr1ple`처럼 관련된 course를 묶는 최상위 framework입니다.
+- Course는 DanSystem 안의 플레이 가능한 단위입니다. N개의 beatmap을 순서대로 플레이하고, 각 beatmap은 자체 통과 조건(pass condition)을 가집니다.
+- `slug`는 system과 course 각각의 내부 seed/database 식별자입니다. 공개 명령어와 URL은 display-name key를 사용합니다.
 
 ## Public Name Keys
 
@@ -58,7 +58,7 @@ Result (id, userId, danId, passed, timestamp, matchId?)
 
 ### AC2: Course Sequencing
 
-- bot은 DB에서 dan 정의를 불러옵니다.
+- bot은 DB에서 course 정의를 불러옵니다.
 - 첫 beatmap과 올바른 mods를 설정합니다.
 - 각 map이 끝나면 휴식 시간 이후 다음 map으로 자동 진행합니다. 기본 휴식 시간은 20초입니다.
 - 마지막 map 이후 course가 완료됩니다.
@@ -66,11 +66,11 @@ Result (id, userId, danId, passed, timestamp, matchId?)
 ### AC3: Result Ingestion
 
 - 각 map이 끝난 뒤 bot은 match result에서 플레이어 점수를 수집합니다.
-- `{userId, danId, beatmapId, score, accuracy, passed, timestamp}`를 저장합니다.
+- `{userId, courseId, beatmapId, score, accuracy, passed, timestamp}`를 저장합니다.
 
 ### AC4: Pass/Fail Judgment
 
-- 개별 map 판정은 DanBeatmap의 threshold와 accuracy 또는 score를 비교합니다.
+- 개별 map 판정은 course beatmap의 threshold와 accuracy 또는 score를 비교합니다.
 - 전체 판정은 모든 map이 passed이고, course 단위 score/accuracy 기준도 통과해야 passed입니다.
 - course 단위 `acc` 기준은 통과한 map accuracy의 합계와 threshold를 비교합니다. 실패했거나 플레이하지 않은 map은 Course Acc에 더하지 않습니다.
 - course 단위 `score` 기준은 플레이한 map score의 합계와 threshold를 비교합니다.
@@ -86,7 +86,7 @@ Result (id, userId, danId, passed, timestamp, matchId?)
 
 ## Demo Scenario
 
-1. 샘플 dan system `test`와 dan `1st`, beatmap 2개를 seed합니다.
+1. 샘플 dan system `test`와 course `1st`, beatmap 2개를 seed합니다.
 2. bot process 실행: `pnpm bot`
 3. 플레이어가 bot에 DM 전송: `!dojo start test 1st`
 4. bot이 방을 만들고, 플레이어를 초대하고, 첫 map을 설정합니다.

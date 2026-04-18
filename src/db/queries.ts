@@ -1,56 +1,56 @@
 import { randomUUID } from "node:crypto";
 import { asc, desc, eq, inArray } from "drizzle-orm";
 import { getDatabase, type AppDatabase } from "@/db/client";
-import { danBeatmaps, dans, danSystems, mapResults, results } from "@/db/schema";
+import { beatmaps, courses, danSystems, mapResults, runs } from "@/db/schema";
 import type {
-  DanBeatmapDefinition,
-  DanCourseDefinition,
+  CourseBeatmapDefinition,
+  CourseDefinition,
+  CourseRunResult,
   JudgedMapResult,
-  StoredRunResult,
 } from "@/lib/domain";
 import { kebabizeName } from "@/lib/format";
 
 type DerivedRunStatus = "pass" | "fail" | "dnf";
 
-type DanCourseRow = {
-  danId: string;
-  danName: string;
-  courseSlug: string;
-  danDescription: string;
-  danOrdinal: number;
-  scoreModel: DanCourseDefinition["scoreModel"] | null;
-  overallPassType: DanCourseDefinition["overallPassType"];
+type CourseRow = {
+  courseId: string;
+  courseName: string;
+  slug: string;
+  courseDescription: string;
+  courseOrdinal: number;
+  scoreModel: CourseDefinition["scoreModel"] | null;
+  overallPassType: CourseDefinition["overallPassType"];
   overallPassThreshold: number | null;
-  systemId: string;
-  systemName: string;
-  systemSlug: string;
-  systemDescription: string;
+  danSystemId: string;
+  danSystemName: string;
+  danSystemSlug: string;
+  danSystemDescription: string;
 };
 
 async function useDb(db?: AppDatabase): Promise<AppDatabase> {
   return db ?? getDatabase();
 }
 
-export async function listDanSystemsWithDans(db?: AppDatabase) {
+export async function listDanSystemsWithCourses(db?: AppDatabase) {
   const database = await useDb(db);
   const rows = await database
     .select({
-      systemId: danSystems.id,
-      systemName: danSystems.name,
-      systemSlug: danSystems.slug,
-      systemDescription: danSystems.description,
-      danId: dans.id,
-      danName: dans.name,
-      courseSlug: dans.courseSlug,
-      danDescription: dans.description,
-      danOrdinal: dans.ordinal,
-      scoreModel: dans.scoreModel,
-      overallPassType: dans.overallPassType,
-      overallPassThreshold: dans.overallPassThreshold,
+      danSystemId: danSystems.id,
+      danSystemName: danSystems.name,
+      danSystemSlug: danSystems.slug,
+      danSystemDescription: danSystems.description,
+      courseId: courses.id,
+      courseName: courses.name,
+      slug: courses.slug,
+      courseDescription: courses.description,
+      courseOrdinal: courses.ordinal,
+      scoreModel: courses.scoreModel,
+      overallPassType: courses.overallPassType,
+      overallPassThreshold: courses.overallPassThreshold,
     })
     .from(danSystems)
-    .leftJoin(dans, eq(dans.danSystemId, danSystems.id))
-    .orderBy(asc(danSystems.name), asc(dans.ordinal));
+    .leftJoin(courses, eq(courses.danSystemId, danSystems.id))
+    .orderBy(asc(danSystems.name), asc(courses.ordinal));
 
   const systems = new Map<
     string,
@@ -59,14 +59,14 @@ export async function listDanSystemsWithDans(db?: AppDatabase) {
       name: string;
       slug: string;
       description: string;
-      dans: Array<{
+      courses: Array<{
         id: string;
         name: string;
-        courseSlug: string;
+        slug: string;
         description: string;
         ordinal: number;
-        scoreModel: DanCourseDefinition["scoreModel"];
-        overallPassType: DanCourseDefinition["overallPassType"];
+        scoreModel: CourseDefinition["scoreModel"];
+        overallPassType: CourseDefinition["overallPassType"];
         overallPassThreshold: number | null;
       }>;
     }
@@ -74,22 +74,22 @@ export async function listDanSystemsWithDans(db?: AppDatabase) {
 
   for (const row of rows) {
     const system =
-      systems.get(row.systemId) ??
+      systems.get(row.danSystemId) ??
       {
-        id: row.systemId,
-        name: row.systemName,
-        slug: row.systemSlug,
-        description: row.systemDescription,
-        dans: [],
+        id: row.danSystemId,
+        name: row.danSystemName,
+        slug: row.danSystemSlug,
+        description: row.danSystemDescription,
+        courses: [],
       };
 
-    if (row.danId) {
-      system.dans.push({
-        id: row.danId,
-        name: row.danName ?? "",
-        courseSlug: row.courseSlug ?? "",
-        description: row.danDescription ?? "",
-        ordinal: row.danOrdinal ?? 0,
+    if (row.courseId) {
+      system.courses.push({
+        id: row.courseId,
+        name: row.courseName ?? "",
+        slug: row.slug ?? "",
+        description: row.courseDescription ?? "",
+        ordinal: row.courseOrdinal ?? 0,
         scoreModel: row.scoreModel ?? "scorev2",
         overallPassType: row.overallPassType,
         overallPassThreshold: row.overallPassThreshold,
@@ -102,33 +102,33 @@ export async function listDanSystemsWithDans(db?: AppDatabase) {
   return [...systems.values()];
 }
 
-export async function listDanCoursesBySystemNameKey(
+export async function listCoursesByDanSystemNameKey(
   systemNameKey: string,
   db?: AppDatabase,
-): Promise<DanCourseDefinition[]> {
+): Promise<CourseDefinition[]> {
   const database = await useDb(db);
   const rows = await database
     .select({
-      danId: dans.id,
-      danName: dans.name,
-      courseSlug: dans.courseSlug,
-      danDescription: dans.description,
-      danOrdinal: dans.ordinal,
-      scoreModel: dans.scoreModel,
-      overallPassType: dans.overallPassType,
-      overallPassThreshold: dans.overallPassThreshold,
-      systemId: danSystems.id,
-      systemName: danSystems.name,
-      systemSlug: danSystems.slug,
-      systemDescription: danSystems.description,
+      courseId: courses.id,
+      courseName: courses.name,
+      slug: courses.slug,
+      courseDescription: courses.description,
+      courseOrdinal: courses.ordinal,
+      scoreModel: courses.scoreModel,
+      overallPassType: courses.overallPassType,
+      overallPassThreshold: courses.overallPassThreshold,
+      danSystemId: danSystems.id,
+      danSystemName: danSystems.name,
+      danSystemSlug: danSystems.slug,
+      danSystemDescription: danSystems.description,
     })
-    .from(dans)
-    .innerJoin(danSystems, eq(dans.danSystemId, danSystems.id))
-    .orderBy(asc(danSystems.name), asc(dans.ordinal));
+    .from(courses)
+    .innerJoin(danSystems, eq(courses.danSystemId, danSystems.id))
+    .orderBy(asc(danSystems.name), asc(courses.ordinal));
 
   const normalizedSystemNameKey = kebabizeName(systemNameKey);
   const matchingRows = rows.filter(
-    (row) => kebabizeName(row.systemName) === normalizedSystemNameKey,
+    (row) => kebabizeName(row.danSystemName) === normalizedSystemNameKey,
   );
 
   if (matchingRows.length === 0) {
@@ -138,114 +138,114 @@ export async function listDanCoursesBySystemNameKey(
   return hydrateCourseRows(matchingRows, database);
 }
 
-export async function getDanCourseByNameKey(
+export async function getCourseByNameKey(
   systemNameKey: string,
   courseNameKey: string,
   db?: AppDatabase,
-): Promise<DanCourseDefinition | null> {
+): Promise<CourseDefinition | null> {
   const database = await useDb(db);
-  const courses = await listDanCoursesBySystemNameKey(systemNameKey, database);
+  const courseDefinitions = await listCoursesByDanSystemNameKey(
+    systemNameKey,
+    database,
+  );
   const normalizedCourseNameKey = kebabizeName(courseNameKey);
 
   return (
-    courses.find((course) => kebabizeName(course.name) === normalizedCourseNameKey) ??
-    null
+    courseDefinitions.find(
+      (course) => kebabizeName(course.name) === normalizedCourseNameKey,
+    ) ?? null
   );
 }
 
 async function hydrateCourseRows(
-  rows: DanCourseRow[],
+  rows: CourseRow[],
   database: AppDatabase,
-): Promise<DanCourseDefinition[]> {
+): Promise<CourseDefinition[]> {
   const beatmapRows = await database
     .select({
-      danId: danBeatmaps.danId,
-      id: danBeatmaps.id,
-      beatmapId: danBeatmaps.beatmapId,
-      mods: danBeatmaps.mods,
-      passConditionType: danBeatmaps.passConditionType,
-      passConditionThreshold: danBeatmaps.passConditionThreshold,
-      ordinal: danBeatmaps.ordinal,
-      title: danBeatmaps.title,
-      artist: danBeatmaps.artist,
-      difficultyName: danBeatmaps.difficultyName,
-      mapper: danBeatmaps.mapper,
-      coverUrl: danBeatmaps.coverUrl,
-      annotations: danBeatmaps.annotations,
+      courseId: beatmaps.courseId,
+      id: beatmaps.id,
+      beatmapId: beatmaps.beatmapId,
+      mods: beatmaps.mods,
+      passConditionType: beatmaps.passConditionType,
+      passConditionThreshold: beatmaps.passConditionThreshold,
+      ordinal: beatmaps.ordinal,
+      title: beatmaps.title,
+      artist: beatmaps.artist,
+      difficultyName: beatmaps.difficultyName,
+      mapper: beatmaps.mapper,
+      coverUrl: beatmaps.coverUrl,
+      annotations: beatmaps.annotations,
     })
-    .from(danBeatmaps)
+    .from(beatmaps)
     .where(
       inArray(
-        danBeatmaps.danId,
-        rows.map((row) => row.danId),
+        beatmaps.courseId,
+        rows.map((row) => row.courseId),
       ),
     )
-    .orderBy(asc(danBeatmaps.ordinal));
+    .orderBy(asc(beatmaps.ordinal));
 
-  const beatmapsByDanId = new Map<string, typeof beatmapRows>();
+  const beatmapsByCourseId = new Map<string, typeof beatmapRows>();
   for (const row of beatmapRows) {
-    const bucket = beatmapsByDanId.get(row.danId) ?? [];
+    const bucket = beatmapsByCourseId.get(row.courseId) ?? [];
     bucket.push(row);
-    beatmapsByDanId.set(row.danId, bucket);
+    beatmapsByCourseId.set(row.courseId, bucket);
   }
 
   return rows.map((row) => ({
-    id: row.danId,
-    danSystemId: row.systemId,
-    danSystemName: row.systemName,
-    danSystemSlug: row.systemSlug,
-    danSystemDescription: row.systemDescription,
-    name: row.danName,
-    courseSlug: row.courseSlug,
-    description: row.danDescription,
-    ordinal: row.danOrdinal,
+    id: row.courseId,
+    danSystemId: row.danSystemId,
+    danSystemName: row.danSystemName,
+    danSystemSlug: row.danSystemSlug,
+    danSystemDescription: row.danSystemDescription,
+    name: row.courseName,
+    slug: row.slug,
+    description: row.courseDescription,
+    ordinal: row.courseOrdinal,
     scoreModel: row.scoreModel ?? "scorev2",
     overallPassType: row.overallPassType,
     overallPassThreshold: row.overallPassThreshold,
-    beatmaps: (beatmapsByDanId.get(row.danId) ?? []).map(parseBeatmapRow),
+    beatmaps: (beatmapsByCourseId.get(row.courseId) ?? []).map(parseBeatmapRow),
   }));
 }
 
-export async function listDanResultsByNameKey(
+export async function listCourseRunsByNameKey(
   systemNameKey: string,
   courseNameKey: string,
   db?: AppDatabase,
 ) {
   const database = await useDb(db);
-  const course = await getDanCourseByNameKey(
-    systemNameKey,
-    courseNameKey,
-    database,
-  );
+  const course = await getCourseByNameKey(systemNameKey, courseNameKey, database);
 
   if (!course) {
     return null;
   }
 
-  const resultRows = await database
+  const runRows = await database
     .select({
-      id: results.id,
-      userId: results.userId,
-      username: results.username,
-      passed: results.passed,
-      completedAt: results.completedAt,
-      matchId: results.matchId,
+      id: runs.id,
+      userId: runs.userId,
+      username: runs.username,
+      passed: runs.passed,
+      completedAt: runs.completedAt,
+      matchId: runs.matchId,
     })
-    .from(results)
-    .where(eq(results.danId, course.id))
-    .orderBy(desc(results.completedAt))
+    .from(runs)
+    .where(eq(runs.courseId, course.id))
+    .orderBy(desc(runs.completedAt))
     .limit(20);
 
-  if (resultRows.length === 0) {
-    return { course, results: [] };
+  if (runRows.length === 0) {
+    return { course, runs: [] };
   }
 
-  const mapsByResultId = await getMapsByResultId(resultRows.map((row) => row.id), database);
+  const mapsByRunId = await getMapsByRunId(runRows.map((row) => row.id), database);
 
   return {
     course,
-    results: resultRows.map((row) => {
-      const maps = mapsByResultId.get(row.id) ?? [];
+    runs: runRows.map((row) => {
+      const maps = mapsByRunId.get(row.id) ?? [];
       return {
         ...row,
         maps,
@@ -261,7 +261,7 @@ export async function getRankingByNameKey(
   db?: AppDatabase,
 ) {
   const database = await useDb(db);
-  const course = await getDanCourseByNameKey(systemNameKey, courseNameKey, database);
+  const course = await getCourseByNameKey(systemNameKey, courseNameKey, database);
 
   if (!course) {
     return null;
@@ -271,32 +271,32 @@ export async function getRankingByNameKey(
 }
 
 export async function getRankingForCourse(
-  course: DanCourseDefinition,
+  course: CourseDefinition,
   db?: AppDatabase,
 ) {
   const database = await useDb(db);
 
-  const resultRows = await database
+  const runRows = await database
     .select({
-      id: results.id,
-      userId: results.userId,
-      username: results.username,
-      passed: results.passed,
-      completedAt: results.completedAt,
-      matchId: results.matchId,
+      id: runs.id,
+      userId: runs.userId,
+      username: runs.username,
+      passed: runs.passed,
+      completedAt: runs.completedAt,
+      matchId: runs.matchId,
     })
-    .from(results)
-    .where(eq(results.danId, course.id));
+    .from(runs)
+    .where(eq(runs.courseId, course.id));
 
-  if (resultRows.length === 0) {
+  if (runRows.length === 0) {
     return { course, results: [] };
   }
 
-  const mapsByResultId = await getMapsByResultId(resultRows.map((row) => row.id), database);
+  const mapsByRunId = await getMapsByRunId(runRows.map((row) => row.id), database);
 
-  const allSortedResults = resultRows
+  const allSortedResults = runRows
     .map((row) => {
-      const maps = mapsByResultId.get(row.id) ?? [];
+      const maps = mapsByRunId.get(row.id) ?? [];
       const status = deriveRunStatus(row.passed, maps, course.beatmaps.length);
 
       return {
@@ -335,38 +335,38 @@ export async function getRankingForCourse(
   };
 }
 
-export async function storeDanRunResult(
+export async function storeCourseRunResult(
   input: {
     userId: number;
     username: string;
-    danId: string;
+    courseId: string;
     passed: boolean;
     startedAt: number;
     completedAt: number;
     matchId?: number | null;
-    maps: Omit<JudgedMapResult, "id" | "resultId">[];
+    maps: Omit<JudgedMapResult, "id" | "runId">[];
   },
   db?: AppDatabase,
-): Promise<{ result: StoredRunResult; maps: JudgedMapResult[] }> {
+): Promise<{ run: CourseRunResult; maps: JudgedMapResult[] }> {
   const database = await useDb(db);
-  const resultId = randomUUID();
-  const result = {
-    id: resultId,
+  const runId = randomUUID();
+  const run = {
+    id: runId,
     userId: input.userId,
     username: input.username,
-    danId: input.danId,
+    courseId: input.courseId,
     passed: input.passed,
     startedAt: input.startedAt,
     completedAt: input.completedAt,
     matchId: input.matchId ?? null,
-  } satisfies StoredRunResult;
+  } satisfies CourseRunResult;
 
   database.transaction((tx) => {
-    tx.insert(results).values(result).run();
+    tx.insert(runs).values(run).run();
     tx.insert(mapResults).values(
       input.maps.map((map) => ({
         id: randomUUID(),
-        resultId,
+        runId,
         gameId: map.gameId,
         beatmapId: map.beatmapId,
         mods: map.mods,
@@ -389,37 +389,37 @@ export async function storeDanRunResult(
   const storedMaps = await database
     .select()
     .from(mapResults)
-    .where(eq(mapResults.resultId, resultId))
+    .where(eq(mapResults.runId, runId))
     .orderBy(asc(mapResults.ordinal));
 
   return {
-    result,
+    run,
     maps: storedMaps,
   };
 }
 
-async function getMapsByResultId(resultIds: string[], database: AppDatabase) {
+async function getMapsByRunId(runIds: string[], database: AppDatabase) {
   const mapRows = await database
     .select()
     .from(mapResults)
-    .where(inArray(mapResults.resultId, resultIds))
+    .where(inArray(mapResults.runId, runIds))
     .orderBy(asc(mapResults.ordinal), asc(mapResults.createdAt));
 
-  const mapsByResultId = new Map<string, typeof mapRows>();
+  const mapsByRunId = new Map<string, typeof mapRows>();
   for (const row of mapRows) {
-    const bucket = mapsByResultId.get(row.resultId) ?? [];
+    const bucket = mapsByRunId.get(row.runId) ?? [];
     bucket.push(row);
-    mapsByResultId.set(row.resultId, bucket);
+    mapsByRunId.set(row.runId, bucket);
   }
 
-  return mapsByResultId;
+  return mapsByRunId;
 }
 
 function parseBeatmapRow(row: {
   id: string;
   beatmapId: number;
   mods: string;
-  passConditionType: DanBeatmapDefinition["passConditionType"];
+  passConditionType: CourseBeatmapDefinition["passConditionType"];
   passConditionThreshold: number;
   ordinal: number;
   title: string;
@@ -428,7 +428,7 @@ function parseBeatmapRow(row: {
   mapper: string;
   coverUrl: string;
   annotations: string;
-}): DanBeatmapDefinition {
+}): CourseBeatmapDefinition {
   return {
     id: row.id,
     beatmapId: row.beatmapId,
@@ -491,7 +491,7 @@ function compareRankingRows(
     totalScore: number;
     completedAt: number;
   },
-  scoreModel: DanCourseDefinition["scoreModel"],
+  scoreModel: CourseDefinition["scoreModel"],
 ): number {
   const statusComparison = getStatusWeight(left.status) - getStatusWeight(right.status);
   if (statusComparison !== 0) {
@@ -507,7 +507,10 @@ function compareRankingRows(
     return metricComparison;
   }
 
-  return compareNumbersDesc(left.completedAt, right.completedAt) || left.id.localeCompare(right.id);
+  return (
+    compareNumbersDesc(left.completedAt, right.completedAt) ||
+    left.id.localeCompare(right.id)
+  );
 }
 
 function getStatusWeight(status: DerivedRunStatus): number {
