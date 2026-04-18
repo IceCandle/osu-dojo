@@ -16,7 +16,9 @@ dojo-dev.jsonl
 
 # local runtime artifacts
 dojo.db
+dojo.*.db
 dojo.db-journal
+dojo.*.db-journal
 *.log
 
 # next.js

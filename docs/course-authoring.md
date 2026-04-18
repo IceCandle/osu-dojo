@@ -14,7 +14,7 @@ course seed 파일은 `data/courses/*.json`에 둡니다. loader는 seed 시점�
   "name": "test",
   "slug": "test",
   "description": "Sample dan system.",
-  "dans": []
+  "courses": []
 }
 ```
 
@@ -24,15 +24,15 @@ System fields:
 - `name`: 공개 표시 이름. `^[A-Za-z0-9]+(?: [A-Za-z0-9]+)*$`와 맞아야 함
 - `slug`: 내부 seed 식별자
 - `description`: 카탈로그에 보여줄 설명
-- `dans`: course object 배열
+- `courses`: course object 배열
 
 각 course object는 아래 형식을 사용합니다.
 
 ```json
 {
-  "id": "dan-test-1dan",
+  "id": "course-test-1dan",
   "name": "1st",
-  "courseSlug": "test-1dan",
+  "slug": "test-1dan",
   "description": "Two-map sample course.",
   "ordinal": 1,
   "scoreModel": "scorev2",
@@ -46,7 +46,7 @@ Course fields:
 
 - `id`: seed 저장에 쓰는 고정 문자열 식별자
 - `name`: 공개 표시 이름. system과 같은 display-name 규칙 사용
-- `courseSlug`: 내부 seed 식별자. 공개 명령어에서는 쓰지 않음
+- `slug`: 내부 seed 식별자. 공개 명령어에서는 쓰지 않음
 - `description`: 카탈로그에 보여줄 설명
 - `ordinal`: system 안에서의 정수 표시 순서
 - `scoreModel`: `scorev1` 또는 `scorev2`
@@ -85,7 +85,7 @@ Beatmap fields:
 
 ## Public Name Keys
 
-플레이어와 라우트는 `slug` 또는 `courseSlug`가 아니라 display-name key를 사용합니다.
+플레이어와 라우트는 내부 `slug`가 아니라 display-name key를 사용합니다.
 
 key는 display name을 trim하고, 소문자로 바꾸고, 연속 공백을 `-`로 바꿔 만듭니다.
 
@@ -115,7 +115,7 @@ course data PR 전에 확인합니다.
 ## Common Loader Failures
 
 - 구두점 또는 하이픈이 들어간 이름은 공개 display-name 규칙 위반
-- `id`, `slug`, `courseSlug`가 달라도 중복된 display-name key면 실패
+- `id`나 `slug`가 달라도 중복된 display-name key면 실패
 - `RX` 같은 알 수 없는 mod는 실패
 - `annotations`는 문자열이 아니라 문자열 배열이어야 함
 - `overallPassType`과 `passConditionType`은 현재 `acc`, `score` 형식만 지원함. 복수 조건 목록은 GitHub Issues에서 추적하며 아직 구현된 동작이 아님

@@ -1,7 +1,7 @@
 export type PassConditionType = "acc" | "score";
 export type DanScoreModel = "scorev1" | "scorev2";
 
-export interface DanBeatmapDefinition {
+export interface CourseBeatmapDefinition {
   id: string;
   beatmapId: number;
   mods: string;
@@ -16,20 +16,20 @@ export interface DanBeatmapDefinition {
   annotations: string[];
 }
 
-export interface DanCourseDefinition {
+export interface CourseDefinition {
   id: string;
   danSystemId: string;
   danSystemName: string;
   danSystemSlug: string;
   danSystemDescription: string;
   name: string;
-  courseSlug: string;
+  slug: string;
   description: string;
   ordinal: number;
   scoreModel: DanScoreModel;
   overallPassType: PassConditionType | null;
   overallPassThreshold: number | null;
-  beatmaps: DanBeatmapDefinition[];
+  beatmaps: CourseBeatmapDefinition[];
 }
 
 export interface StableScoreStats {
@@ -41,7 +41,7 @@ export interface StableScoreStats {
 
 export interface JudgedMapResult extends StableScoreStats {
   id: string;
-  resultId: string;
+  runId: string;
   gameId: number | null;
   beatmapId: number;
   mods: string;
@@ -55,11 +55,11 @@ export interface JudgedMapResult extends StableScoreStats {
   createdAt: number;
 }
 
-export interface StoredRunResult {
+export interface CourseRunResult {
   id: string;
   userId: number;
   username: string;
-  danId: string;
+  courseId: string;
   passed: boolean;
   startedAt: number;
   completedAt: number;

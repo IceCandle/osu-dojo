@@ -1,7 +1,7 @@
 import React from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getRankingForCourse, listDanCoursesBySystemNameKey } from "@/db/queries";
+import { getRankingForCourse, listCoursesByDanSystemNameKey } from "@/db/queries";
 import {
   formatConditionCompact,
   formatMods,
@@ -20,7 +20,7 @@ export default async function DanSystemPage({
   searchParams?: Promise<{ course?: string | string[] }>;
 }) {
   const { systemNameKey } = await params;
-  const courses = await listDanCoursesBySystemNameKey(systemNameKey);
+  const courses = await listCoursesByDanSystemNameKey(systemNameKey);
 
   if (courses.length === 0) {
     notFound();
@@ -96,12 +96,12 @@ export default async function DanSystemPage({
         </div>
 
         <div className="results-layout">
-          <section className="dan-stage-section">
+          <section className="course-beatmap-section">
             <div className="section-heading">
               <h2>Course sequence</h2>
             </div>
 
-            <div className="dan-stage-stack">
+            <div className="course-beatmap-stack">
               {selectedCourse.beatmaps.map((beatmap) => {
                 const beatmapUrl = `https://osu.ppy.sh/b/${beatmap.beatmapId}`;
                 const coverStyle =
@@ -112,9 +112,9 @@ export default async function DanSystemPage({
                       } as React.CSSProperties);
 
                 return (
-                  <article className="dan-stage-card" key={beatmap.id}>
+                  <article className="course-beatmap-card" key={beatmap.id}>
                     <a
-                      className={`dan-stage-visual${
+                      className={`course-beatmap-visual${
                         beatmap.coverUrl.trim() === "" ? " is-placeholder" : ""
                       }`}
                       href={beatmapUrl}
@@ -125,24 +125,24 @@ export default async function DanSystemPage({
                       <span className="beatmap-order">
                         {String(beatmap.ordinal).padStart(2, "0")}
                       </span>
-                      <div className="dan-stage-visual-copy">
-                        <p className="dan-stage-song-title">{beatmap.title}</p>
-                        <p className="dan-stage-song-meta">
+                      <div className="course-beatmap-visual-copy">
+                        <p className="course-beatmap-song-title">{beatmap.title}</p>
+                        <p className="course-beatmap-song-meta">
                           {beatmap.artist} / {beatmap.mapper}
                         </p>
                       </div>
                     </a>
 
-                    <div className="dan-stage-body">
-                      <div className="dan-stage-heading">
+                    <div className="course-beatmap-body">
+                      <div className="course-beatmap-heading">
                         <a href={beatmapUrl} rel="noreferrer" target="_blank">
                           <h3 className="difficulty-label">[{beatmap.difficultyName}]</h3>
                         </a>
                         <p className="mod-label">{formatMods(beatmap.mods)}</p>
                       </div>
 
-                      <div className="dan-stage-footer">
-                        <p className="dan-stage-condition">
+                      <div className="course-beatmap-footer">
+                        <p className="course-beatmap-condition">
                           {formatConditionCompact(
                             beatmap.passConditionType,
                             beatmap.passConditionThreshold,

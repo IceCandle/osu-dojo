@@ -3,11 +3,11 @@
   "name": "test",
   "slug": "test",
   "description": "Sample dan system for the MVP.",
-  "dans": [
+  "courses": [
     {
-      "id": "dan-test-1dan",
+      "id": "course-test-1dan",
       "name": "1st",
-      "courseSlug": "test-1dan",
+      "slug": "test-1dan",
       "description": "Two-map smoke-test sample course with short beatmaps and zeroed thresholds for quick manual verification.",
       "ordinal": 1,
       "scoreModel": "scorev2",
@@ -37,7 +37,7 @@
     {
       "id": "test-2dan",
       "name": "2nd",
-      "courseSlug": "test-2dan",
+      "slug": "test-2dan",
       "description": "One-map scorev1 smoke-test sample course with a low accuracy threshold for quick manual verification.",
       "ordinal": 2,
       "scoreModel": "scorev1",

@@ -5,11 +5,11 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { createTestDatabase } from "@/db/client";
 import { loadCoursesFromDir } from "@/db/courseLoader";
 import {
-  getDanCourseByNameKey,
-  listDanCoursesBySystemNameKey,
-  listDanResultsByNameKey,
-  listDanSystemsWithDans,
-  storeDanRunResult,
+  getCourseByNameKey,
+  listCoursesByDanSystemNameKey,
+  listCourseRunsByNameKey,
+  listDanSystemsWithCourses,
+  storeCourseRunResult,
 } from "@/db/queries";
 import { cloneCourseSystems, seedDatabase } from "@/db/seed";
 import DanSystemsPage from "@/app/dan/page";
@@ -25,33 +25,33 @@ const SEEDED_COURSE_SLUG = "test-1dan";
 const SEEDED_SECOND_COURSE_SLUG = "test-2dan";
 
 function addSampleBeatmapMetadata(systems: ReturnType<typeof cloneCourseSystems>) {
-  const dan = systems[0]?.dans.find((entry) => entry.courseSlug === SEEDED_COURSE_SLUG);
-  const secondDan = systems[0]?.dans.find(
-    (entry) => entry.courseSlug === SEEDED_SECOND_COURSE_SLUG,
+  const seededCourse = systems[0]?.courses.find((entry) => entry.slug === SEEDED_COURSE_SLUG);
+  const secondCourse = systems[0]?.courses.find(
+    (entry) => entry.slug === SEEDED_SECOND_COURSE_SLUG,
   );
 
-  if (!dan || !dan.beatmaps[0] || !dan.beatmaps[1] || !secondDan?.beatmaps[0]) {
+  if (!seededCourse || !seededCourse.beatmaps[0] || !seededCourse.beatmaps[1] || !secondCourse?.beatmaps[0]) {
     throw new Error("Missing seeded test beatmaps.");
   }
 
-  dan.beatmaps[0] = {
-    ...dan.beatmaps[0],
+  seededCourse.beatmaps[0] = {
+    ...seededCourse.beatmaps[0],
     title: "test stage one",
     artist: "osu!dojo",
     difficultyName: "Opening",
     mapper: "staff",
     coverUrl: "https://assets.ppy.sh/beatmaps/315/covers/cover.jpg",
   };
-  dan.beatmaps[1] = {
-    ...dan.beatmaps[1],
+  seededCourse.beatmaps[1] = {
+    ...seededCourse.beatmaps[1],
     title: "test stage two",
     artist: "osu!dojo",
     difficultyName: "Finale",
     mapper: "staff",
     coverUrl: "https://assets.ppy.sh/beatmaps/259/covers/cover.jpg",
   };
-  secondDan.beatmaps[0] = {
-    ...secondDan.beatmaps[0],
+  secondCourse.beatmaps[0] = {
+    ...secondCourse.beatmaps[0],
     title: "test stage three",
     artist: "osu!dojo",
     difficultyName: "ScoreV1",
@@ -62,22 +62,22 @@ function addSampleBeatmapMetadata(systems: ReturnType<typeof cloneCourseSystems>
   return systems;
 }
 
-test("seeded queries expose the sample dan and results", async () => {
+test("seeded queries expose the sample course and runs", async () => {
   const temp = createTempDatabaseUrl();
 
   try {
     const { db } = await createTestDatabase(temp.url);
-    const systems = await listDanSystemsWithDans(db);
-    const systemCourses = await listDanCoursesBySystemNameKey(
+    const systems = await listDanSystemsWithCourses(db);
+    const systemCourses = await listCoursesByDanSystemNameKey(
       SEEDED_SYSTEM_NAME_KEY,
       db,
     );
-    const course = await getDanCourseByNameKey(
+    const course = await getCourseByNameKey(
       SEEDED_SYSTEM_NAME_KEY,
       SEEDED_COURSE_NAME_KEY,
       db,
     );
-    const results = await listDanResultsByNameKey(
+    const results = await listCourseRunsByNameKey(
       SEEDED_SYSTEM_NAME_KEY,
       SEEDED_COURSE_NAME_KEY,
       db,
@@ -85,20 +85,20 @@ test("seeded queries expose the sample dan and results", async () => {
 
     assert.equal(systems.length, 1);
     assert.equal(systemCourses.length, 2);
-    assert.equal(systems[0]?.dans[0]?.courseSlug, SEEDED_COURSE_SLUG);
-    assert.equal(systems[0]?.dans[0]?.scoreModel, "scorev2");
-    assert.equal(systems[0]?.dans[1]?.courseSlug, SEEDED_SECOND_COURSE_SLUG);
-    assert.equal(systems[0]?.dans[1]?.scoreModel, "scorev1");
+    assert.equal(systems[0]?.courses[0]?.slug, SEEDED_COURSE_SLUG);
+    assert.equal(systems[0]?.courses[0]?.scoreModel, "scorev2");
+    assert.equal(systems[0]?.courses[1]?.slug, SEEDED_SECOND_COURSE_SLUG);
+    assert.equal(systems[0]?.courses[1]?.scoreModel, "scorev1");
     assert.equal(course?.beatmaps.length, 2);
     assert.equal(course?.scoreModel, "scorev2");
     assert.match(course?.danSystemDescription ?? "", /Sample dan system/i);
-    assert.equal(results?.results.length, 0);
+    assert.equal(results?.runs.length, 0);
   } finally {
     temp.cleanup();
   }
 });
 
-test("pages render seeded dan data from SQLite", async () => {
+test("pages render seeded course data from SQLite", async () => {
   const temp = createTempDatabaseUrl();
   const previousDatabaseUrl = process.env.DATABASE_URL;
   const previousBundle = globalThis.__osuDojoDatabaseBundle;
@@ -126,7 +126,7 @@ test("pages render seeded dan data from SQLite", async () => {
         }),
       }),
     );
-    const course = await getDanCourseByNameKey(
+    const course = await getCourseByNameKey(
       SEEDED_SYSTEM_NAME_KEY,
       SEEDED_COURSE_NAME_KEY,
     );
@@ -135,7 +135,7 @@ test("pages render seeded dan data from SQLite", async () => {
     assert.doesNotMatch(homeHtml, /Open system/);
     assert.match(systemsHtml, /test/i);
     assert.match(systemsHtml, /\/dan\/test/);
-    assert.match(systemsHtml, /Each system groups related dan courses under one scoring model\./);
+    assert.match(systemsHtml, /Each dan system groups related courses under one scoring model\./);
     assert.match(courseHtml, /test stage one/i);
     assert.match(courseHtml, /!dojo start test 1st/);
     assert.match(courseHtml, /Sample dan system for the MVP\./);
@@ -153,14 +153,14 @@ test("pages render seeded dan data from SQLite", async () => {
   }
 });
 
-test("results queries and page derive DNF for interrupted partial runs", async () => {
+test("course run queries and page derive DNF for interrupted partial runs", async () => {
   const temp = createTempDatabaseUrl();
   const previousDatabaseUrl = process.env.DATABASE_URL;
   const previousBundle = globalThis.__osuDojoDatabaseBundle;
 
   try {
     const { db } = await createTestDatabase(temp.url);
-    const course = await getDanCourseByNameKey(
+    const course = await getCourseByNameKey(
       SEEDED_SYSTEM_NAME_KEY,
       SEEDED_COURSE_NAME_KEY,
       db,
@@ -168,11 +168,11 @@ test("results queries and page derive DNF for interrupted partial runs", async (
 
     assert.ok(course);
 
-    await storeDanRunResult(
+    await storeCourseRunResult(
       {
         userId: 777,
         username: "DNFPlayer",
-        danId: course!.id,
+        courseId: course!.id,
         passed: false,
         startedAt: 1_800_000_000_000,
         completedAt: 1_800_000_010_000,
@@ -200,13 +200,13 @@ test("results queries and page derive DNF for interrupted partial runs", async (
       db,
     );
 
-    const results = await listDanResultsByNameKey(
+    const results = await listCourseRunsByNameKey(
       SEEDED_SYSTEM_NAME_KEY,
       SEEDED_COURSE_NAME_KEY,
       db,
     );
-    assert.equal(results?.results[0]?.username, "DNFPlayer");
-    assert.equal(results?.results[0]?.status, "dnf");
+    assert.equal(results?.runs[0]?.username, "DNFPlayer");
+    assert.equal(results?.runs[0]?.status, "dnf");
 
     process.env.DATABASE_URL = temp.url;
     globalThis.__osuDojoDatabaseBundle = undefined;
@@ -236,7 +236,7 @@ test("seedDatabase synchronizes updated seeded beatmaps on an existing SQLite fi
 
   try {
     const { db } = await createTestDatabase(temp.url);
-    const originalCourse = await getDanCourseByNameKey(
+    const originalCourse = await getCourseByNameKey(
       SEEDED_SYSTEM_NAME_KEY,
       SEEDED_COURSE_NAME_KEY,
       db,
@@ -244,23 +244,23 @@ test("seedDatabase synchronizes updated seeded beatmaps on an existing SQLite fi
     const systems = addSampleBeatmapMetadata(
       cloneCourseSystems(loadCoursesFromDir(path.join(process.cwd(), "data/courses"))),
     );
-    const dan = systems[0]?.dans.find((entry) => entry.courseSlug === SEEDED_COURSE_SLUG);
+    const seededCourse = systems[0]?.courses.find((entry) => entry.slug === SEEDED_COURSE_SLUG);
 
     assert.ok(originalCourse);
-    assert.ok(dan);
+    assert.ok(seededCourse);
 
     const updatedBeatmapId = (originalCourse?.beatmaps[0]?.beatmapId ?? 0) + 1000;
     const newBeatmapId = updatedBeatmapId + 1;
 
-    if (!dan) {
-      throw new Error("Missing seeded test dan.");
+    if (!seededCourse) {
+      throw new Error("Missing seeded test course.");
     }
 
-    dan.beatmaps[0] = {
-      ...dan.beatmaps[0],
+    seededCourse.beatmaps[0] = {
+      ...seededCourse.beatmaps[0],
       beatmapId: updatedBeatmapId,
     };
-    dan.beatmaps.push({
+    seededCourse.beatmaps.push({
       id: "beatmap-test-3",
       beatmapId: newBeatmapId,
       mods: "DT",
@@ -277,12 +277,12 @@ test("seedDatabase synchronizes updated seeded beatmaps on an existing SQLite fi
 
     await seedDatabase(db, systems);
 
-    const updatedCourse = await getDanCourseByNameKey(
+    const updatedCourse = await getCourseByNameKey(
       SEEDED_SYSTEM_NAME_KEY,
       SEEDED_COURSE_NAME_KEY,
       db,
     );
-    const updatedResults = await listDanResultsByNameKey(
+    const updatedResults = await listCourseRunsByNameKey(
       SEEDED_SYSTEM_NAME_KEY,
       SEEDED_COURSE_NAME_KEY,
       db,
@@ -296,7 +296,7 @@ test("seedDatabase synchronizes updated seeded beatmaps on an existing SQLite fi
         newBeatmapId,
       ],
     );
-    assert.equal(updatedResults?.results.length, 0);
+    assert.equal(updatedResults?.runs.length, 0);
   } finally {
     temp.cleanup();
   }
@@ -317,16 +317,16 @@ test("seedDatabase reuses existing resolved metadata when course JSON omits it",
     const systems = addSampleBeatmapMetadata(
       cloneCourseSystems(loadCoursesFromDir(path.join(process.cwd(), "data/courses"))),
     );
-    const dan = systems[0]?.dans.find((entry) => entry.courseSlug === SEEDED_COURSE_SLUG);
+    const seededCourse = systems[0]?.courses.find((entry) => entry.slug === SEEDED_COURSE_SLUG);
     let resolverCalls = 0;
 
-    assert.ok(dan);
+    assert.ok(seededCourse);
 
-    if (!dan) {
-      throw new Error("Missing seeded test dan.");
+    if (!seededCourse) {
+      throw new Error("Missing seeded test course.");
     }
 
-    for (const beatmap of dan.beatmaps) {
+    for (const beatmap of seededCourse.beatmaps) {
       beatmap.title = "";
       beatmap.artist = "";
       beatmap.difficultyName = "";
@@ -342,7 +342,7 @@ test("seedDatabase reuses existing resolved metadata when course JSON omits it",
       },
     });
 
-    const updatedCourse = await getDanCourseByNameKey(
+    const updatedCourse = await getCourseByNameKey(
       SEEDED_SYSTEM_NAME_KEY,
       SEEDED_COURSE_NAME_KEY,
       db,
@@ -364,16 +364,16 @@ test("seedDatabase stores defaults for missing metadata when no resolver is conf
     const systems = addSampleBeatmapMetadata(
       cloneCourseSystems(loadCoursesFromDir(path.join(process.cwd(), "data/courses"))),
     );
-    const dan = systems[0]?.dans.find((entry) => entry.courseSlug === SEEDED_COURSE_SLUG);
+    const seededCourse = systems[0]?.courses.find((entry) => entry.slug === SEEDED_COURSE_SLUG);
 
-    assert.ok(dan);
+    assert.ok(seededCourse);
 
-    if (!dan) {
-      throw new Error("Missing seeded test dan.");
+    if (!seededCourse) {
+      throw new Error("Missing seeded test course.");
     }
 
-    dan.beatmaps[0] = {
-      ...dan.beatmaps[0],
+    seededCourse.beatmaps[0] = {
+      ...seededCourse.beatmaps[0],
       beatmapId: 8_888,
       title: "",
       artist: "",
@@ -384,7 +384,7 @@ test("seedDatabase stores defaults for missing metadata when no resolver is conf
 
     await seedDatabase(db, systems);
 
-    const updatedCourse = await getDanCourseByNameKey(
+    const updatedCourse = await getCourseByNameKey(
       SEEDED_SYSTEM_NAME_KEY,
       SEEDED_COURSE_NAME_KEY,
       db,
@@ -410,17 +410,17 @@ test("seedDatabase resolves missing metadata and stores defaults on resolver fai
     const systems = addSampleBeatmapMetadata(
       cloneCourseSystems(loadCoursesFromDir(path.join(process.cwd(), "data/courses"))),
     );
-    const dan = systems[0]?.dans.find((entry) => entry.courseSlug === SEEDED_COURSE_SLUG);
+    const seededCourse = systems[0]?.courses.find((entry) => entry.slug === SEEDED_COURSE_SLUG);
     const resolverBeatmapIds: number[] = [];
 
-    assert.ok(dan);
+    assert.ok(seededCourse);
 
-    if (!dan) {
-      throw new Error("Missing seeded test dan.");
+    if (!seededCourse) {
+      throw new Error("Missing seeded test course.");
     }
 
-    dan.beatmaps[0] = {
-      ...dan.beatmaps[0],
+    seededCourse.beatmaps[0] = {
+      ...seededCourse.beatmaps[0],
       beatmapId: 9_999,
       title: "",
       artist: "",
@@ -428,8 +428,8 @@ test("seedDatabase resolves missing metadata and stores defaults on resolver fai
       mapper: "",
       coverUrl: "",
     };
-    dan.beatmaps[1] = {
-      ...dan.beatmaps[1],
+    seededCourse.beatmaps[1] = {
+      ...seededCourse.beatmaps[1],
       beatmapId: 10_000,
       title: "",
       artist: "",
@@ -462,7 +462,7 @@ test("seedDatabase resolves missing metadata and stores defaults on resolver fai
       },
     });
 
-    const updatedCourse = await getDanCourseByNameKey(
+    const updatedCourse = await getCourseByNameKey(
       SEEDED_SYSTEM_NAME_KEY,
       SEEDED_COURSE_NAME_KEY,
       db,

@@ -4,7 +4,7 @@ import { EventEmitter } from "node:events";
 import { BanchoLobbyPlayerStates, BanchoLobbyWinConditions } from "bancho.js";
 import type { BotLogger } from "@/bot/logger";
 import { createTestDatabase } from "@/db/client";
-import { getDanCourseByNameKey, listDanResultsByNameKey } from "@/db/queries";
+import { getCourseByNameKey, listCourseRunsByNameKey } from "@/db/queries";
 import { createTempDatabaseUrl as createTempDatabaseUrlWithPrefix } from "./helpers/tempDatabase";
 import {
   createDojoBot,
@@ -265,7 +265,7 @@ function latestMeaningfulLobbyMessage(lobby: FakeLobby) {
 }
 
 async function getSeededBeatmapIds(db: Awaited<ReturnType<typeof createTestDatabase>>["db"]) {
-  const course = await getDanCourseByNameKey(
+  const course = await getCourseByNameKey(
     SEEDED_SYSTEM_NAME_KEY,
     SEEDED_COURSE_NAME_KEY,
     db,
@@ -341,7 +341,7 @@ test("bot reports no previous command when prev has no history", async () => {
   assert.equal(client.createLobbyCalls.length, 0);
 });
 
-test("bot rejects unknown dan routes", async () => {
+test("bot rejects unknown courses", async () => {
   const temp = createTempDatabaseUrl();
 
   try {
@@ -356,7 +356,7 @@ test("bot rejects unknown dan routes", async () => {
 
     await bot.handlePrivateMessage(createPrivateMessage(user, "!dojo start nope nope"));
 
-    assert.match(user.messages.at(-1) ?? "", /Unknown dan route/i);
+    assert.match(user.messages.at(-1) ?? "", /Unknown course/i);
     assert.equal(client.createLobbyCalls.length, 0);
 
     await bot.handlePrivateMessage(createPrivateMessage(user, "!dojo prev"));
@@ -572,16 +572,16 @@ test("bot runs the seeded course, forces NF, switches to ScoreV2, and stores the
     assert.equal(endedEvents[0]?.result, "completed");
     assert.equal(endedEvents[0]?.reason, undefined);
 
-    const results = await listDanResultsByNameKey(
+    const results = await listCourseRunsByNameKey(
       SEEDED_SYSTEM_NAME_KEY,
       SEEDED_COURSE_NAME_KEY,
       db,
     );
-    assert.equal(results?.results.length, 1);
-    assert.equal(results?.results[0]?.username, "PlayerOne");
-    assert.equal(results?.results[0]?.matchId, client.lobby.id);
-    assert.equal(results?.results[0]?.maps[0]?.gameId, 1);
-    assert.equal(results?.results[0]?.maps[1]?.gameId, 2);
+    assert.equal(results?.runs.length, 1);
+    assert.equal(results?.runs[0]?.username, "PlayerOne");
+    assert.equal(results?.runs[0]?.matchId, client.lobby.id);
+    assert.equal(results?.runs[0]?.maps[0]?.gameId, 1);
+    assert.equal(results?.runs[0]?.maps[1]?.gameId, 2);
   } finally {
     if (originalSiteUrl === undefined) {
       delete process.env.DOJO_SITE_URL;
@@ -598,7 +598,7 @@ test("bot switches lobby scoring to ScoreV1 when the course requests it", async 
   try {
     const { db } = await createTestDatabase(temp.url);
     db.$client
-      .prepare("UPDATE dans SET score_model = ? WHERE course_slug = ?")
+      .prepare("UPDATE courses SET score_model = ? WHERE slug = ?")
       .run("scorev1", SEEDED_COURSE_SLUG);
 
     const client = new FakeClient();
@@ -821,13 +821,13 @@ test("bot aborts immediately when the target player leaves between maps", async 
     assert.match(latestMeaningfulLobbyMessage(client.lobby), /player left the room/i);
     assert.equal(bot.activeRunsByUserId.has(42), false);
 
-    const results = await listDanResultsByNameKey(
+    const results = await listCourseRunsByNameKey(
       SEEDED_SYSTEM_NAME_KEY,
       SEEDED_COURSE_NAME_KEY,
       db,
     );
-    assert.equal(results?.results[0]?.status, "dnf");
-    assert.equal(results?.results[0]?.maps.length, 1);
+    assert.equal(results?.runs[0]?.status, "dnf");
+    assert.equal(results?.runs[0]?.maps.length, 1);
   } finally {
     temp.cleanup();
   }
@@ -877,14 +877,14 @@ test("bot halts the course immediately when a map fails", async () => {
     assert.equal(client.lobby.startHistory.length, 1);
     assert.match(latestMeaningfulLobbyMessage(client.lobby), /1st: FAIL/i);
 
-    const results = await listDanResultsByNameKey(
+    const results = await listCourseRunsByNameKey(
       SEEDED_SYSTEM_NAME_KEY,
       SEEDED_COURSE_NAME_KEY,
       db,
     );
-    assert.equal(results?.results[0]?.status, "fail");
-    assert.equal(results?.results[0]?.maps.length, 1);
-    assert.equal(results?.results[0]?.maps[0]?.passed, false);
+    assert.equal(results?.runs[0]?.status, "fail");
+    assert.equal(results?.runs[0]?.maps.length, 1);
+    assert.equal(results?.runs[0]?.maps[0]?.passed, false);
   } finally {
     temp.cleanup();
   }

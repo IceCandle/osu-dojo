@@ -21,10 +21,10 @@ interface CourseBeatmapSeed {
   annotations: string[];
 }
 
-interface CourseDanSeed {
+interface CourseSeed {
   id: string;
   name: string;
-  courseSlug: string;
+  slug: string;
   description: string;
   ordinal: number;
   scoreModel: DanScoreModel;
@@ -33,15 +33,15 @@ interface CourseDanSeed {
   beatmaps: CourseBeatmapSeed[];
 }
 
-export interface CourseSystemSeed {
+export interface DanSystemSeed {
   id: string;
   name: string;
   slug: string;
   description: string;
-  dans: CourseDanSeed[];
+  courses: CourseSeed[];
 }
 
-export function loadCoursesFromDir(dir: string): CourseSystemSeed[] {
+export function loadCoursesFromDir(dir: string): DanSystemSeed[] {
   const directory = path.resolve(dir);
   const filenames = readdirSync(directory)
     .filter((name) => name.endsWith(".json"))
@@ -52,7 +52,7 @@ export function loadCoursesFromDir(dir: string): CourseSystemSeed[] {
     const raw = readFileSync(filePath, "utf8");
 
     try {
-      return parseCourseSystem(JSON.parse(raw), filePath);
+      return parseDanSystem(JSON.parse(raw), filePath);
     } catch (error) {
       if (error instanceof Error) {
         throw new Error(`${filePath}: ${error.message}`);
@@ -66,7 +66,7 @@ export function loadCoursesFromDir(dir: string): CourseSystemSeed[] {
   return systems;
 }
 
-function parseCourseSystem(value: unknown, source: string): CourseSystemSeed {
+function parseDanSystem(value: unknown, source: string): DanSystemSeed {
   const record = expectRecord(value, "course system", source);
 
   return {
@@ -74,19 +74,19 @@ function parseCourseSystem(value: unknown, source: string): CourseSystemSeed {
     name: expectDisplayName(record.name, "name", source),
     slug: expectString(record.slug, "slug", source),
     description: expectString(record.description, "description", source),
-    dans: expectArray(record.dans, "dans", source).map((dan, index) =>
-      parseCourseDan(dan, `${source} dans[${index}]`),
+    courses: expectArray(record.courses, "courses", source).map((course, index) =>
+      parseCourse(course, `${source} courses[${index}]`),
     ),
   };
 }
 
-function parseCourseDan(value: unknown, source: string): CourseDanSeed {
-  const record = expectRecord(value, "dan", source);
+function parseCourse(value: unknown, source: string): CourseSeed {
+  const record = expectRecord(value, "course", source);
 
   return {
     id: expectString(record.id, "id", source),
     name: expectDisplayName(record.name, "name", source),
-    courseSlug: expectString(record.courseSlug, "courseSlug", source),
+    slug: expectString(record.slug, "slug", source),
     description: expectString(record.description, "description", source),
     ordinal: expectInteger(record.ordinal, "ordinal", source),
     scoreModel: expectScoreModel(record.scoreModel, "scoreModel", source),
@@ -264,7 +264,7 @@ function expectScoreModel(
   );
 }
 
-function assertUniqueNameKeys(systems: CourseSystemSeed[]) {
+function assertUniqueNameKeys(systems: DanSystemSeed[]) {
   const systemKeys = new Map<string, string>();
 
   for (const system of systems) {
@@ -278,15 +278,15 @@ function assertUniqueNameKeys(systems: CourseSystemSeed[]) {
     systemKeys.set(systemNameKey, system.name);
 
     const courseKeys = new Map<string, string>();
-    for (const dan of system.dans) {
-      const courseNameKey = kebabizeName(dan.name);
+    for (const course of system.courses) {
+      const courseNameKey = kebabizeName(course.name);
       const existingCourseName = courseKeys.get(courseNameKey);
       if (existingCourseName) {
         throw new Error(
-          `Duplicate course display name key "${courseNameKey}" in system "${system.name}" from "${existingCourseName}" and "${dan.name}".`,
+          `Duplicate course display name key "${courseNameKey}" in system "${system.name}" from "${existingCourseName}" and "${course.name}".`,
         );
       }
-      courseKeys.set(courseNameKey, dan.name);
+      courseKeys.set(courseNameKey, course.name);
     }
   }
 }
