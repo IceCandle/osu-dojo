@@ -51,6 +51,9 @@ CourseRun (id, userId, courseId, passed, timestamp, matchId?)
 
 - 플레이어가 bot IRC 계정에 DM으로 `!dojo start <system-name> <course-name>`를 보냅니다. 두 인자는 display-name key입니다.
 - 플레이어는 `!dojo help`로 간단한 사용법을 확인할 수 있고, 같은 bot process 안에서 이전에 성공적으로 확인된 시작 명령은 `!dojo prev`로 다시 실행할 수 있습니다.
+- 플레이어는 멀티플레이어 로비 채팅(`#mp_<id>`)에서 `!dojo skip`을 입력해 첫 map 또는 map 사이의 남은 시작 대기 시간을 건너뜁니다. DM의 `!dojo skip`은 동작하지 않습니다.
+- 플레이어가 이미 진행 중인 run이 있는 상태에서 `!dojo start`를 다시 보내면, bot은 이전 방을 닫고 새 방을 만듭니다. resolved map이 있으면 이전 run은 DNF로 저장됩니다.
+- 플레이어가 로비에서 나가면(ESC) `playerLeft`로 현재 run이 중단됩니다.
 - bot은 `!dojo`로 시작하지만 알려진 명령이 아닌 DM에 사용법 안내를 보냅니다.
 - bot은 `osu!dojo: <system_name> / <course_name>` 제목의 멀티플레이어 방을 만듭니다.
 - bot은 플레이어를 초대하고, 플레이어가 방에 참가합니다.

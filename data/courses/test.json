@@ -12,14 +12,14 @@
       "ordinal": 1,
       "scoreModel": "scorev2",
       "overallPassType": "acc",
-      "overallPassThreshold": 20,
+      "overallPassThreshold": 0,
       "beatmaps": [
         {
           "id": "beatmap-test-1",
           "beatmapId": 315,
-          "mods": "HR",
+          "mods": "",
           "passConditionType": "acc",
-          "passConditionThreshold": 10,
+          "passConditionThreshold": 0,
           "ordinal": 1,
           "annotations": ["aim"]
         },

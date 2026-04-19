@@ -49,15 +49,28 @@ class FakeUser implements BotUserLike {
   }
 }
 
+class FakeLobbyChannel extends EventEmitter {
+  messages: string[] = [];
+  handler?: (message: string) => Promise<null>;
+
+  async sendMessage(message: string) {
+    this.messages.push(message);
+    if (this.handler) {
+      return this.handler(message);
+    }
+
+    return null;
+  }
+}
+
 class FakeLobby extends EventEmitter implements LobbyLike {
-  id = 777;
+  id: number;
   invites: string[] = [];
   lockHistory = 0;
   mapHistory: number[] = [];
   modHistory: string[][] = [];
   settingsHistory: Array<{ teamMode?: number; winCondition?: number; size?: number }> = [];
   startHistory: number[] = [];
-  channelMessages: string[] = [];
   closeLobbyCalls = 0;
   updateSettingsCalls = 0;
   players = new Map<number, FakeLobbyPlayer>();
@@ -66,12 +79,24 @@ class FakeLobby extends EventEmitter implements LobbyLike {
   updateSettingsHandler?: () => Promise<null>;
   startMatchHandler?: (timeout?: number) => Promise<null>;
   closeLobbyHandler?: () => Promise<null>;
-  channel = {
-    sendMessage: async (message: string) => {
-      this.channelMessages.push(message);
-      return null;
-    },
-  };
+  channel = new FakeLobbyChannel();
+
+  constructor(id = 777) {
+    super();
+    this.id = id;
+  }
+
+  get channelMessages() {
+    return this.channel.messages;
+  }
+
+  get channelMessageHandler() {
+    return this.channel.handler;
+  }
+
+  set channelMessageHandler(handler: ((message: string) => Promise<null>) | undefined) {
+    this.channel.handler = handler;
+  }
 
   registerPlayer(user: BotUserLike, state = BanchoLobbyPlayerStates.NotReady) {
     if (typeof user.id !== "number") {
@@ -280,6 +305,15 @@ async function getSeededBeatmapIds(db: Awaited<ReturnType<typeof createTestDatab
 
 function createSeededStartMessage(user: BotUserLike) {
   return createPrivateMessage(user, SEEDED_START_COMMAND);
+}
+
+function emitLobbyMessage(
+  lobby: FakeLobby,
+  user: BotUserLike,
+  message: string,
+  self = false,
+) {
+  lobby.channel.emit("message", { user, message, self });
 }
 
 test("bot sends concise help without creating a lobby", async () => {
@@ -738,7 +772,226 @@ test("bot uses the confirmed-finish score fetch policy and completes the run", a
   }
 });
 
-test("bot rejects duplicate active runs for the same player", async () => {
+test("bot supersedes an active run when the same player starts a valid course", async () => {
+  const temp = createTempDatabaseUrl();
+
+  try {
+    const { db } = await createTestDatabase(temp.url);
+    const client = new FakeClient();
+    const firstLobby = new FakeLobby(777);
+    const secondLobby = new FakeLobby(888);
+    const lobbies = [firstLobby, secondLobby];
+    client.lobby = firstLobby;
+    client.createLobbyHandler = async () => {
+      const lobby = lobbies.shift();
+      if (!lobby) {
+        throw new Error("No fake lobby left.");
+      }
+      client.lobby = lobby;
+      return { lobby };
+    };
+    const user = new FakeUser(42, "PlayerOne");
+    const endedEvents: Array<{ result: string; reason?: string }> = [];
+    const bot = createDojoBot({
+      client,
+      db,
+      connectOnStart: false,
+    });
+    bot.events.on("runEnded", (event) => {
+      endedEvents.push(event);
+    });
+
+    await bot.handlePrivateMessage(createSeededStartMessage(user));
+    await bot.handlePrivateMessage(createSeededStartMessage(user));
+    await flushAsyncWork(6);
+
+    assert.equal(client.createLobbyCalls.length, 2);
+    assert.equal(firstLobby.closeLobbyCalls, 1);
+    assert.equal(secondLobby.closeLobbyCalls, 0);
+    assert.equal(
+      firstLobby.channelMessages.some((message) =>
+        /starting a new course/i.test(message),
+      ),
+      true,
+    );
+    assert.equal(endedEvents.length, 1);
+    assert.equal(endedEvents[0]?.result, "aborted");
+    assert.equal(endedEvents[0]?.reason, "superseded-by-new-start");
+    assert.equal(bot.activeRunsByUserId.get(42)?.lobby?.id, secondLobby.id);
+    assert.deepEqual(secondLobby.invites, ["#42"]);
+  } finally {
+    temp.cleanup();
+  }
+});
+
+test("bot keeps the active run when a duplicate start names an unknown course", async () => {
+  const temp = createTempDatabaseUrl();
+
+  try {
+    const { db } = await createTestDatabase(temp.url);
+    const client = new FakeClient();
+    const user = new FakeUser(42, "PlayerOne");
+    const bot = createDojoBot({
+      client,
+      db,
+      connectOnStart: false,
+    });
+
+    await bot.handlePrivateMessage(createSeededStartMessage(user));
+    await bot.handlePrivateMessage(createPrivateMessage(user, "!dojo start nope nope"));
+
+    assert.match(user.messages.at(-1) ?? "", /Unknown course/i);
+    assert.equal(client.createLobbyCalls.length, 1);
+    assert.equal(client.lobby.closeLobbyCalls, 0);
+    assert.equal(bot.activeRunsByUserId.get(42)?.lobby?.id, client.lobby.id);
+  } finally {
+    temp.cleanup();
+  }
+});
+
+test("bot supersede during lobby setup does not let the old setup win", async () => {
+  const temp = createTempDatabaseUrl();
+  const firstSetupStarted = createDeferred<null>();
+  const releaseFirstSetup = createDeferred<null>();
+
+  try {
+    const { db } = await createTestDatabase(temp.url);
+    const client = new FakeClient();
+    const firstLobby = new FakeLobby(777);
+    const secondLobby = new FakeLobby(888);
+    const lobbies = [firstLobby, secondLobby];
+    let firstUpdateCalls = 0;
+    firstLobby.updateSettingsHandler = async () => {
+      firstUpdateCalls += 1;
+      if (firstUpdateCalls === 1) {
+        firstSetupStarted.resolve(null);
+        return releaseFirstSetup.promise;
+      }
+      return null;
+    };
+    client.lobby = firstLobby;
+    client.createLobbyHandler = async () => {
+      const lobby = lobbies.shift();
+      if (!lobby) {
+        throw new Error("No fake lobby left.");
+      }
+      client.lobby = lobby;
+      return { lobby };
+    };
+    const user = new FakeUser(42, "PlayerOne");
+    const bot = createDojoBot({
+      client,
+      db,
+      connectOnStart: false,
+    });
+
+    const firstStart = bot.handlePrivateMessage(createSeededStartMessage(user));
+    await firstSetupStarted.promise;
+
+    await bot.handlePrivateMessage(createSeededStartMessage(user));
+    releaseFirstSetup.resolve(null);
+    await firstStart;
+    await flushAsyncWork(6);
+
+    assert.ok(firstLobby.closeLobbyCalls >= 1);
+    assert.deepEqual(firstLobby.invites, []);
+    assert.deepEqual(secondLobby.invites, ["#42"]);
+    assert.equal(bot.activeRunsByUserId.get(42)?.lobby?.id, secondLobby.id);
+    assert.equal(
+      user.messages.filter((message) => /Room ready/i.test(message)).length,
+      1,
+    );
+  } finally {
+    releaseFirstSetup.resolve(null);
+    temp.cleanup();
+  }
+});
+
+test("bot does not supersede a run that is already finalizing", async () => {
+  const temp = createTempDatabaseUrl();
+  const finalMessageStarted = createDeferred<null>();
+  const releaseFinalMessage = createDeferred<null>();
+
+  try {
+    const { db } = await createTestDatabase(temp.url);
+    const client = new FakeClient();
+    const user = new FakeUser(42, "PlayerOne");
+    const seededBeatmapIds = await getSeededBeatmapIds(db);
+    const endedEvents: Array<{ result: string; reason?: string }> = [];
+    let gameId = 0;
+    client.lobby.channelMessageHandler = async (message) => {
+      if (/^1st: PASS/i.test(message)) {
+        finalMessageStarted.resolve(null);
+        return releaseFinalMessage.promise;
+      }
+      return null;
+    };
+    const bot = createDojoBot({
+      client,
+      db,
+      connectOnStart: false,
+      restDurationMs: 0,
+      firstMapCountdownSeconds: 0,
+      fetchScore: async (_lobby, options) => ({
+        gameId: (gameId += 1),
+        beatmapId: options.beatmapId,
+        userId: 42,
+        score: options.beatmapId === seededBeatmapIds[0] ? 910000 : 905000,
+        accuracy: options.beatmapId === seededBeatmapIds[0] ? 96.3 : 95.2,
+        maxCombo: 800,
+        count300: 1000,
+        count100: 40,
+        count50: 4,
+        countMiss: 2,
+        passed: true,
+      }),
+    });
+    bot.events.on("runEnded", (event) => {
+      endedEvents.push(event);
+    });
+
+    await bot.handlePrivateMessage(createSeededStartMessage(user));
+
+    client.lobby.emit("playerJoined", {
+      player: client.lobby.registerPlayer(user),
+    });
+    await flushAsyncWork();
+    client.lobby.emit("matchStarted");
+    client.lobby.emit("matchFinished");
+    await flushAsyncWork(8);
+    client.lobby.emit("matchStarted");
+    client.lobby.emit("matchFinished");
+    await finalMessageStarted.promise;
+
+    await bot.handlePrivateMessage(createSeededStartMessage(user));
+
+    assert.equal(
+      user.messages.at(-1),
+      "Run is already finishing. Please try again in a moment.",
+    );
+    assert.equal(client.createLobbyCalls.length, 1);
+    assert.equal(
+      endedEvents.some((event) => event.reason === "superseded-by-new-start"),
+      false,
+    );
+
+    releaseFinalMessage.resolve(null);
+    await flushAsyncWork(8);
+
+    assert.equal(endedEvents[0]?.result, "completed");
+    const results = await listCourseRunsByNameKey(
+      SEEDED_SYSTEM_NAME_KEY,
+      SEEDED_COURSE_NAME_KEY,
+      db,
+    );
+    assert.equal(results?.runs[0]?.status, "pass");
+  } finally {
+    releaseFinalMessage.resolve(null);
+    temp.cleanup();
+  }
+});
+
+test("bot persists a superseded run after at least one resolved map", async () => {
   const temp = createTempDatabaseUrl();
 
   try {
@@ -750,12 +1003,14 @@ test("bot rejects duplicate active runs for the same player", async () => {
       client,
       db,
       connectOnStart: false,
+      restDurationMs: 20_000,
+      firstMapCountdownSeconds: 0,
       fetchScore: async () => ({
         gameId: 1,
         beatmapId: seededBeatmapIds[0] ?? 0,
         userId: 42,
-        score: 900000,
-        accuracy: 96,
+        score: 910000,
+        accuracy: 96.3,
         maxCombo: 800,
         count300: 1000,
         count100: 40,
@@ -766,9 +1021,273 @@ test("bot rejects duplicate active runs for the same player", async () => {
     });
 
     await bot.handlePrivateMessage(createSeededStartMessage(user));
+
+    const player = client.lobby.registerPlayer(user);
+    client.lobby.emit("playerJoined", { player });
+    await flushAsyncWork();
+
+    client.lobby.emit("matchStarted");
+    client.lobby.emit("matchFinished");
+    await flushAsyncWork(6);
+
+    await bot.handlePrivateMessage(createSeededStartMessage(user));
+    await flushAsyncWork(6);
+
+    const results = await listCourseRunsByNameKey(
+      SEEDED_SYSTEM_NAME_KEY,
+      SEEDED_COURSE_NAME_KEY,
+      db,
+    );
+    assert.equal(results?.runs.length, 1);
+    assert.equal(results?.runs[0]?.status, "dnf");
+    assert.equal(results?.runs[0]?.maps.length, 1);
+  } finally {
+    temp.cleanup();
+  }
+});
+
+test("bot redirects skip sent over DM", async () => {
+  const client = new FakeClient();
+  const user = new FakeUser(42, "PlayerOne");
+  const bot = createDojoBot({
+    client,
+    connectOnStart: false,
+  });
+
+  await bot.handlePrivateMessage(createPrivateMessage(user, "!dojo skip"));
+
+  assert.equal(user.messages.at(-1), "Use !dojo skip in the multiplayer lobby chat.");
+  assert.equal(client.createLobbyCalls.length, 0);
+  assert.equal(client.lobby.startHistory.length, 0);
+});
+
+test("bot treats abort as an invalid DM command", async () => {
+  const temp = createTempDatabaseUrl();
+
+  try {
+    const { db } = await createTestDatabase(temp.url);
+    const client = new FakeClient();
+    const user = new FakeUser(42, "PlayerOne");
+    const bot = createDojoBot({
+      client,
+      db,
+      connectOnStart: false,
+    });
+
+    await bot.handlePrivateMessage(createSeededStartMessage(user));
+    await bot.handlePrivateMessage(createPrivateMessage(user, "!dojo abort"));
+
+    assert.equal(user.messages.at(-1), "Invalid command. Use !dojo help for a guide.");
+    assert.equal(bot.activeRunsByUserId.has(42), true);
+    assert.equal(client.lobby.closeLobbyCalls, 0);
+  } finally {
+    temp.cleanup();
+  }
+});
+
+test("bot lobby skip starts the pending countdown exactly once", async () => {
+  const temp = createTempDatabaseUrl();
+  const refreshStarted = createDeferred<null>();
+  const releaseRefresh = createDeferred<null>();
+
+  try {
+    const { db } = await createTestDatabase(temp.url);
+    const client = new FakeClient();
+    const user = new FakeUser(42, "PlayerOne");
+    const bot = createDojoBot({
+      client,
+      db,
+      connectOnStart: false,
+      firstMapCountdownSeconds: 1,
+    });
+
     await bot.handlePrivateMessage(createSeededStartMessage(user));
 
-    assert.match(user.messages.at(-1) ?? "", /already have an active run/i);
+    client.lobby.emit("playerJoined", {
+      player: client.lobby.registerPlayer(user, BanchoLobbyPlayerStates.NotReady),
+    });
+    await flushAsyncWork();
+
+    client.lobby.updateSettingsHandler = async () => {
+      refreshStarted.resolve(null);
+      return releaseRefresh.promise;
+    };
+
+    emitLobbyMessage(client.lobby, user, "!dojo skip");
+    await refreshStarted.promise;
+    emitLobbyMessage(client.lobby, user, "!dojo skip");
+    await waitForTimer(1_100);
+
+    assert.equal(client.lobby.startHistory.length, 0);
+
+    releaseRefresh.resolve(null);
+    await flushAsyncWork(6);
+
+    assert.equal(client.lobby.startHistory.length, 1);
+    assert.equal(client.lobby.channelMessages.includes("!mp timer 1"), true);
+    client.lobby.emit("matchStarted");
+    await flushAsyncWork();
+    emitLobbyMessage(client.lobby, user, "!dojo skip");
+    await flushAsyncWork();
+    assert.equal(client.lobby.startHistory.length, 1);
+  } finally {
+    releaseRefresh.resolve(null);
+    temp.cleanup();
+  }
+});
+
+test("bot lobby skip between maps advances to the next map immediately", async () => {
+  const temp = createTempDatabaseUrl();
+
+  try {
+    const { db } = await createTestDatabase(temp.url);
+    const client = new FakeClient();
+    const user = new FakeUser(42, "PlayerOne");
+    const seededBeatmapIds = await getSeededBeatmapIds(db);
+    const bot = createDojoBot({
+      client,
+      db,
+      connectOnStart: false,
+      firstMapCountdownSeconds: 0,
+      restDurationMs: 20_000,
+      fetchScore: async () => ({
+        gameId: 1,
+        beatmapId: seededBeatmapIds[0] ?? 0,
+        userId: 42,
+        score: 910000,
+        accuracy: 96.3,
+        maxCombo: 800,
+        count300: 1000,
+        count100: 40,
+        count50: 4,
+        countMiss: 2,
+        passed: true,
+      }),
+    });
+
+    await bot.handlePrivateMessage(createSeededStartMessage(user));
+
+    client.lobby.emit("playerJoined", {
+      player: client.lobby.registerPlayer(user, BanchoLobbyPlayerStates.NotReady),
+    });
+    await flushAsyncWork();
+    client.lobby.emit("matchStarted");
+    client.lobby.emit("matchFinished");
+    await flushAsyncWork(6);
+
+    assert.equal(client.lobby.startHistory.length, 1);
+    assert.equal(client.lobby.mapHistory.at(-1), seededBeatmapIds[1]);
+
+    emitLobbyMessage(client.lobby, user, "!dojo skip");
+    await flushAsyncWork(6);
+
+    assert.equal(client.lobby.startHistory.length, 2);
+  } finally {
+    temp.cleanup();
+  }
+});
+
+test("bot lobby skip aborts with missing-map when the target player has no map", async () => {
+  const temp = createTempDatabaseUrl();
+
+  try {
+    const { db } = await createTestDatabase(temp.url);
+    const client = new FakeClient();
+    const user = new FakeUser(42, "PlayerOne");
+    const endedEvents: Array<{ result: string; reason?: string }> = [];
+    const bot = createDojoBot({
+      client,
+      db,
+      connectOnStart: false,
+      firstMapCountdownSeconds: 10,
+    });
+    bot.events.on("runEnded", (event) => {
+      endedEvents.push(event);
+    });
+
+    await bot.handlePrivateMessage(createSeededStartMessage(user));
+
+    client.lobby.emit("playerJoined", {
+      player: client.lobby.registerPlayer(user, BanchoLobbyPlayerStates.NoMap),
+    });
+    await flushAsyncWork();
+
+    emitLobbyMessage(client.lobby, user, "!dojo skip");
+    await flushAsyncWork(6);
+
+    assert.equal(client.lobby.startHistory.length, 0);
+    assert.match(latestMeaningfulLobbyMessage(client.lobby), /do not have the map yet/i);
+    assert.equal(endedEvents[0]?.result, "aborted");
+    assert.equal(endedEvents[0]?.reason, "missing-map");
+  } finally {
+    temp.cleanup();
+  }
+});
+
+test("bot lobby skip ignores non-owners and self echoes", async () => {
+  const temp = createTempDatabaseUrl();
+
+  try {
+    const { db } = await createTestDatabase(temp.url);
+    const client = new FakeClient();
+    const target = new FakeUser(42, "PlayerOne");
+    const other = new FakeUser(99, "PlayerTwo");
+    const bot = createDojoBot({
+      client,
+      db,
+      connectOnStart: false,
+      firstMapCountdownSeconds: 10,
+    });
+
+    await bot.handlePrivateMessage(createSeededStartMessage(target));
+
+    client.lobby.emit("playerJoined", {
+      player: client.lobby.registerPlayer(target, BanchoLobbyPlayerStates.NotReady),
+    });
+    await flushAsyncWork();
+
+    emitLobbyMessage(client.lobby, other, "!dojo skip");
+    emitLobbyMessage(client.lobby, target, "!dojo skip", true);
+    await flushAsyncWork(6);
+
+    assert.equal(other.messages.length, 0);
+    assert.equal(client.lobby.startHistory.length, 0);
+    assert.equal(bot.activeRunsByUserId.has(42), true);
+  } finally {
+    temp.cleanup();
+  }
+});
+
+test("bot ignores non-skip dojo commands in the lobby channel", async () => {
+  const temp = createTempDatabaseUrl();
+
+  try {
+    const { db } = await createTestDatabase(temp.url);
+    const client = new FakeClient();
+    const user = new FakeUser(42, "PlayerOne");
+    const bot = createDojoBot({
+      client,
+      db,
+      connectOnStart: false,
+      firstMapCountdownSeconds: 10,
+    });
+
+    await bot.handlePrivateMessage(createSeededStartMessage(user));
+
+    client.lobby.emit("playerJoined", {
+      player: client.lobby.registerPlayer(user, BanchoLobbyPlayerStates.NotReady),
+    });
+    await flushAsyncWork();
+    const messageCount = client.lobby.channelMessages.length;
+
+    emitLobbyMessage(client.lobby, user, "!dojo help");
+    emitLobbyMessage(client.lobby, user, "!dojo prev");
+    emitLobbyMessage(client.lobby, user, SEEDED_START_COMMAND);
+    await flushAsyncWork(6);
+
+    assert.equal(client.lobby.channelMessages.length, messageCount);
+    assert.equal(client.lobby.startHistory.length, 0);
+    assert.equal(bot.activeRunsByUserId.has(42), true);
   } finally {
     temp.cleanup();
   }
@@ -838,6 +1357,17 @@ test("bot halts the course immediately when a map fails", async () => {
 
   try {
     const { db } = await createTestDatabase(temp.url);
+    db.$client
+      .prepare(
+        `
+        UPDATE beatmaps
+        SET pass_condition_type = ?, pass_condition_threshold = ?
+        WHERE course_id = (SELECT id FROM courses WHERE slug = ?)
+          AND ordinal = ?
+        `,
+      )
+      .run("acc", 99, SEEDED_COURSE_SLUG, 1);
+
     const client = new FakeClient();
     const user = new FakeUser(42, "PlayerOne");
     const seededBeatmapIds = await getSeededBeatmapIds(db);

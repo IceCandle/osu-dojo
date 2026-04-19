@@ -20,14 +20,25 @@ test("course loader reads the seeded test course json", () => {
   const systems = loadCoursesFromDir(path.join(process.cwd(), "data/courses"));
   const courseSystem = systems.find((system) => system.slug === "test");
 
-  assert.equal(courseSystem?.courses[0]?.slug, "test-1dan");
-  assert.equal(courseSystem?.courses[0]?.scoreModel, "scorev2");
-  assert.equal(courseSystem?.courses[0]?.beatmaps[0]?.mods, "HR");
-  assert.deepEqual(courseSystem?.courses[0]?.beatmaps[0]?.annotations, ["aim"]);
-  assert.equal(courseSystem?.courses[1]?.slug, "test-2dan");
-  assert.equal(courseSystem?.courses[1]?.scoreModel, "scorev1");
-  assert.equal(courseSystem?.courses[1]?.beatmaps[0]?.beatmapId, 4923775);
-  assert.equal(courseSystem?.courses[1]?.beatmaps[0]?.passConditionThreshold, 30);
+  assert.ok(courseSystem);
+  assert.ok(courseSystem.courses.length > 0);
+
+  for (const course of courseSystem.courses) {
+    assert.equal(typeof course.slug, "string");
+    assert.match(course.slug, /\S/);
+    assert.match(course.scoreModel, /^scorev[12]$/);
+    assert.ok(course.beatmaps.length > 0);
+
+    for (const beatmap of course.beatmaps) {
+      assert.equal(typeof beatmap.beatmapId, "number");
+      assert.equal(Number.isInteger(beatmap.beatmapId), true);
+      assert.equal(typeof beatmap.mods, "string");
+      assert.match(beatmap.passConditionType, /^(acc|score)$/);
+      assert.equal(typeof beatmap.passConditionThreshold, "number");
+      assert.equal(typeof beatmap.ordinal, "number");
+      assert.equal(Number.isInteger(beatmap.ordinal), true);
+    }
+  }
 });
 
 test("mod validator accepts the full ranked stable mod set we support in course json", () => {

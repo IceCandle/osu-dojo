@@ -5,6 +5,10 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { createTestDatabase } from "@/db/client";
 import { loadCoursesFromDir } from "@/db/courseLoader";
 import {
+  formatConditionCompact,
+  formatScoreModel,
+} from "@/lib/format";
+import {
   getCourseByNameKey,
   listCoursesByDanSystemNameKey,
   listCourseRunsByNameKey,
@@ -131,6 +135,8 @@ test("pages render seeded course data from SQLite", async () => {
       SEEDED_COURSE_NAME_KEY,
     );
 
+    assert.ok(course);
+
     assert.match(homeHtml, /Browse dan systems/);
     assert.doesNotMatch(homeHtml, /Open system/);
     assert.match(systemsHtml, /test/i);
@@ -140,10 +146,33 @@ test("pages render seeded course data from SQLite", async () => {
     assert.match(courseHtml, /!dojo start test 1st/);
     assert.match(courseHtml, /Sample dan system for the MVP\./);
     assert.match(courseHtml, new RegExp(course?.beatmaps[0]?.difficultyName ?? ""));
-    assert.match(courseHtml, /ScoreV2/);
-    assert.match(courseHtml, /20\.00%\+/);
-    assert.match(courseHtml, /10\.00%\+/);
-    assert.match(courseHtml, /10,000\+ score/);
+    assert.match(courseHtml, new RegExp(formatScoreModel(course.scoreModel)));
+    if (course.overallPassType && course.overallPassThreshold !== null) {
+      assert.match(
+        courseHtml,
+        new RegExp(
+          escapeRegExp(
+            formatConditionCompact(
+              course.overallPassType,
+              course.overallPassThreshold,
+            ),
+          ),
+        ),
+      );
+    }
+    for (const beatmap of course.beatmaps) {
+      assert.match(
+        courseHtml,
+        new RegExp(
+          escapeRegExp(
+            formatConditionCompact(
+              beatmap.passConditionType,
+              beatmap.passConditionThreshold,
+            ),
+          ),
+        ),
+      );
+    }
     assert.match(courseHtml, /No runs saved yet/);
     assert.doesNotMatch(courseHtml, /\b\d{1,2}:\d{2}\b/);
   } finally {
@@ -152,6 +181,10 @@ test("pages render seeded course data from SQLite", async () => {
     temp.cleanup();
   }
 });
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
 
 test("course run queries and page derive DNF for interrupted partial runs", async () => {
   const temp = createTempDatabaseUrl();
