@@ -19,7 +19,7 @@
           "beatmapId": 315,
           "mods": "",
           "passConditionType": "acc",
-          "passConditionThreshold": 0,
+          "passConditionThreshold": 0.1,
           "ordinal": 1,
           "annotations": ["aim"]
         },

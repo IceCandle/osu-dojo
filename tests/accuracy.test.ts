@@ -249,8 +249,7 @@ test("judgeCourseRun excludes failed maps from course acc", () => {
   );
 
   assert.equal(judged.allMapsPassed, false);
-  assert.equal(judged.overall?.value, 95);
-  assert.equal(judged.overall?.passed, false);
+  assert.equal(judged.overall, null);
   assert.equal(judged.passed, false);
 });
 

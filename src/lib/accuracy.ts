@@ -1,10 +1,13 @@
 import type { StableScoreStats } from "@/lib/domain";
 
+export function totalHitObjects(stats: StableScoreStats): number {
+  return stats.count300 + stats.count100 + stats.count50 + stats.countMiss;
+}
+
 export function calculateAccuracy(
   stats: StableScoreStats,
 ): number {
-  const totalHits =
-    stats.count300 + stats.count100 + stats.count50 + stats.countMiss;
+  const totalHits = totalHitObjects(stats);
 
   if (totalHits === 0) {
     return 0;

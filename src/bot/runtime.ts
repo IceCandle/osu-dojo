@@ -18,10 +18,12 @@ import {
   fetchLatestPlayerMapScore,
   type NormalizedPlayerMapScore,
 } from "@/bot/osuApi";
+import { totalHitObjects } from "@/lib/accuracy";
 import { judgeCourseRun, judgeThreshold } from "@/lib/judging";
 import { parseCourseMods, validateCourseMods } from "@/lib/mods";
 import { formatConditionValue, kebabizeName } from "@/lib/format";
 import type { CourseDefinition, JudgedMapResult } from "@/lib/domain";
+import { sleep as defaultSleep } from "@/lib/sleep";
 
 if (existsSync(".env")) {
   if (typeof loadEnvFile === "function") {
@@ -191,6 +193,13 @@ const MISSING_MAP_MESSAGE =
 const INVALID_COMMAND_MESSAGE = "Invalid command. Use !dojo help for a guide.";
 const NO_PREVIOUS_COMMAND_MESSAGE =
   "No previous command. Use !dojo start <system-name> <course-name> to begin.";
+
+class SetupAbortedError extends Error {
+  constructor() {
+    super("Run aborted during setup.");
+    this.name = "SetupAbortedError";
+  }
+}
 
 export function createLiveBanchoClient() {
   return new BanchoClient({
@@ -536,13 +545,22 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
     activeRunsByUserId.set(run.playerUserId, run);
     logger.info("dojo run created", getRunLogFields(run, { startedAt: run.startedAt }));
 
-    const wasRunAbortedDuringSetup = () =>
+    const isRunAbortedDuringSetup = () =>
       run.status === "aborted" || activeRunsByUserId.get(run.playerUserId) !== run;
 
     const closeAbortedSetupLobby = async () => {
       if (run.lobby) {
         await closeLobbyBestEffort(run);
       }
+    };
+
+    const checkAborted = async () => {
+      if (!isRunAbortedDuringSetup()) {
+        return;
+      }
+
+      await closeAbortedSetupLobby();
+      throw new SetupAbortedError();
     };
 
     try {
@@ -554,36 +572,21 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
 
       const lobbyChannel = await client.createLobby(lobbyTitle);
       run.lobby = lobbyChannel.lobby;
-      if (wasRunAbortedDuringSetup()) {
-        await closeAbortedSetupLobby();
-        return;
-      }
+      await checkAborted();
       activeRunsByLobbyId.set(run.lobby.id, run);
 
       await run.lobby.updateSettings();
-      if (wasRunAbortedDuringSetup()) {
-        await closeAbortedSetupLobby();
-        return;
-      }
+      await checkAborted();
       await run.lobby.lockSlots();
-      if (wasRunAbortedDuringSetup()) {
-        await closeAbortedSetupLobby();
-        return;
-      }
+      await checkAborted();
       attachLobbyListeners(run);
       await safeSendLobbyMessage(
         run.lobby,
         `Loaded ${course.name}. Waiting for ${run.playerUsername} to join.`,
       );
-      if (wasRunAbortedDuringSetup()) {
-        await closeAbortedSetupLobby();
-        return;
-      }
+      await checkAborted();
       await run.lobby.invitePlayer(`#${run.playerUserId}`);
-      if (wasRunAbortedDuringSetup()) {
-        await closeAbortedSetupLobby();
-        return;
-      }
+      await checkAborted();
       touchRunProgress(run);
       logger.info(
         "dojo lobby created and player invited",
@@ -595,7 +598,10 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
         `Room ready: ${lobbyTitle}. Join the invite to begin.`,
       );
     } catch (error) {
-      if (wasRunAbortedDuringSetup()) {
+      if (error instanceof SetupAbortedError) {
+        return;
+      }
+      if (isRunAbortedDuringSetup()) {
         await closeAbortedSetupLobby();
         return;
       }
@@ -845,6 +851,10 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
 
     run.processedGameIds.add(fetchedScore.gameId);
 
+    const playedObjects = totalHitObjects(fetchedScore);
+    const isPartialPlay =
+      beatmap.totalObjects !== null && playedObjects < beatmap.totalObjects;
+
     const threshold = judgeThreshold(beatmap.passConditionType, beatmap.passConditionThreshold, {
       accuracy: fetchedScore.accuracy,
       score: fetchedScore.score,
@@ -864,38 +874,56 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
       count100: fetchedScore.count100,
       count50: fetchedScore.count50,
       countMiss: fetchedScore.countMiss,
-      passed: threshold.passed,
+      passed: !isPartialPlay && threshold.passed,
       createdAt: Date.now(),
     } satisfies Omit<JudgedMapResult, "id" | "runId">;
 
     run.mapResults.push(judgedMapResult);
-    logger.info(
-      "dojo map judged",
-      getRunLogFields(run, {
-        beatmapId: beatmap.beatmapId,
-        passed: threshold.passed,
-        score: fetchedScore.score,
-        accuracy: fetchedScore.accuracy,
-        conditionType: threshold.type,
-        value: threshold.value,
-        threshold: threshold.threshold,
-      }),
-    );
 
-    await safeSendLobbyMessage(
-      run.lobby,
-      `Map ${beatmap.ordinal}: ${threshold.passed ? "PASS" : "FAIL"} (${formatConditionValue(
-        threshold.type,
-        threshold.value,
-      )} >= ${formatConditionValue(threshold.type, threshold.threshold)} required)`,
-    );
+    if (isPartialPlay) {
+      logger.warn(
+        "dojo partial play detected",
+        getRunLogFields(run, {
+          beatmapId: beatmap.beatmapId,
+          passed: false,
+          playedObjects,
+          expectedObjects: beatmap.totalObjects,
+          thresholdPassed: threshold.passed,
+        }),
+      );
+      await safeSendLobbyMessage(
+        run.lobby,
+        `Map ${beatmap.ordinal}: FAIL (partial play - ${playedObjects}/${beatmap.totalObjects} objects)`,
+      );
+    } else {
+      logger.info(
+        "dojo map judged",
+        getRunLogFields(run, {
+          beatmapId: beatmap.beatmapId,
+          passed: threshold.passed,
+          score: fetchedScore.score,
+          accuracy: fetchedScore.accuracy,
+          conditionType: threshold.type,
+          value: threshold.value,
+          threshold: threshold.threshold,
+        }),
+      );
+
+      await safeSendLobbyMessage(
+        run.lobby,
+        `Map ${beatmap.ordinal}: ${threshold.passed ? "PASS" : "FAIL"} (${formatConditionValue(
+          threshold.type,
+          threshold.value,
+        )} >= ${formatConditionValue(threshold.type, threshold.threshold)} required)`,
+      );
+    }
 
     if (!isActiveRun(run)) {
       return;
     }
 
     const isFinalMap = run.currentBeatmapIndex === run.course.beatmaps.length - 1;
-    if (isFinalMap || !threshold.passed) {
+    if (isFinalMap || !judgedMapResult.passed) {
       await finalizeRun(run);
       return;
     }
@@ -1028,7 +1056,7 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
     });
   }
 
-  async function closeLobbyBestEffort(run: ActiveRun) {
+  async function closeLobbyBestEffort(run: ActiveRun): Promise<void> {
     if (!run.lobby || runtimeState.clientDisconnected) {
       return;
     }
@@ -1063,7 +1091,10 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
           lobbyId: run.lobby.id,
         }),
       );
+      return;
     }
+
+    logger.info("dojo lobby closed", getRunLogFields(run, { lobbyId: run.lobby.id }));
   }
 
   async function abortQueuedCountdown(run: ActiveRun) {
@@ -1256,10 +1287,10 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
       ? `${judgedDan.passed ? "PASS" : "FAIL"} (${formatConditionValue(
           judgedDan.overall.type,
           judgedDan.overall.value,
-        )} vs ${formatConditionValue(
+        )} >= ${formatConditionValue(
           judgedDan.overall.type,
           judgedDan.overall.threshold,
-        )})`
+        )} required)`
       : judgedDan.passed
         ? "PASS"
         : "FAIL";
@@ -1428,12 +1459,6 @@ function requiredEnv(name: string) {
     throw new Error(`Missing required environment variable: ${name}`);
   }
   return value;
-}
-
-function defaultSleep(milliseconds: number) {
-  return new Promise<void>((resolve) => {
-    setTimeout(resolve, milliseconds);
-  });
 }
 
 function getCoursePageUrl(course: CourseDefinition) {

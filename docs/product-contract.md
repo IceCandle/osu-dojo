@@ -95,6 +95,6 @@ CourseRun (id, userId, courseId, passed, timestamp, matchId?)
 4. bot이 방을 만들고, 플레이어를 초대하고, 첫 map을 설정합니다.
 5. 플레이어가 map 1을 플레이합니다. bot이 점수를 읽고 pass/fail을 판단한 뒤 `Map 1: PASS (97.2% >= 95%)`를 알립니다.
 6. bot이 map 2를 설정합니다. 같은 흐름을 반복합니다.
-7. map 2 이후 bot이 `1st: PASS` 또는 `fail (1,050,000 vs 1,240,000)`를 알립니다.
+7. map 2 이후 bot이 `1st: PASS` 또는 `fail (1,050,000 <= 1,240,000)`를 알립니다.
 8. 결과가 DB에 저장됩니다.
 9. `http://localhost:3000/dan/test?course=1st`에서 course와 최근 결과를 확인합니다.

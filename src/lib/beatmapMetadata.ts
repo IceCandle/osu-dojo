@@ -6,8 +6,13 @@ export interface BeatmapMetadata {
   coverUrl: string;
 }
 
-export type MetadataResult =
-  | { ok: true; data: BeatmapMetadata }
+export interface ResolvedBeatmapData {
+  metadata: BeatmapMetadata | null;
+  totalObjects: number | null;
+}
+
+export type BeatmapResolutionResult =
+  | { ok: true; data: ResolvedBeatmapData }
   | { ok: false; reason: string };
 
 interface OsuBeatmapApiRecord {
@@ -16,13 +21,16 @@ interface OsuBeatmapApiRecord {
   artist?: unknown;
   version?: unknown;
   creator?: unknown;
+  count_normal?: unknown;
+  count_slider?: unknown;
+  count_spinner?: unknown;
 }
 
 export async function fetchBeatmapMetadata(
   apiKey: string,
   beatmapId: number,
   fetchImpl: typeof fetch = fetch,
-): Promise<MetadataResult> {
+): Promise<BeatmapResolutionResult> {
   const url = new URL("https://osu.ppy.sh/api/get_beatmaps");
   url.searchParams.set("k", apiKey);
   url.searchParams.set("b", String(beatmapId));
@@ -55,16 +63,17 @@ export async function fetchBeatmapMetadata(
       };
     }
 
-    const metadata = parseBeatmapMetadata(record);
+    const metadata = parseDisplayMetadata(record);
+    const totalObjects = parseTotalObjects(record);
 
-    if (!metadata) {
+    if (metadata === null && totalObjects === null) {
       return {
         ok: false,
         reason: `osu! API metadata was incomplete for beatmap ${beatmapId}.`,
       };
     }
 
-    return { ok: true, data: metadata };
+    return { ok: true, data: { metadata, totalObjects } };
   } catch (error) {
     return {
       ok: false,
@@ -75,7 +84,7 @@ export async function fetchBeatmapMetadata(
   }
 }
 
-function parseBeatmapMetadata(record: OsuBeatmapApiRecord): BeatmapMetadata | null {
+function parseDisplayMetadata(record: OsuBeatmapApiRecord): BeatmapMetadata | null {
   const beatmapsetId = parsePositiveInteger(record.beatmapset_id);
   const title = parseRequiredString(record.title);
   const artist = parseRequiredString(record.artist);
@@ -95,6 +104,18 @@ function parseBeatmapMetadata(record: OsuBeatmapApiRecord): BeatmapMetadata | nu
   };
 }
 
+function parseTotalObjects(record: OsuBeatmapApiRecord): number | null {
+  const circles = parseNonNegativeInteger(record.count_normal);
+  const sliders = parseNonNegativeInteger(record.count_slider);
+  const spinners = parseNonNegativeInteger(record.count_spinner);
+
+  if (circles === null || sliders === null || spinners === null) {
+    return null;
+  }
+
+  return circles + sliders + spinners;
+}
+
 function parseRequiredString(value: unknown): string | null {
   if (typeof value !== "string") {
     return null;
@@ -111,4 +132,21 @@ function parsePositiveInteger(value: unknown): number | null {
 
   const parsed = Number(value);
   return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+}
+
+function parseNonNegativeInteger(value: unknown): number | null {
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (trimmed === "") {
+      return null;
+    }
+    value = trimmed;
+  }
+
+  if (typeof value !== "string" && typeof value !== "number") {
+    return null;
+  }
+
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : null;
 }

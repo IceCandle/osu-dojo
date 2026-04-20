@@ -38,9 +38,17 @@ export function judgeCourseRun(
 ): JudgedCourseRunResult {
   const allMapsPassed = mapResults.every((result) => result.passed);
 
+  if (!allMapsPassed) {
+    return {
+      passed: false,
+      allMapsPassed,
+      overall: null,
+    };
+  }
+
   if (course.overallPassType === null || course.overallPassThreshold === null) {
     return {
-      passed: allMapsPassed,
+      passed: true,
       allMapsPassed,
       overall: null,
     };

@@ -303,6 +303,23 @@ async function getSeededBeatmapIds(db: Awaited<ReturnType<typeof createTestDatab
   return course.beatmaps.map((beatmap) => beatmap.beatmapId);
 }
 
+function setSeededBeatmapTotalObjects(
+  db: Awaited<ReturnType<typeof createTestDatabase>>["db"],
+  ordinal: number,
+  totalObjects: number,
+) {
+  db.$client
+    .prepare(
+      `
+      UPDATE beatmaps
+      SET total_objects = ?
+      WHERE course_id = (SELECT id FROM courses WHERE slug = ?)
+        AND ordinal = ?
+      `,
+    )
+    .run(totalObjects, SEEDED_COURSE_SLUG, ordinal);
+}
+
 function createSeededStartMessage(user: BotUserLike) {
   return createPrivateMessage(user, SEEDED_START_COMMAND);
 }
@@ -1382,12 +1399,12 @@ test("bot halts the course immediately when a map fails", async () => {
         gameId: 1,
         beatmapId: seededBeatmapIds[0] ?? 0,
         userId: 42,
-        score: 120_000,
-        accuracy: 8,
+        score: 0,
+        accuracy: 0,
         maxCombo: 50,
-        count300: 100,
-        count100: 20,
-        count50: 10,
+        count300: 0,
+        count100: 0,
+        count50: 0,
         countMiss: 30,
         passed: false,
       }),
@@ -1415,6 +1432,173 @@ test("bot halts the course immediately when a map fails", async () => {
     assert.equal(results?.runs[0]?.status, "fail");
     assert.equal(results?.runs[0]?.maps.length, 1);
     assert.equal(results?.runs[0]?.maps[0]?.passed, false);
+  } finally {
+    temp.cleanup();
+  }
+});
+
+test("bot fails a partial NF play even when the score clears threshold", async () => {
+  const temp = createTempDatabaseUrl();
+
+  try {
+    const { db } = await createTestDatabase(temp.url);
+    setSeededBeatmapTotalObjects(db, 1, 710);
+
+    const client = new FakeClient();
+    const user = new FakeUser(42, "PlayerOne");
+    const { entries, logger } = createCapturingLogger();
+    const seededBeatmapIds = await getSeededBeatmapIds(db);
+    const bot = createDojoBot({
+      client,
+      db,
+      logger,
+      connectOnStart: false,
+      restDurationMs: 0,
+      firstMapCountdownSeconds: 0,
+      finalGracePeriodMs: 0,
+      fetchScore: async () => ({
+        gameId: 1,
+        beatmapId: seededBeatmapIds[0] ?? 0,
+        userId: 42,
+        score: 950_000,
+        accuracy: 98,
+        maxCombo: 400,
+        count300: 360,
+        count100: 30,
+        count50: 5,
+        countMiss: 5,
+        passed: true,
+      }),
+    });
+
+    await bot.handlePrivateMessage(createSeededStartMessage(user));
+
+    client.lobby.emit("playerJoined", {
+      player: client.lobby.registerPlayer(user),
+    });
+    await flushAsyncWork();
+
+    client.lobby.emit("matchStarted");
+    client.lobby.emit("matchFinished");
+    await flushAsyncWork(8);
+
+    assert.equal(client.lobby.startHistory.length, 1);
+    assert.deepEqual(client.lobby.mapHistory, [seededBeatmapIds[0]]);
+    assert.ok(
+      client.lobby.channelMessages.some((message) => /partial play/i.test(message)),
+    );
+    assert.ok(
+      entries.some(
+        (entry) => entry.level === "warn" && entry.message === "dojo partial play detected",
+      ),
+    );
+
+    const results = await listCourseRunsByNameKey(
+      SEEDED_SYSTEM_NAME_KEY,
+      SEEDED_COURSE_NAME_KEY,
+      db,
+    );
+    assert.equal(results?.runs[0]?.status, "fail");
+    assert.equal(results?.runs[0]?.maps.length, 1);
+    assert.equal(results?.runs[0]?.maps[0]?.passed, false);
+  } finally {
+    temp.cleanup();
+  }
+});
+
+test("bot preserves normal pass behavior when total object count is unknown", async () => {
+  const temp = createTempDatabaseUrl();
+
+  try {
+    const { db } = await createTestDatabase(temp.url);
+    const client = new FakeClient();
+    const user = new FakeUser(42, "PlayerOne");
+    const seededBeatmapIds = await getSeededBeatmapIds(db);
+    const bot = createDojoBot({
+      client,
+      db,
+      connectOnStart: false,
+      restDurationMs: 20_000,
+      firstMapCountdownSeconds: 0,
+      fetchScore: async () => ({
+        gameId: 1,
+        beatmapId: seededBeatmapIds[0] ?? 0,
+        userId: 42,
+        score: 950_000,
+        accuracy: 98,
+        maxCombo: 400,
+        count300: 360,
+        count100: 30,
+        count50: 5,
+        countMiss: 5,
+        passed: true,
+      }),
+    });
+
+    await bot.handlePrivateMessage(createSeededStartMessage(user));
+
+    client.lobby.emit("playerJoined", {
+      player: client.lobby.registerPlayer(user),
+    });
+    await flushAsyncWork();
+
+    client.lobby.emit("matchStarted");
+    client.lobby.emit("matchFinished");
+    await flushAsyncWork(8);
+
+    assert.equal(client.lobby.startHistory.length, 1);
+    assert.equal(client.lobby.mapHistory.at(-1), seededBeatmapIds[1]);
+    assert.match(latestMeaningfulLobbyMessage(client.lobby), /Next map/i);
+  } finally {
+    temp.cleanup();
+  }
+});
+
+test("bot does not treat equal object counts as partial play", async () => {
+  const temp = createTempDatabaseUrl();
+
+  try {
+    const { db } = await createTestDatabase(temp.url);
+    setSeededBeatmapTotalObjects(db, 1, 400);
+
+    const client = new FakeClient();
+    const user = new FakeUser(42, "PlayerOne");
+    const seededBeatmapIds = await getSeededBeatmapIds(db);
+    const bot = createDojoBot({
+      client,
+      db,
+      connectOnStart: false,
+      restDurationMs: 20_000,
+      firstMapCountdownSeconds: 0,
+      fetchScore: async () => ({
+        gameId: 1,
+        beatmapId: seededBeatmapIds[0] ?? 0,
+        userId: 42,
+        score: 950_000,
+        accuracy: 98,
+        maxCombo: 400,
+        count300: 360,
+        count100: 30,
+        count50: 5,
+        countMiss: 5,
+        passed: true,
+      }),
+    });
+
+    await bot.handlePrivateMessage(createSeededStartMessage(user));
+
+    client.lobby.emit("playerJoined", {
+      player: client.lobby.registerPlayer(user),
+    });
+    await flushAsyncWork();
+
+    client.lobby.emit("matchStarted");
+    client.lobby.emit("matchFinished");
+    await flushAsyncWork(8);
+
+    assert.equal(client.lobby.startHistory.length, 1);
+    assert.equal(client.lobby.mapHistory.at(-1), seededBeatmapIds[1]);
+    assert.doesNotMatch(latestMeaningfulLobbyMessage(client.lobby), /partial play/i);
   } finally {
     temp.cleanup();
   }
@@ -1529,6 +1713,149 @@ test("bot aborts active runs when the IRC client disconnects and emits runEnded"
   }
 });
 
+test("bot logs when the released lobby closes", async () => {
+  const temp = createTempDatabaseUrl();
+
+  try {
+    const { db } = await createTestDatabase(temp.url);
+    const client = new FakeClient();
+    const user = new FakeUser(42, "PlayerOne");
+    const { entries, logger } = createCapturingLogger();
+    const seededBeatmapIds = await getSeededBeatmapIds(db);
+    const fetchedScores = [
+      {
+        gameId: 1,
+        beatmapId: seededBeatmapIds[0] ?? 0,
+        userId: 42,
+        score: 910000,
+        accuracy: 96.3,
+        maxCombo: 800,
+        count300: 1000,
+        count100: 40,
+        count50: 4,
+        countMiss: 2,
+        passed: true,
+      },
+      {
+        gameId: 2,
+        beatmapId: seededBeatmapIds[1] ?? 0,
+        userId: 42,
+        score: 905000,
+        accuracy: 95.2,
+        maxCombo: 780,
+        count300: 980,
+        count100: 50,
+        count50: 5,
+        countMiss: 2,
+        passed: true,
+      },
+    ];
+    const bot = createDojoBot({
+      client,
+      db,
+      logger,
+      connectOnStart: false,
+      restDurationMs: 0,
+      finalGracePeriodMs: 0,
+      firstMapCountdownSeconds: 0,
+      fetchScore: async () => {
+        const next = fetchedScores.shift();
+        if (!next) {
+          throw new Error("No fake score left.");
+        }
+        return next;
+      },
+    });
+
+    await bot.handlePrivateMessage(createSeededStartMessage(user));
+
+    client.lobby.emit("playerJoined", {
+      player: client.lobby.registerPlayer(user),
+    });
+    await flushAsyncWork();
+
+    client.lobby.emit("matchStarted");
+    client.lobby.emit("matchFinished");
+    await flushAsyncWork();
+    client.lobby.emit("matchStarted");
+    client.lobby.emit("matchFinished");
+    await flushAsyncWork(8);
+    await waitForTimer(20);
+
+    assert.equal(client.lobby.closeLobbyCalls, 1);
+    assert.equal(
+      entries.filter((entry) => entry.level === "info" && entry.message === "dojo lobby closed")
+        .length,
+      1,
+    );
+  } finally {
+    temp.cleanup();
+  }
+});
+
+test("bot does not log lobby closed when closeLobby fails", async () => {
+  const temp = createTempDatabaseUrl();
+
+  try {
+    const { db } = await createTestDatabase(temp.url);
+    const client = new FakeClient();
+    const user = new FakeUser(42, "PlayerOne");
+    const { entries, logger } = createCapturingLogger();
+    const seededBeatmapIds = await getSeededBeatmapIds(db);
+    client.lobby.closeLobbyHandler = async () => {
+      throw new Error("Bancho close failed");
+    };
+    const bot = createDojoBot({
+      client,
+      db,
+      logger,
+      connectOnStart: false,
+      restDurationMs: 0,
+      finalGracePeriodMs: 0,
+      firstMapCountdownSeconds: 0,
+      fetchScore: async () => ({
+        gameId: 1,
+        beatmapId: seededBeatmapIds[0] ?? 0,
+        userId: 42,
+        score: 0,
+        accuracy: 0,
+        maxCombo: 50,
+        count300: 0,
+        count100: 0,
+        count50: 0,
+        countMiss: 30,
+        passed: false,
+      }),
+    });
+
+    await bot.handlePrivateMessage(createSeededStartMessage(user));
+
+    client.lobby.emit("playerJoined", {
+      player: client.lobby.registerPlayer(user),
+    });
+    await flushAsyncWork();
+
+    client.lobby.emit("matchStarted");
+    client.lobby.emit("matchFinished");
+    await flushAsyncWork(8);
+    await waitForTimer(20);
+
+    assert.equal(client.lobby.closeLobbyCalls, 1);
+    assert.ok(
+      entries.some(
+        (entry) => entry.level === "warn" && entry.message === "dojo lobby close failed",
+      ),
+    );
+    assert.equal(
+      entries.filter((entry) => entry.level === "info" && entry.message === "dojo lobby closed")
+        .length,
+      0,
+    );
+  } finally {
+    temp.cleanup();
+  }
+});
+
 test("bot cleanup does not block forever when closeLobby hangs", async () => {
   const temp = createTempDatabaseUrl();
 
@@ -1606,6 +1933,11 @@ test("bot cleanup does not block forever when closeLobby hangs", async () => {
       entries.some(
         (entry) => entry.level === "warn" && entry.message === "dojo lobby close timed out",
       ),
+    );
+    assert.equal(
+      entries.filter((entry) => entry.level === "info" && entry.message === "dojo lobby closed")
+        .length,
+      0,
     );
   } finally {
     temp.cleanup();

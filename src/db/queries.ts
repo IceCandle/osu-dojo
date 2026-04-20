@@ -175,6 +175,7 @@ async function hydrateCourseRows(
       difficultyName: beatmaps.difficultyName,
       mapper: beatmaps.mapper,
       coverUrl: beatmaps.coverUrl,
+      totalObjects: beatmaps.totalObjects,
       annotations: beatmaps.annotations,
     })
     .from(beatmaps)
@@ -427,6 +428,7 @@ function parseBeatmapRow(row: {
   difficultyName: string;
   mapper: string;
   coverUrl: string;
+  totalObjects: unknown;
   annotations: string;
 }): CourseBeatmapDefinition {
   return {
@@ -441,8 +443,18 @@ function parseBeatmapRow(row: {
     difficultyName: row.difficultyName,
     mapper: row.mapper,
     coverUrl: row.coverUrl,
+    totalObjects: normalizeTotalObjects(row.totalObjects),
     annotations: parseAnnotations(row.annotations),
   };
+}
+
+function normalizeTotalObjects(value: unknown): number | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  const number = Number(value);
+  return Number.isSafeInteger(number) && number >= 0 ? number : null;
 }
 
 function parseAnnotations(value: string): string[] {

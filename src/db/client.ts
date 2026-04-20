@@ -54,6 +54,7 @@ CREATE TABLE IF NOT EXISTS beatmaps (
   difficulty_name TEXT NOT NULL DEFAULT '',
   mapper TEXT NOT NULL DEFAULT '',
   cover_url TEXT NOT NULL DEFAULT '',
+  total_objects INTEGER CHECK (total_objects IS NULL OR total_objects >= 0),
   annotations TEXT NOT NULL DEFAULT '[]'
 );
 
@@ -123,6 +124,7 @@ async function initializeDatabaseBundle(
   const sqlite = new Database(resolveDatabaseSource(url));
   sqlite.pragma("foreign_keys = ON");
   sqlite.exec(CREATE_TABLES_SQL);
+  migrateDatabase(sqlite);
 
   const db = drizzle(sqlite, { schema }) as AppDatabase;
   await seedDatabase(db, undefined, seedOptions);
@@ -139,7 +141,18 @@ export async function getDatabase(): Promise<AppDatabase> {
 }
 
 export async function createTestDatabase(url: string): Promise<DatabaseBundle> {
-  return initializeDatabaseBundle(url, {});
+  return initializeDatabaseBundle(url, { warnMissingObjectCounts: false });
+}
+
+function migrateDatabase(sqlite: BetterSqliteConnection) {
+  const columns = (sqlite.pragma("table_info(beatmaps)") as Array<{ name: string }>)
+    .map((col) => col.name);
+
+  if (!columns.includes("total_objects")) {
+    sqlite.exec(
+      "ALTER TABLE beatmaps ADD COLUMN total_objects INTEGER CHECK (total_objects IS NULL OR total_objects >= 0)",
+    );
+  }
 }
 
 function getSeedOptionsFromEnvironment(): SeedOptions {
