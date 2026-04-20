@@ -15,7 +15,7 @@ const DEFAULT_METADATA_REQUEST_DELAY_MS = 200;
 export interface SeedOptions {
   resolveMetadata?: (beatmapId: number) => Promise<BeatmapResolutionResult>;
   metadataRequestDelayMs?: number;
-  warnMissingObjectCounts?: boolean;
+  suppressMissingObjectCountWarnings?: boolean;
 }
 
 type ExistingBeatmapMetadata = BeatmapMetadata & {
@@ -136,7 +136,7 @@ export async function seedDatabase(
   }
 
   if (
-    options.warnMissingObjectCounts !== false &&
+    !options.suppressMissingObjectCountWarnings &&
     !options.resolveMetadata &&
     missingObjectCountWithoutResolver > 0
   ) {
@@ -220,7 +220,7 @@ async function resolveSeedBeatmapData(
   });
 
   warnIfUnresolved({
-    needed: needsTotalObjects && options.warnMissingObjectCounts !== false,
+    needed: needsTotalObjects && !options.suppressMissingObjectCountWarnings,
     resolved: result.ok && result.data.totalObjects !== null,
     beatmapId: beatmap.beatmapId,
     label: "object counts",

@@ -141,7 +141,7 @@ export async function getDatabase(): Promise<AppDatabase> {
 }
 
 export async function createTestDatabase(url: string): Promise<DatabaseBundle> {
-  return initializeDatabaseBundle(url, { warnMissingObjectCounts: false });
+  return initializeDatabaseBundle(url, { suppressMissingObjectCountWarnings: true });
 }
 
 function migrateDatabase(sqlite: BetterSqliteConnection) {

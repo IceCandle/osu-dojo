@@ -212,7 +212,7 @@ test("pages render seeded course data from SQLite", async () => {
       addSampleBeatmapMetadata(
         cloneCourseSystems(loadCoursesFromDir(path.join(process.cwd(), "data/courses"))),
       ),
-      { warnMissingObjectCounts: false },
+      { suppressMissingObjectCountWarnings: true },
     );
     globalThis.__osuDojoDatabaseBundle = databaseBundle;
 
@@ -407,7 +407,7 @@ test("seedDatabase synchronizes updated seeded beatmaps on an existing SQLite fi
       annotations: ["stamina", "extra stage"],
     });
 
-    await seedDatabase(db, systems, { warnMissingObjectCounts: false });
+    await seedDatabase(db, systems, { suppressMissingObjectCountWarnings: true });
 
     const updatedCourse = await getCourseByNameKey(
       SEEDED_SYSTEM_NAME_KEY,
@@ -444,7 +444,7 @@ test("seedDatabase reuses existing resolved metadata when course JSON omits it",
       addSampleBeatmapMetadata(
         cloneCourseSystems(loadCoursesFromDir(path.join(process.cwd(), "data/courses"))),
       ),
-      { warnMissingObjectCounts: false },
+      { suppressMissingObjectCountWarnings: true },
     );
 
     const systems = addSampleBeatmapMetadata(
@@ -469,7 +469,7 @@ test("seedDatabase reuses existing resolved metadata when course JSON omits it",
 
     await seedDatabase(db, systems, {
       metadataRequestDelayMs: 0,
-      warnMissingObjectCounts: false,
+      suppressMissingObjectCountWarnings: true,
       resolveMetadata: async () => {
         resolverCalls += 1;
         return { ok: false, reason: "resolver should not be called" };
@@ -501,7 +501,7 @@ test("seedDatabase preserves seeded metadata while resolving total object counts
 
     await seedDatabase(db, systems, {
       metadataRequestDelayMs: 0,
-      warnMissingObjectCounts: false,
+      suppressMissingObjectCountWarnings: true,
       resolveMetadata: async () => ({
         ok: true,
         data: {
@@ -533,7 +533,7 @@ test("seedDatabase reuses existing total object counts without clobbering JSON m
 
     await seedDatabase(db, systems, {
       metadataRequestDelayMs: 0,
-      warnMissingObjectCounts: false,
+      suppressMissingObjectCountWarnings: true,
       resolveMetadata: async () => ({
         ok: true,
         data: {
@@ -554,7 +554,7 @@ test("seedDatabase reuses existing total object counts without clobbering JSON m
       addSampleBeatmapMetadata(
         cloneCourseSystems(loadCoursesFromDir(path.join(process.cwd(), "data/courses"))),
       ),
-      { warnMissingObjectCounts: false },
+      { suppressMissingObjectCountWarnings: true },
     );
 
     const course = await getCourseByNameKey(
@@ -579,7 +579,7 @@ test("seedDatabase does not reuse total object counts after beatmap id changes",
 
     await seedDatabase(db, systems, {
       metadataRequestDelayMs: 0,
-      warnMissingObjectCounts: false,
+      suppressMissingObjectCountWarnings: true,
       resolveMetadata: async () => ({
         ok: true,
         data: {
@@ -608,7 +608,7 @@ test("seedDatabase does not reuse total object counts after beatmap id changes",
       beatmapId: 123_456,
     };
 
-    await seedDatabase(db, updatedSystems, { warnMissingObjectCounts: false });
+    await seedDatabase(db, updatedSystems, { suppressMissingObjectCountWarnings: true });
 
     const course = await getCourseByNameKey(
       SEEDED_SYSTEM_NAME_KEY,
@@ -632,7 +632,7 @@ test("seedDatabase keeps existing total object counts when resolver returns null
 
     await seedDatabase(db, systems, {
       metadataRequestDelayMs: 0,
-      warnMissingObjectCounts: false,
+      suppressMissingObjectCountWarnings: true,
       resolveMetadata: async () => ({
         ok: true,
         data: {
@@ -659,7 +659,7 @@ test("seedDatabase keeps existing total object counts when resolver returns null
 
     await seedDatabase(db, systems, {
       metadataRequestDelayMs: 0,
-      warnMissingObjectCounts: false,
+      suppressMissingObjectCountWarnings: true,
       resolveMetadata: async () => ({
         ok: true,
         data: {
@@ -714,7 +714,7 @@ test("seedDatabase stores defaults for missing metadata when no resolver is conf
       coverUrl: "",
     };
 
-    await seedDatabase(db, systems, { warnMissingObjectCounts: false });
+    await seedDatabase(db, systems, { suppressMissingObjectCountWarnings: true });
 
     const updatedCourse = await getCourseByNameKey(
       SEEDED_SYSTEM_NAME_KEY,
@@ -776,7 +776,7 @@ test("seedDatabase resolves missing metadata and stores defaults on resolver fai
 
     await seedDatabase(db, systems, {
       metadataRequestDelayMs: 0,
-      warnMissingObjectCounts: false,
+      suppressMissingObjectCountWarnings: true,
       resolveMetadata: async (beatmapId) => {
         resolverBeatmapIds.push(beatmapId);
 

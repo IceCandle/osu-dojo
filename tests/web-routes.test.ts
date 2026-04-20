@@ -62,7 +62,7 @@ async function seedRankingCourses(databaseUrl: string) {
   );
 
   await clearAllData(db);
-  await seedDatabase(db, systems, { warnMissingObjectCounts: false });
+  await seedDatabase(db, systems, { suppressMissingObjectCountWarnings: true });
 
   const accCourse = await getCourseByNameKey(
     SEEDED_SYSTEM_NAME_KEY,

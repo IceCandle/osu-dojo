@@ -42,16 +42,16 @@ export default async function DanSystemPage({
   }
 
   const ranking = await getRankingForCourse(selectedCourse);
-  const system = courses[0]!;
-  const systemNameKeyForLinks = kebabizeName(system.danSystemName);
+  const firstCourse = courses[0]!;
+  const systemNameKeyForLinks = kebabizeName(firstCourse.danSystemName);
   const command = `!dojo start ${systemNameKeyForLinks} ${kebabizeName(selectedCourse.name)}`;
   const topResults = ranking.results.slice(0, 10);
   const overallRequirement =
     selectedCourse.overallPassType && selectedCourse.overallPassThreshold !== null
-      ? `${formatConditionCompact(
+      ? formatConditionCompact(
           selectedCourse.overallPassType,
           selectedCourse.overallPassThreshold,
-        )}`
+        )
       : "Per-map pass only";
 
   return (
@@ -59,8 +59,8 @@ export default async function DanSystemPage({
       <section className="detail-header dan-overview-header">
         <div className="system-header-grid">
           <div>
-            <h1>{system.danSystemName}</h1>
-            <p className="detail-copy">{system.danSystemDescription}</p>
+            <h1>{firstCourse.danSystemName}</h1>
+            <p className="detail-copy">{firstCourse.danSystemDescription}</p>
           </div>
         </div>
         <div className="detail-stats system-score-model">
