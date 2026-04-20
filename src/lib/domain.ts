@@ -13,6 +13,7 @@ export interface CourseBeatmapDefinition {
   difficultyName: string;
   mapper: string;
   coverUrl: string;
+  totalObjects: number | null;
   annotations: string[];
 }
 

@@ -1,9 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
+import Database from "better-sqlite3";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createTestDatabase } from "@/db/client";
 import { loadCoursesFromDir } from "@/db/courseLoader";
+import {
+  formatConditionCompact,
+  formatScoreModel,
+} from "@/lib/format";
 import {
   getCourseByNameKey,
   listCoursesByDanSystemNameKey,
@@ -98,6 +103,102 @@ test("seeded queries expose the sample course and runs", async () => {
   }
 });
 
+test("course queries hydrate and normalize beatmap total object counts", async () => {
+  const temp = createTempDatabaseUrl();
+
+  try {
+    const { db } = await createTestDatabase(temp.url);
+
+    let course = await getCourseByNameKey(
+      SEEDED_SYSTEM_NAME_KEY,
+      SEEDED_COURSE_NAME_KEY,
+      db,
+    );
+    assert.equal(course?.beatmaps[0]?.totalObjects, null);
+
+    db.$client
+      .prepare(
+        `
+        UPDATE beatmaps
+        SET total_objects = ?
+        WHERE course_id = (SELECT id FROM courses WHERE slug = ?)
+          AND ordinal = ?
+        `,
+      )
+      .run(710, SEEDED_COURSE_SLUG, 1);
+
+    course = await getCourseByNameKey(
+      SEEDED_SYSTEM_NAME_KEY,
+      SEEDED_COURSE_NAME_KEY,
+      db,
+    );
+    assert.equal(course?.beatmaps[0]?.totalObjects, 710);
+
+    db.$client.pragma("ignore_check_constraints = ON");
+    db.$client
+      .prepare(
+        `
+        UPDATE beatmaps
+        SET total_objects = ?
+        WHERE course_id = (SELECT id FROM courses WHERE slug = ?)
+          AND ordinal = ?
+        `,
+      )
+      .run(-1, SEEDED_COURSE_SLUG, 1);
+    db.$client.pragma("ignore_check_constraints = OFF");
+
+    course = await getCourseByNameKey(
+      SEEDED_SYSTEM_NAME_KEY,
+      SEEDED_COURSE_NAME_KEY,
+      db,
+    );
+    assert.equal(course?.beatmaps[0]?.totalObjects, null);
+  } finally {
+    temp.cleanup();
+  }
+});
+
+test("createTestDatabase migrates old beatmaps tables with total object counts", async () => {
+  const temp = createTempDatabaseUrl();
+
+  try {
+    const sqlite = new Database(temp.filePath);
+    sqlite.exec(`
+      CREATE TABLE beatmaps (
+        id TEXT PRIMARY KEY,
+        course_id TEXT NOT NULL,
+        beatmap_id INTEGER NOT NULL,
+        mods TEXT NOT NULL,
+        pass_condition_type TEXT NOT NULL,
+        pass_condition_threshold REAL NOT NULL,
+        ordinal INTEGER NOT NULL,
+        title TEXT NOT NULL DEFAULT '',
+        artist TEXT NOT NULL DEFAULT '',
+        difficulty_name TEXT NOT NULL DEFAULT '',
+        mapper TEXT NOT NULL DEFAULT '',
+        cover_url TEXT NOT NULL DEFAULT '',
+        annotations TEXT NOT NULL DEFAULT '[]'
+      );
+    `);
+    sqlite.close();
+
+    const { db, sqlite: migratedSqlite } = await createTestDatabase(temp.url);
+    const columns = (
+      migratedSqlite.pragma("table_info(beatmaps)") as { name: string }[]
+    ).map((column) => column.name);
+    const course = await getCourseByNameKey(
+      SEEDED_SYSTEM_NAME_KEY,
+      SEEDED_COURSE_NAME_KEY,
+      db,
+    );
+
+    assert.ok(columns.includes("total_objects"));
+    assert.equal(course?.beatmaps[0]?.totalObjects, null);
+  } finally {
+    temp.cleanup();
+  }
+});
+
 test("pages render seeded course data from SQLite", async () => {
   const temp = createTempDatabaseUrl();
   const previousDatabaseUrl = process.env.DATABASE_URL;
@@ -111,6 +212,7 @@ test("pages render seeded course data from SQLite", async () => {
       addSampleBeatmapMetadata(
         cloneCourseSystems(loadCoursesFromDir(path.join(process.cwd(), "data/courses"))),
       ),
+      { suppressMissingObjectCountWarnings: true },
     );
     globalThis.__osuDojoDatabaseBundle = databaseBundle;
 
@@ -131,6 +233,8 @@ test("pages render seeded course data from SQLite", async () => {
       SEEDED_COURSE_NAME_KEY,
     );
 
+    assert.ok(course);
+
     assert.match(homeHtml, /Browse dan systems/);
     assert.doesNotMatch(homeHtml, /Open system/);
     assert.match(systemsHtml, /test/i);
@@ -140,10 +244,33 @@ test("pages render seeded course data from SQLite", async () => {
     assert.match(courseHtml, /!dojo start test 1st/);
     assert.match(courseHtml, /Sample dan system for the MVP\./);
     assert.match(courseHtml, new RegExp(course?.beatmaps[0]?.difficultyName ?? ""));
-    assert.match(courseHtml, /ScoreV2/);
-    assert.match(courseHtml, /20\.00%\+/);
-    assert.match(courseHtml, /10\.00%\+/);
-    assert.match(courseHtml, /10,000\+ score/);
+    assert.match(courseHtml, new RegExp(formatScoreModel(course.scoreModel)));
+    if (course.overallPassType && course.overallPassThreshold !== null) {
+      assert.match(
+        courseHtml,
+        new RegExp(
+          escapeRegExp(
+            formatConditionCompact(
+              course.overallPassType,
+              course.overallPassThreshold,
+            ),
+          ),
+        ),
+      );
+    }
+    for (const beatmap of course.beatmaps) {
+      assert.match(
+        courseHtml,
+        new RegExp(
+          escapeRegExp(
+            formatConditionCompact(
+              beatmap.passConditionType,
+              beatmap.passConditionThreshold,
+            ),
+          ),
+        ),
+      );
+    }
     assert.match(courseHtml, /No runs saved yet/);
     assert.doesNotMatch(courseHtml, /\b\d{1,2}:\d{2}\b/);
   } finally {
@@ -153,13 +280,18 @@ test("pages render seeded course data from SQLite", async () => {
   }
 });
 
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 test("course run queries and page derive DNF for interrupted partial runs", async () => {
   const temp = createTempDatabaseUrl();
   const previousDatabaseUrl = process.env.DATABASE_URL;
   const previousBundle = globalThis.__osuDojoDatabaseBundle;
 
   try {
-    const { db } = await createTestDatabase(temp.url);
+    const databaseBundle = await createTestDatabase(temp.url);
+    const { db } = databaseBundle;
     const course = await getCourseByNameKey(
       SEEDED_SYSTEM_NAME_KEY,
       SEEDED_COURSE_NAME_KEY,
@@ -209,7 +341,7 @@ test("course run queries and page derive DNF for interrupted partial runs", asyn
     assert.equal(results?.runs[0]?.status, "dnf");
 
     process.env.DATABASE_URL = temp.url;
-    globalThis.__osuDojoDatabaseBundle = undefined;
+    globalThis.__osuDojoDatabaseBundle = databaseBundle;
 
     const resultsHtml = renderToStaticMarkup(
       await DanCoursePage({
@@ -275,7 +407,7 @@ test("seedDatabase synchronizes updated seeded beatmaps on an existing SQLite fi
       annotations: ["stamina", "extra stage"],
     });
 
-    await seedDatabase(db, systems);
+    await seedDatabase(db, systems, { suppressMissingObjectCountWarnings: true });
 
     const updatedCourse = await getCourseByNameKey(
       SEEDED_SYSTEM_NAME_KEY,
@@ -312,6 +444,7 @@ test("seedDatabase reuses existing resolved metadata when course JSON omits it",
       addSampleBeatmapMetadata(
         cloneCourseSystems(loadCoursesFromDir(path.join(process.cwd(), "data/courses"))),
       ),
+      { suppressMissingObjectCountWarnings: true },
     );
 
     const systems = addSampleBeatmapMetadata(
@@ -336,6 +469,7 @@ test("seedDatabase reuses existing resolved metadata when course JSON omits it",
 
     await seedDatabase(db, systems, {
       metadataRequestDelayMs: 0,
+      suppressMissingObjectCountWarnings: true,
       resolveMetadata: async () => {
         resolverCalls += 1;
         return { ok: false, reason: "resolver should not be called" };
@@ -348,9 +482,207 @@ test("seedDatabase reuses existing resolved metadata when course JSON omits it",
       db,
     );
 
-    assert.equal(resolverCalls, 0);
+    assert.equal(resolverCalls, 3);
     assert.equal(updatedCourse?.beatmaps[0]?.title, "test stage one");
     assert.equal(updatedCourse?.beatmaps[1]?.title, "test stage two");
+  } finally {
+    temp.cleanup();
+  }
+});
+
+test("seedDatabase preserves seeded metadata while resolving total object counts", async () => {
+  const temp = createTempDatabaseUrl();
+
+  try {
+    const { db } = await createTestDatabase(temp.url);
+    const systems = addSampleBeatmapMetadata(
+      cloneCourseSystems(loadCoursesFromDir(path.join(process.cwd(), "data/courses"))),
+    );
+
+    await seedDatabase(db, systems, {
+      metadataRequestDelayMs: 0,
+      suppressMissingObjectCountWarnings: true,
+      resolveMetadata: async () => ({
+        ok: true,
+        data: {
+          metadata: null,
+          totalObjects: 500,
+        },
+      }),
+    });
+
+    const course = await getCourseByNameKey(
+      SEEDED_SYSTEM_NAME_KEY,
+      SEEDED_COURSE_NAME_KEY,
+      db,
+    );
+
+    assert.equal(course?.beatmaps[0]?.title, "test stage one");
+    assert.equal(course?.beatmaps[0]?.totalObjects, 500);
+  } finally {
+    temp.cleanup();
+  }
+});
+
+test("seedDatabase reuses existing total object counts without clobbering JSON metadata", async () => {
+  const temp = createTempDatabaseUrl();
+
+  try {
+    const { db } = await createTestDatabase(temp.url);
+    const systems = cloneCourseSystems(loadCoursesFromDir(path.join(process.cwd(), "data/courses")));
+
+    await seedDatabase(db, systems, {
+      metadataRequestDelayMs: 0,
+      suppressMissingObjectCountWarnings: true,
+      resolveMetadata: async () => ({
+        ok: true,
+        data: {
+          metadata: {
+            title: "Resolved title",
+            artist: "Resolved artist",
+            difficultyName: "Resolved difficulty",
+            mapper: "Resolved mapper",
+            coverUrl: "https://assets.ppy.sh/beatmaps/999/covers/cover.jpg",
+          },
+          totalObjects: 500,
+        },
+      }),
+    });
+
+    await seedDatabase(
+      db,
+      addSampleBeatmapMetadata(
+        cloneCourseSystems(loadCoursesFromDir(path.join(process.cwd(), "data/courses"))),
+      ),
+      { suppressMissingObjectCountWarnings: true },
+    );
+
+    const course = await getCourseByNameKey(
+      SEEDED_SYSTEM_NAME_KEY,
+      SEEDED_COURSE_NAME_KEY,
+      db,
+    );
+
+    assert.equal(course?.beatmaps[0]?.title, "test stage one");
+    assert.equal(course?.beatmaps[0]?.totalObjects, 500);
+  } finally {
+    temp.cleanup();
+  }
+});
+
+test("seedDatabase does not reuse total object counts after beatmap id changes", async () => {
+  const temp = createTempDatabaseUrl();
+
+  try {
+    const { db } = await createTestDatabase(temp.url);
+    const systems = cloneCourseSystems(loadCoursesFromDir(path.join(process.cwd(), "data/courses")));
+
+    await seedDatabase(db, systems, {
+      metadataRequestDelayMs: 0,
+      suppressMissingObjectCountWarnings: true,
+      resolveMetadata: async () => ({
+        ok: true,
+        data: {
+          metadata: {
+            title: "Resolved title",
+            artist: "Resolved artist",
+            difficultyName: "Resolved difficulty",
+            mapper: "Resolved mapper",
+            coverUrl: "https://assets.ppy.sh/beatmaps/999/covers/cover.jpg",
+          },
+          totalObjects: 500,
+        },
+      }),
+    });
+
+    const updatedSystems = addSampleBeatmapMetadata(
+      cloneCourseSystems(loadCoursesFromDir(path.join(process.cwd(), "data/courses"))),
+    );
+    const seededCourse = updatedSystems[0]?.courses.find(
+      (entry) => entry.slug === SEEDED_COURSE_SLUG,
+    );
+
+    assert.ok(seededCourse);
+    seededCourse!.beatmaps[0] = {
+      ...seededCourse!.beatmaps[0]!,
+      beatmapId: 123_456,
+    };
+
+    await seedDatabase(db, updatedSystems, { suppressMissingObjectCountWarnings: true });
+
+    const course = await getCourseByNameKey(
+      SEEDED_SYSTEM_NAME_KEY,
+      SEEDED_COURSE_NAME_KEY,
+      db,
+    );
+
+    assert.equal(course?.beatmaps[0]?.beatmapId, 123_456);
+    assert.equal(course?.beatmaps[0]?.totalObjects, null);
+  } finally {
+    temp.cleanup();
+  }
+});
+
+test("seedDatabase keeps existing total object counts when resolver returns null counts", async () => {
+  const temp = createTempDatabaseUrl();
+
+  try {
+    const { db } = await createTestDatabase(temp.url);
+    const systems = cloneCourseSystems(loadCoursesFromDir(path.join(process.cwd(), "data/courses")));
+
+    await seedDatabase(db, systems, {
+      metadataRequestDelayMs: 0,
+      suppressMissingObjectCountWarnings: true,
+      resolveMetadata: async () => ({
+        ok: true,
+        data: {
+          metadata: {
+            title: "Initial resolved title",
+            artist: "Initial resolved artist",
+            difficultyName: "Initial resolved difficulty",
+            mapper: "Initial resolved mapper",
+            coverUrl: "https://assets.ppy.sh/beatmaps/500/covers/cover.jpg",
+          },
+          totalObjects: 500,
+        },
+      }),
+    });
+
+    db.$client
+      .prepare(
+        `
+        UPDATE beatmaps
+        SET title = '', artist = '', difficulty_name = '', mapper = '', cover_url = ''
+        `,
+      )
+      .run();
+
+    await seedDatabase(db, systems, {
+      metadataRequestDelayMs: 0,
+      suppressMissingObjectCountWarnings: true,
+      resolveMetadata: async () => ({
+        ok: true,
+        data: {
+          metadata: {
+            title: "Resolved title",
+            artist: "Resolved artist",
+            difficultyName: "Resolved difficulty",
+            mapper: "Resolved mapper",
+            coverUrl: "https://assets.ppy.sh/beatmaps/999/covers/cover.jpg",
+          },
+          totalObjects: null,
+        },
+      }),
+    });
+
+    const course = await getCourseByNameKey(
+      SEEDED_SYSTEM_NAME_KEY,
+      SEEDED_COURSE_NAME_KEY,
+      db,
+    );
+
+    assert.equal(course?.beatmaps[0]?.title, "Resolved title");
+    assert.equal(course?.beatmaps[0]?.totalObjects, 500);
   } finally {
     temp.cleanup();
   }
@@ -382,7 +714,7 @@ test("seedDatabase stores defaults for missing metadata when no resolver is conf
       coverUrl: "",
     };
 
-    await seedDatabase(db, systems);
+    await seedDatabase(db, systems, { suppressMissingObjectCountWarnings: true });
 
     const updatedCourse = await getCourseByNameKey(
       SEEDED_SYSTEM_NAME_KEY,
@@ -444,6 +776,7 @@ test("seedDatabase resolves missing metadata and stores defaults on resolver fai
 
     await seedDatabase(db, systems, {
       metadataRequestDelayMs: 0,
+      suppressMissingObjectCountWarnings: true,
       resolveMetadata: async (beatmapId) => {
         resolverBeatmapIds.push(beatmapId);
 
@@ -451,11 +784,14 @@ test("seedDatabase resolves missing metadata and stores defaults on resolver fai
           ? {
               ok: true,
               data: {
-                title: "Resolved title",
-                artist: "Resolved artist",
-                difficultyName: "Resolved difficulty",
-                mapper: "Resolved mapper",
-                coverUrl: "https://assets.ppy.sh/beatmaps/999/covers/cover.jpg",
+                metadata: {
+                  title: "Resolved title",
+                  artist: "Resolved artist",
+                  difficultyName: "Resolved difficulty",
+                  mapper: "Resolved mapper",
+                  coverUrl: "https://assets.ppy.sh/beatmaps/999/covers/cover.jpg",
+                },
+                totalObjects: null,
               },
             }
           : { ok: false, reason: "missing metadata" };
@@ -468,12 +804,12 @@ test("seedDatabase resolves missing metadata and stores defaults on resolver fai
       db,
     );
 
-    assert.deepEqual(resolverBeatmapIds, [9_999, 10_000]);
+    assert.deepEqual(resolverBeatmapIds, [9_999, 10_000, 4_923_775]);
     assert.equal(updatedCourse?.beatmaps[0]?.title, "Resolved title");
     assert.equal(updatedCourse?.beatmaps[0]?.artist, "Resolved artist");
     assert.equal(updatedCourse?.beatmaps[1]?.title, "");
     assert.equal(updatedCourse?.beatmaps[1]?.artist, "");
-    assert.match(warnings[0] ?? "", /10,000|10000/);
+    assert.ok(warnings.some((warning) => /10,000|10000/.test(warning)));
   } finally {
     console.warn = originalWarn;
     temp.cleanup();

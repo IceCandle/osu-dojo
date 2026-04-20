@@ -49,6 +49,7 @@ export const beatmaps = sqliteTable(
     difficultyName: text("difficulty_name").notNull().default(""),
     mapper: text("mapper").notNull().default(""),
     coverUrl: text("cover_url").notNull().default(""),
+    totalObjects: integer("total_objects"),
     annotations: text("annotations").notNull().default("[]"),
   },
   (table) => [

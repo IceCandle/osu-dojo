@@ -10,7 +10,7 @@ export default async function DanSystemsPage() {
 
   return (
     <main className="page-shell">
-      <section className="detail-header dan-directory-header">
+      <section className="detail-header">
         <p className="masthead-kicker">dans</p>
         <div className="directory-heading">
           <div>

@@ -10,6 +10,7 @@ import { createInterface } from "node:readline/promises";
 import { pathToFileURL } from "node:url";
 import { createDevLogger } from "@/bot/logger";
 import { createDojoBot, createLiveBanchoClient, connectWithTimeout } from "@/bot/runtime";
+import { sleep } from "@/lib/sleep";
 
 const DEV_TRIGGER_FINAL_GRACE_PERIOD_MS = 60_000;
 export const DEV_TRIGGER_EXIT_BUFFER_MS = 1_000;
@@ -26,12 +27,6 @@ type ActiveRunsByUserIdLike = {
 
 function isRoomCreatedPrivateMessage(message: string) {
   return /^Created the tournament match\b/i.test(message);
-}
-
-function sleep(milliseconds: number) {
-  return new Promise<void>((resolve) => {
-    setTimeout(resolve, milliseconds);
-  });
 }
 
 export function attachDelayedRunEndedExit(options: {

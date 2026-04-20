@@ -1,4 +1,5 @@
 import { calculateAccuracy } from "@/lib/accuracy";
+import { sleep } from "@/lib/sleep";
 
 interface LegacyMultiScore {
   userId: number;
@@ -109,10 +110,4 @@ function normalizePlayerMapScore(
     countMiss: score.countMiss,
     passed: score.pass,
   };
-}
-
-function sleep(milliseconds: number) {
-  return new Promise<void>((resolve) => {
-    setTimeout(resolve, milliseconds);
-  });
 }

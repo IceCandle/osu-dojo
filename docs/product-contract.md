@@ -51,6 +51,9 @@ CourseRun (id, userId, courseId, passed, timestamp, matchId?)
 
 - 플레이어가 bot IRC 계정에 DM으로 `!dojo start <system-name> <course-name>`를 보냅니다. 두 인자는 display-name key입니다.
 - 플레이어는 `!dojo help`로 간단한 사용법을 확인할 수 있고, 같은 bot process 안에서 이전에 성공적으로 확인된 시작 명령은 `!dojo prev`로 다시 실행할 수 있습니다.
+- 플레이어는 멀티플레이어 로비 채팅(`#mp_<id>`)에서 `!dojo skip`을 입력해 첫 map 또는 map 사이의 남은 시작 대기 시간을 건너뜁니다. DM의 `!dojo skip`은 동작하지 않습니다.
+- 플레이어가 이미 진행 중인 run이 있는 상태에서 `!dojo start`를 다시 보내면, bot은 이전 방을 닫고 새 방을 만듭니다. resolved map이 있으면 이전 run은 DNF로 저장됩니다.
+- 플레이어가 로비에서 나가면(ESC) `playerLeft`로 현재 run이 중단됩니다.
 - bot은 `!dojo`로 시작하지만 알려진 명령이 아닌 DM에 사용법 안내를 보냅니다.
 - bot은 `osu!dojo: <system_name> / <course_name>` 제목의 멀티플레이어 방을 만듭니다.
 - bot은 플레이어를 초대하고, 플레이어가 방에 참가합니다.
@@ -92,6 +95,6 @@ CourseRun (id, userId, courseId, passed, timestamp, matchId?)
 4. bot이 방을 만들고, 플레이어를 초대하고, 첫 map을 설정합니다.
 5. 플레이어가 map 1을 플레이합니다. bot이 점수를 읽고 pass/fail을 판단한 뒤 `Map 1: PASS (97.2% >= 95%)`를 알립니다.
 6. bot이 map 2를 설정합니다. 같은 흐름을 반복합니다.
-7. map 2 이후 bot이 `1st: PASS` 또는 `fail (1,050,000 vs 1,240,000)`를 알립니다.
+7. map 2 이후 bot이 `1st: PASS` 또는 `fail (1,050,000 <= 1,240,000)`를 알립니다.
 8. 결과가 DB에 저장됩니다.
 9. `http://localhost:3000/dan/test?course=1st`에서 course와 최근 결과를 확인합니다.

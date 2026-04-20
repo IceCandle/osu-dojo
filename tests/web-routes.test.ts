@@ -20,7 +20,8 @@ const SEEDED_COURSE_SLUG = "test-1dan";
 const createTempDatabaseUrl = () => createTempDatabaseUrlWithPrefix("osudojo-web-");
 
 async function seedRankingCourses(databaseUrl: string) {
-  const { db } = await createTestDatabase(databaseUrl);
+  const databaseBundle = await createTestDatabase(databaseUrl);
+  const { db } = databaseBundle;
   const systems = cloneCourseSystems(
     loadCoursesFromDir(path.join(process.cwd(), "data/courses")),
   );
@@ -61,7 +62,7 @@ async function seedRankingCourses(databaseUrl: string) {
   );
 
   await clearAllData(db);
-  await seedDatabase(db, systems);
+  await seedDatabase(db, systems, { suppressMissingObjectCountWarnings: true });
 
   const accCourse = await getCourseByNameKey(
     SEEDED_SYSTEM_NAME_KEY,
@@ -83,7 +84,7 @@ async function seedRankingCourses(databaseUrl: string) {
   assert.ok(sv2Course);
   assert.ok(emptyCourse);
 
-  return { db, accCourse, sv2Course, emptyCourse };
+  return { db, databaseBundle, accCourse, sv2Course, emptyCourse };
 }
 
 function cloneCourse(
@@ -587,7 +588,7 @@ test("DanCoursePage renders the integrated leaderboard and empty state on the sy
   const previousBundle = globalThis.__osuDojoDatabaseBundle;
 
   try {
-    const { db, accCourse, emptyCourse } = await seedRankingCourses(temp.url);
+    const { db, databaseBundle, accCourse, emptyCourse } = await seedRankingCourses(temp.url);
 
     await storeCourseRun(
       accCourse,
@@ -624,7 +625,7 @@ test("DanCoursePage renders the integrated leaderboard and empty state on the sy
     );
 
     process.env.DATABASE_URL = temp.url;
-    globalThis.__osuDojoDatabaseBundle = undefined;
+    globalThis.__osuDojoDatabaseBundle = databaseBundle;
 
     const courseHtml = renderToStaticMarkup(
       await DanCoursePage({
