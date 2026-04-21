@@ -9,7 +9,11 @@ import path from "node:path";
 import { createInterface } from "node:readline/promises";
 import { pathToFileURL } from "node:url";
 import { createDevLogger } from "@/bot/logger";
-import { createDojoBot, createLiveBanchoClient, connectWithTimeout } from "@/bot/runtime";
+import {
+  createDojoBot,
+  createLiveBotDependencies,
+  connectWithTimeout,
+} from "@/bot/runtime";
 import { sleep } from "@/lib/sleep";
 
 const DEV_TRIGGER_FINAL_GRACE_PERIOD_MS = 60_000;
@@ -103,10 +107,11 @@ async function main() {
     process.exit(1);
   }
 
-  const client = createLiveBanchoClient();
+  const { client, fetchScore } = createLiveBotDependencies();
   const logger = createDevLogger(path.resolve(process.cwd(), "dojo-dev.jsonl"));
   const bot = createDojoBot({
     client,
+    fetchScore,
     logger,
     connectOnStart: false,
     finalGracePeriodMs: DEV_TRIGGER_FINAL_GRACE_PERIOD_MS,
