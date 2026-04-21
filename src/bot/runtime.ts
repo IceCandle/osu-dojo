@@ -15,8 +15,13 @@ import { getCourseByNameKey, storeCourseRunResult } from "@/db/queries";
 import { DOJO_USAGE_LINE, parseDojoCommand } from "@/bot/command";
 import { noopLogger, type BotLogFields, type BotLogger } from "@/bot/logger";
 import {
+  type FetchScoreOptions,
+  fetchMatchText,
   fetchLatestPlayerMapScore,
+  NoGameInApiError,
+  NoPlayerScoreInGameError,
   type NormalizedPlayerMapScore,
+  ScoreApiTimeoutError,
 } from "@/bot/osuApi";
 import { totalHitObjects } from "@/lib/accuracy";
 import { judgeCourseRun, judgeThreshold } from "@/lib/judging";
@@ -142,21 +147,16 @@ interface PlayerIdentity {
   username: string;
 }
 
+type FetchScore = (
+  options: Omit<FetchScoreOptions, "fetchMatch"> & { lobbyId: number },
+) => Promise<NormalizedPlayerMapScore>;
+
 export interface CreateDojoBotOptions {
   client?: BotClientLike;
   db?: AppDatabase;
   logger?: BotLogger;
   sleep?: (milliseconds: number) => Promise<void>;
-  fetchScore?: (
-    lobby: LobbyLike,
-    options: {
-      beatmapId: number;
-      userId: number;
-      processedGameIds: Set<number>;
-      attempts?: number;
-      delayMs?: number;
-    },
-  ) => Promise<NormalizedPlayerMapScore>;
+  fetchScore?: FetchScore;
   restDurationMs?: number;
   firstMapCountdownSeconds?: number;
   inactivityTimeoutMs?: number;
@@ -164,28 +164,53 @@ export interface CreateDojoBotOptions {
   connectOnStart?: boolean;
 }
 
-export interface RunEndedEvent {
-  runId: string;
-  playerUserId: number;
-  result: "completed" | "aborted";
-  reason?: string;
-}
+export type RunEndedReason =
+  | "room-creation-failed"
+  | "pre-match-setup-failed"
+  | "superseded-by-new-start"
+  | "player-left"
+  | "match-aborted"
+  | "match-interrupted"
+  | "missing-map"
+  | "irc-disconnected"
+  | "inactivity-timeout"
+  | "start-failed"
+  | "next-map-start-failed"
+  | "score-not-found"
+  | "score-not-yet-published"
+  | "score-api-timeout"
+  | "match-processing-failed";
+
+export type RunEndedEvent =
+  | { runId: string; playerUserId: number; result: "completed" }
+  | {
+      runId: string;
+      playerUserId: number;
+      result: "aborted";
+      reason: RunEndedReason;
+    };
 
 const DEFAULT_REST_DURATION_MS = 20_000;
 const DEFAULT_FIRST_MAP_COUNTDOWN_SECONDS = 10;
 const DEFAULT_INACTIVITY_TIMEOUT_MS = 20 * 60 * 1000;
 const DEFAULT_FINAL_GRACE_PERIOD_MS = 60_000;
-const STANDARD_SCORE_FETCH_ATTEMPTS = 4;
-const STANDARD_SCORE_FETCH_DELAY_MS = 1_000;
-const CONFIRMED_FINISH_SCORE_FETCH_ATTEMPTS = 15;
-const CONFIRMED_FINISH_SCORE_FETCH_DELAY_MS = 3_000;
+const STANDARD_SCORE_FETCH_TOTAL_BUDGET_MS = 4_000;
+const STANDARD_SCORE_FETCH_CALL_TIMEOUT_MS = 3_000;
+const STANDARD_SCORE_FETCH_RETRY_DELAY_MS = 1_000;
+const CONFIRMED_FINISH_SCORE_FETCH_TOTAL_BUDGET_MS = 45_000;
+const CONFIRMED_FINISH_SCORE_FETCH_CALL_TIMEOUT_MS = 4_000;
+const CONFIRMED_FINISH_SCORE_FETCH_RETRY_DELAY_MS = 2_500;
 const CLOSE_LOBBY_TIMEOUT_MS = 5_000;
 const START_CONFIRMATION_GRACE_MS = 2_000;
 const TEAM_MODE_HEAD_TO_HEAD = 0;
 const MATCH_INTERRUPTED_MESSAGE =
   "Run aborted: the match was interrupted before completion. Your attempt has ended. Start a new run when ready.";
-const SCORE_RESOLUTION_TIMEOUT_MESSAGE =
+const SCORE_NOT_YET_PUBLISHED_MESSAGE =
   "Run aborted: you finished the map, but the osu! API did not publish the match result in time. Your attempt has ended. Start a new run when ready.";
+const SCORE_NOT_FOUND_MESSAGE =
+  "Run aborted: no score was recorded for you on this map.";
+const SCORE_API_TIMEOUT_MESSAGE =
+  "Run aborted: the osu! API did not respond. Try again shortly.";
 const IRC_DISCONNECTED_MESSAGE =
   "Run aborted: the bot disconnected from Bancho. Start a new run when the connection is back.";
 const MISSING_MAP_MESSAGE =
@@ -209,11 +234,52 @@ export function createLiveBanchoClient() {
   });
 }
 
+export function createLiveBotDependencies(): {
+  client: BanchoClient;
+  fetchScore: FetchScore;
+} {
+  const apiKey = requiredEnv("OSU_API_KEY");
+  const client = new BanchoClient({
+    username: requiredEnv("OSU_IRC_USERNAME"),
+    password: requiredEnv("OSU_IRC_PASSWORD"),
+    apiKey,
+  });
+
+  return {
+    client,
+    fetchScore: createLiveFetchScore(apiKey),
+  };
+}
+
+function createLiveFetchScore(apiKey: string): FetchScore {
+  return (options) =>
+    fetchLatestPlayerMapScore({
+      ...options,
+      fetchMatch: (signal) => fetchMatchText(apiKey, options.lobbyId, signal),
+    });
+}
+
+function createLazyLiveFetchScore(): FetchScore {
+  let fetchScore: FetchScore | undefined;
+
+  return (options) => {
+    fetchScore ??= createLiveFetchScore(requiredEnv("OSU_API_KEY"));
+    return fetchScore(options);
+  };
+}
+
 export function createDojoBot(options: CreateDojoBotOptions = {}) {
-  const client = options.client ?? createLiveBanchoClient();
+  let liveDependencies: ReturnType<typeof createLiveBotDependencies> | undefined;
+  const getLiveDependencies = () => {
+    liveDependencies ??= createLiveBotDependencies();
+    return liveDependencies;
+  };
+  const client = options.client ?? getLiveDependencies().client;
   const logger = options.logger ?? noopLogger;
   const sleep = options.sleep ?? defaultSleep;
-  const fetchScore = options.fetchScore ?? fetchLatestPlayerMapScore;
+  const fetchScore =
+    options.fetchScore ??
+    (options.client ? createLazyLiveFetchScore() : getLiveDependencies().fetchScore);
   const events = new EventEmitter();
   const activeRunsByUserId = new Map<number, ActiveRun>();
   const activeRunsByLobbyId = new Map<number, ActiveRun>();
@@ -790,17 +856,20 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
     const hasConfirmedFinish = run.targetPlayerFinishedCurrentMap !== null;
     const scoreFetchOptions = hasConfirmedFinish
       ? {
-          attempts: CONFIRMED_FINISH_SCORE_FETCH_ATTEMPTS,
-          delayMs: CONFIRMED_FINISH_SCORE_FETCH_DELAY_MS,
+          totalBudgetMs: CONFIRMED_FINISH_SCORE_FETCH_TOTAL_BUDGET_MS,
+          perCallTimeoutMs: CONFIRMED_FINISH_SCORE_FETCH_CALL_TIMEOUT_MS,
+          retryDelayMs: CONFIRMED_FINISH_SCORE_FETCH_RETRY_DELAY_MS,
         }
       : {
-          attempts: STANDARD_SCORE_FETCH_ATTEMPTS,
-          delayMs: STANDARD_SCORE_FETCH_DELAY_MS,
+          totalBudgetMs: STANDARD_SCORE_FETCH_TOTAL_BUDGET_MS,
+          perCallTimeoutMs: STANDARD_SCORE_FETCH_CALL_TIMEOUT_MS,
+          retryDelayMs: STANDARD_SCORE_FETCH_RETRY_DELAY_MS,
         };
     let fetchedScore: NormalizedPlayerMapScore;
 
     try {
-      fetchedScore = await fetchScore(run.lobby, {
+      fetchedScore = await fetchScore({
+        lobbyId: run.lobby.id,
         beatmapId: beatmap.beatmapId,
         userId: run.playerUserId,
         processedGameIds: run.processedGameIds,
@@ -811,34 +880,64 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
         return;
       }
 
-      if (isInterruptedScoreFetchError(error)) {
+      if (error instanceof NoPlayerScoreInGameError) {
+        logger.warn(
+          "dojo score not found",
+          getRunLogFields(run, {
+            error,
+            beatmapId: beatmap.beatmapId,
+            gameId: error.gameId,
+            elapsedMs: error.elapsedMs,
+            attempts: error.attempts,
+            hadConfirmedFinish: hasConfirmedFinish,
+          }),
+        );
+        await abortRun(run, "score-not-found", SCORE_NOT_FOUND_MESSAGE);
+        return;
+      }
+
+      if (error instanceof NoGameInApiError) {
         if (hasConfirmedFinish) {
           logger.warn(
-            "dojo score resolution timed out after confirmed player finish",
-            getRunLogFields(run, { error, beatmapId: beatmap.beatmapId }),
+            "dojo score not yet published",
+            getRunLogFields(run, {
+              error,
+              beatmapId: beatmap.beatmapId,
+              elapsedMs: error.elapsedMs,
+              attempts: error.attempts,
+            }),
           );
-          await abortRun(
-            run,
-            "score-resolution-timeout",
-            SCORE_RESOLUTION_TIMEOUT_MESSAGE,
-          );
+          await abortRun(run, "score-not-yet-published", SCORE_NOT_YET_PUBLISHED_MESSAGE);
           return;
         }
 
-        const playerState = await refreshTargetPlayerState(
+        await abortUnconfirmedScoreResolution(run, beatmap.beatmapId, error);
+        return;
+      }
+
+      if (error instanceof ScoreApiTimeoutError) {
+        if (hasConfirmedFinish) {
+          logger.error(
+            "dojo score api timeout",
+            getRunLogFields(run, {
+              error,
+              beatmapId: beatmap.beatmapId,
+              elapsedMs: error.elapsedMs,
+              attempts: error.attempts,
+              hadConfirmedFinish: true,
+              lastUnderlyingError: error.lastUnderlyingError,
+            }),
+          );
+          await abortRun(run, "score-api-timeout", SCORE_API_TIMEOUT_MESSAGE);
+          return;
+        }
+
+        await abortUnconfirmedScoreResolution(
           run,
-          "dojo interrupted score state refresh failed",
+          beatmap.beatmapId,
+          error,
+          { cause: "api-timeout" },
         );
-        if (playerState === BanchoLobbyPlayerStates.NoMap) {
-          await abortRun(run, "missing-map", MISSING_MAP_MESSAGE);
-          return;
-        }
-
-        logger.warn(
-          "dojo interrupted run detected while resolving score",
-          getRunLogFields(run, { error, beatmapId: beatmap.beatmapId }),
-        );
-        await abortRun(run, "match-interrupted", MATCH_INTERRUPTED_MESSAGE);
         return;
       }
 
@@ -930,6 +1029,39 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
 
     run.currentBeatmapIndex += 1;
     await queueNextBeatmap(run);
+  }
+
+  async function abortUnconfirmedScoreResolution(
+    run: ActiveRun,
+    beatmapId: number,
+    error: unknown,
+    fields?: BotLogFields,
+  ) {
+    const playerState = await refreshTargetPlayerState(
+      run,
+      "dojo interrupted score state refresh failed",
+    );
+    if (playerState === BanchoLobbyPlayerStates.NoMap) {
+      await abortMissingMap(run, beatmapId);
+      return;
+    }
+
+    logger.warn(
+      "dojo interrupted run detected while resolving score",
+      getRunLogFields(run, {
+        error,
+        beatmapId,
+        hadConfirmedFinish: false,
+        ...fields,
+      }),
+    );
+    await abortRun(run, "match-interrupted", MATCH_INTERRUPTED_MESSAGE);
+  }
+
+  async function abortMissingMap(run: ActiveRun, beatmapId?: number) {
+    run.startInFlight = false;
+    logger.warn("dojo player missing map", getRunLogFields(run, { beatmapId }));
+    await abortRun(run, "missing-map", MISSING_MAP_MESSAGE);
   }
 
   async function queueNextBeatmap(run: ActiveRun) {
@@ -1031,7 +1163,10 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
     }
 
     if (playerState === BanchoLobbyPlayerStates.NoMap) {
-      await abortRun(run, "missing-map", MISSING_MAP_MESSAGE);
+      await abortMissingMap(
+        run,
+        run.course.beatmaps[run.currentBeatmapIndex]?.beatmapId,
+      );
       return;
     }
 
@@ -1102,7 +1237,7 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
       return;
     }
 
-    const abortReason =
+    let abortReason: RunEndedReason =
       run.status === "between_maps" ? "next-map-start-failed" : "start-failed";
     let message =
       run.status === "between_maps"
@@ -1114,7 +1249,14 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
       "dojo start abort state refresh failed",
     );
     if (playerState === BanchoLobbyPlayerStates.NoMap) {
+      abortReason = "missing-map";
       message = MISSING_MAP_MESSAGE;
+      logger.warn(
+        "dojo player missing map",
+        getRunLogFields(run, {
+          beatmapId: run.course.beatmaps[run.currentBeatmapIndex]?.beatmapId,
+        }),
+      );
     }
 
     await abortRun(run, abortReason, message);
@@ -1331,7 +1473,7 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
 
   async function abortRun(
     run: ActiveRun,
-    reason: string,
+    reason: RunEndedReason,
     message: string,
     opts?: { closeDelayMs?: number },
   ) {
@@ -1526,13 +1668,4 @@ export function connectWithTimeout(
 
 function toErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
-}
-
-function isInterruptedScoreFetchError(error: unknown) {
-  const message = toErrorMessage(error);
-
-  return (
-    /^No completed multiplayer game found for beatmap \d+\.$/.test(message) ||
-    /^Match \d+ does not include a score for user \d+\.$/.test(message)
-  );
 }

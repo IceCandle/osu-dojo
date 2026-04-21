@@ -1,8 +1,9 @@
 import { createBotLogger } from "@/bot/logger";
-import { createDojoBot } from "@/bot/runtime";
+import { createDojoBot, createLiveBotDependencies } from "@/bot/runtime";
 
 const logger = createBotLogger();
-const bot = createDojoBot({ logger });
+const { client, fetchScore } = createLiveBotDependencies();
+const bot = createDojoBot({ client, fetchScore, logger });
 let shuttingDown = false;
 
 async function stopGracefully(signal: string) {
