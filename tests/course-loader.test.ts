@@ -434,3 +434,70 @@ test("course loader rejects duplicate display name keys", () => {
     temp.cleanup();
   }
 });
+
+test("course loader validates alias collisions against non-archived course names", () => {
+  const temp = createTempDirectory();
+
+  try {
+    writeFileSync(
+      path.join(temp.directory, "aliases.json"),
+      JSON.stringify({
+        id: "system-aliases",
+        name: "aliases",
+        slug: "aliases",
+        description: "aliases",
+        courses: [
+          {
+            id: "course-old",
+            name: "old",
+            slug: "old",
+            description: "old",
+            status: "archived",
+            ordinal: 1,
+            scoreModel: "scorev2",
+            overallPassType: "acc",
+            overallPassThreshold: 95,
+            beatmaps: [
+              {
+                id: "beatmap-old",
+                beatmapId: 1,
+                mods: "",
+                passConditionType: "acc",
+                passConditionThreshold: 95,
+                ordinal: 1,
+                annotations: ["x"],
+              },
+            ],
+          },
+          {
+            id: "course-new",
+            name: "new",
+            slug: "new",
+            description: "new",
+            aliases: ["old"],
+            ordinal: 2,
+            scoreModel: "scorev2",
+            overallPassType: "acc",
+            overallPassThreshold: 95,
+            beatmaps: [
+              {
+                id: "beatmap-new",
+                beatmapId: 2,
+                mods: "",
+                passConditionType: "acc",
+                passConditionThreshold: 95,
+                ordinal: 1,
+                annotations: ["x"],
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    const systems = loadCoursesFromDir(temp.directory);
+    assert.deepEqual(systems[0]?.courses[1]?.aliases, ["old"]);
+  } finally {
+    temp.cleanup();
+  }
+});

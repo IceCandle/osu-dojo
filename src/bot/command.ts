@@ -6,13 +6,14 @@ export interface StartCommand {
 
 export type DojoCommand =
   | StartCommand
+  | (Omit<StartCommand, "type"> & { type: "draft" })
   | { type: "help" }
   | { type: "prev" }
   | { type: "skip" }
   | { type: "invalid" };
 
 export const DOJO_USAGE_LINE =
-  "DM: !dojo start <system-name> <course-name> | !dojo prev | !dojo help. In the lobby chat: !dojo skip.";
+  "DM: !dojo start <system-name> <course-name> | !dojo draft <system-name> <course-name> | !dojo prev | !dojo help. In the lobby chat: !dojo skip.";
 
 export function parseDojoCommand(message: string): DojoCommand | null {
   const trimmedMessage = message.trim();
@@ -28,6 +29,16 @@ export function parseDojoCommand(message: string): DojoCommand | null {
       type: "start",
       systemNameKey: startMatch[1].toLowerCase(),
       courseNameKey: startMatch[2].toLowerCase(),
+    };
+  }
+
+  const draftMatch =
+    /^!dojo\s+draft\s+([a-z0-9-]+)\s+([a-z0-9-]+)\s*$/i.exec(trimmedMessage);
+  if (draftMatch) {
+    return {
+      type: "draft",
+      systemNameKey: draftMatch[1].toLowerCase(),
+      courseNameKey: draftMatch[2].toLowerCase(),
     };
   }
 

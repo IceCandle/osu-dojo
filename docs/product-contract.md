@@ -20,8 +20,18 @@ osu! dan course를 자동 멀티플레이어 방에서 진행하는 IRC bot, pas
 
 ```text
 DanSystem (id, name, slug, description)
-  has many Course (id, name, slug, danSystemId, ordinal, scoreModel: "scorev1"|"scorev2")
+  has many Course (
+    id,
+    name,
+    slug,
+    danSystemId,
+    status: "draft"|"published"|"archived",
+    ordinal,
+    scoreModel: "scorev1"|"scorev2"
+  )
     has many Beatmap (id, courseId, beatmapId, mods, passCondition: {type: "acc"|"score", threshold: number}, ordinal)
+
+BeatmapMetadata (beatmapId, title, artist, difficultyName, mapper, coverUrl, totalObjects)
 
 CourseRun (id, userId, courseId, passed, timestamp, matchId?)
   has many MapResult (id, runId, gameId?, beatmapId, score, accuracy, passed)
@@ -30,6 +40,11 @@ CourseRun (id, userId, courseId, passed, timestamp, matchId?)
 - DanSystem은 `test`, `tr1ple`처럼 관련된 course를 묶는 최상위 framework입니다.
 - Course는 DanSystem 안의 플레이 가능한 단위입니다. N개의 beatmap을 순서대로 플레이하고, 각 beatmap은 자체 통과 조건(pass condition)을 가집니다.
 - `slug`는 system과 course 각각의 내부 seed/database 식별자입니다. 공개 명령어와 URL은 display-name key를 사용합니다.
+- 공개 사이트와 일반 bot 시작은 `published` course만 다룹니다.
+- `draft` course는 `!dojo draft` playtest 전용이며 결과를 저장하지 않습니다.
+- `published`와 `archived` course의 gameplay field는 불변입니다. Gameplay 수정은 기존 course를 바꾸지 않고 새 course를 만들어 처리합니다.
+- `archived` course는 공개 catalog/detail과 `!dojo start`에서 제외되며, 기존 DB 기록은 audit용으로 유지됩니다.
+- Beatmap title/artist/cover/object count 같은 osu! API metadata는 course gameplay와 분리된 `BeatmapMetadata` cache입니다.
 
 ## Public Name Keys
 
@@ -50,6 +65,7 @@ CourseRun (id, userId, courseId, passed, timestamp, matchId?)
 ### AC1: Bot Start Flow
 
 - 플레이어가 bot IRC 계정에 DM으로 `!dojo start <system-name> <course-name>`를 보냅니다. 두 인자는 display-name key입니다.
+- 작성자는 draft course를 테스트하기 위해 `!dojo draft <system-name> <course-name>`를 보낼 수 있습니다.
 - 플레이어는 `!dojo help`로 간단한 사용법을 확인할 수 있고, 같은 bot process 안에서 이전에 성공적으로 확인된 시작 명령은 `!dojo prev`로 다시 실행할 수 있습니다.
 - 플레이어는 멀티플레이어 로비 채팅(`#mp_<id>`)에서 `!dojo skip`을 입력해 첫 map 또는 map 사이의 남은 시작 대기 시간을 건너뜁니다. DM의 `!dojo skip`은 동작하지 않습니다.
 - 플레이어가 이미 진행 중인 run이 있는 상태에서 `!dojo start`를 다시 보내면, bot은 이전 방을 닫고 새 방을 만듭니다. resolved map이 있으면 이전 run은 DNF로 저장됩니다.
@@ -58,10 +74,11 @@ CourseRun (id, userId, courseId, passed, timestamp, matchId?)
 - bot은 `osu!dojo: <system_name> / <course_name>` 제목의 멀티플레이어 방을 만듭니다.
 - bot은 플레이어를 초대하고, 플레이어가 방에 참가합니다.
 - system 또는 course name key가 잘못되었거나 알 수 없으면 bot은 오류 메시지를 보냅니다.
+- `!dojo start`가 draft 또는 archived course를 가리키면 오류 메시지를 보냅니다.
 
 ### AC2: Course Sequencing
 
-- bot은 DB에서 course 정의를 불러옵니다.
+- bot은 DB에서 course 정의를 불러옵니다. 일반 start는 published course만 resolve하고, draft command는 draft course만 resolve합니다.
 - 첫 beatmap과 올바른 mods를 설정합니다.
 - 각 map이 끝나면 휴식 시간 이후 다음 map으로 자동 진행합니다. 기본 휴식 시간은 20초입니다.
 - 마지막 map 이후 course가 완료됩니다.
@@ -84,6 +101,7 @@ CourseRun (id, userId, courseId, passed, timestamp, matchId?)
 - `/`는 dan system과 course를 보여줍니다.
 - `/dan`은 dan system을 카탈로그 형태로 보여줍니다.
 - `/dan/[systemNameKey]`는 해당 system의 모든 course, beatmap 목록, 통과 조건(pass condition), 통합 리더보드, `?course=<courseNameKey>` 앵커 이동을 렌더링합니다.
+- 웹사이트는 published course만 렌더링합니다.
 - 리더보드의 `Course Acc`는 통과한 map accuracy의 합계입니다.
 - 인증(auth)은 없습니다. 읽기 전용입니다. SSR with server components입니다.
 

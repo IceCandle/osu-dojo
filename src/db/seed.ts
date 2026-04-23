@@ -3,8 +3,18 @@ import { eq } from "drizzle-orm";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import * as schema from "@/db/schema";
 import { loadCoursesFromDir, type DanSystemSeed } from "@/db/courseLoader";
-import { beatmaps, courses, danSystems, mapResults, runs } from "@/db/schema";
+import {
+  beatmapMetadata,
+  beatmaps,
+  courseAliases,
+  courses,
+  danSystems,
+  mapResults,
+  runs,
+} from "@/db/schema";
 import type { BeatmapMetadata, BeatmapResolutionResult } from "@/lib/beatmapMetadata";
+import type { CourseStatus } from "@/lib/domain";
+import { kebabizeName } from "@/lib/format";
 import { sleep } from "@/lib/sleep";
 
 type SeedDatabase = BetterSQLite3Database<typeof schema>;
@@ -37,6 +47,20 @@ export async function seedDatabase(
   let missingObjectCountWithoutResolver = 0;
 
   for (const system of systems) {
+    const existingSystem = await db.query.danSystems.findFirst({
+      where: eq(danSystems.id, system.id),
+    });
+    if (
+      existingSystem &&
+      kebabizeName(existingSystem.name) !== kebabizeName(system.name)
+    ) {
+      throw new Error(
+        `System "${system.id}" changed public name key from "${kebabizeName(
+          existingSystem.name,
+        )}" to "${kebabizeName(system.name)}". System name-key changes are not allowed.`,
+      );
+    }
+
     await db
       .insert(danSystems)
       .values({
@@ -55,55 +79,90 @@ export async function seedDatabase(
       });
 
     for (const course of system.courses) {
-      await db
-        .insert(courses)
-        .values({
-          id: course.id,
-          danSystemId: system.id,
-          name: course.name,
-          slug: course.slug,
-          description: course.description,
-          ordinal: course.ordinal,
-          scoreModel: course.scoreModel,
-          overallPassType: course.overallPassType,
-          overallPassThreshold: course.overallPassThreshold,
-        })
-        .onConflictDoUpdate({
-          target: courses.id,
-          set: {
-            danSystemId: system.id,
-            name: course.name,
-            slug: course.slug,
-            description: course.description,
-            ordinal: course.ordinal,
-            scoreModel: course.scoreModel,
-            overallPassType: course.overallPassType,
-            overallPassThreshold: course.overallPassThreshold,
-          },
-        });
+      const existingCourse = await db.query.courses.findFirst({
+        where: eq(courses.id, course.id),
+      });
+      const existingCourseForSlug = await db.query.courses.findFirst({
+        where: (fields, { and }) =>
+          and(eq(fields.danSystemId, system.id), eq(fields.slug, course.slug)),
+      });
+
+      if (existingCourseForSlug && existingCourseForSlug.id !== course.id) {
+        throw new Error(
+          `Course slug "${course.slug}" in system "${system.name}" is already used by "${existingCourseForSlug.id}".`,
+        );
+      }
+
+      if (existingCourse) {
+        if (existingCourse.danSystemId !== system.id) {
+          throw new Error(`Course "${course.id}" cannot move between dan systems.`);
+        }
+        if (existingCourse.slug !== course.slug) {
+          throw new Error(`Course "${course.id}" cannot change slug after creation.`);
+        }
+        const oldNameKey = kebabizeName(existingCourse.name);
+        const newNameKey = kebabizeName(course.name);
+        if (oldNameKey !== newNameKey && !course.aliases.includes(oldNameKey)) {
+          throw new Error(
+            `Course "${course.id}" changed public name key from "${oldNameKey}" to "${newNameKey}" without an alias for the old key.`,
+          );
+        }
+      }
 
       const existingBeatmaps = await db
         .select({
           id: beatmaps.id,
           beatmapId: beatmaps.beatmapId,
-          title: beatmaps.title,
-          artist: beatmaps.artist,
-          difficultyName: beatmaps.difficultyName,
-          mapper: beatmaps.mapper,
-          coverUrl: beatmaps.coverUrl,
-          totalObjects: beatmaps.totalObjects,
+          mods: beatmaps.mods,
+          passConditionType: beatmaps.passConditionType,
+          passConditionThreshold: beatmaps.passConditionThreshold,
+          ordinal: beatmaps.ordinal,
         })
         .from(beatmaps)
         .where(eq(beatmaps.courseId, course.id));
+      assertAllowedCourseChange(existingCourse, existingBeatmaps, course);
+
+      await db
+        .insert(courses)
+        .values({
+          id: course.id,
+          danSystemId: system.id,
+          creatorUserId: null,
+          name: course.name,
+          slug: course.slug,
+          description: course.description,
+          tags: JSON.stringify(course.tags),
+          ordinal: course.ordinal,
+          scoreModel: course.scoreModel,
+          overallPassType: course.overallPassType,
+          overallPassThreshold: course.overallPassThreshold,
+          status: course.status,
+          publishedAt: getPublishedAt(existingCourse, course.status),
+          updatedAt: Date.now(),
+        })
+        .onConflictDoUpdate({
+          target: courses.id,
+          set: {
+            name: course.name,
+            description: course.description,
+            tags: JSON.stringify(course.tags),
+            ...getMutableCourseFields(existingCourse, course),
+            status: course.status,
+            publishedAt: getPublishedAt(existingCourse, course.status),
+            updatedAt: Date.now(),
+          },
+        });
+
+      const existingMetadataRows = await db.select().from(beatmapMetadata);
       const existingMetadataById = new Map(
-        existingBeatmaps.map((beatmap) => [beatmap.id, beatmap]),
+        existingMetadataRows.map((metadata) => [metadata.beatmapId, metadata]),
       );
       const beatmapValues = [];
 
       for (const beatmap of course.beatmaps) {
         const beatmapData = await resolveSeedBeatmapData(
           beatmap,
-          existingMetadataById.get(beatmap.id),
+          existingMetadataById.get(beatmap.beatmapId),
           options,
           metadataResolutionState,
         );
@@ -120,18 +179,50 @@ export async function seedDatabase(
           passConditionType: beatmap.passConditionType,
           passConditionThreshold: beatmap.passConditionThreshold,
           ordinal: beatmap.ordinal,
-          title: beatmapData.metadata.title,
-          artist: beatmapData.metadata.artist,
-          difficultyName: beatmapData.metadata.difficultyName,
-          mapper: beatmapData.metadata.mapper,
-          coverUrl: beatmapData.metadata.coverUrl,
-          totalObjects: beatmapData.totalObjects,
           annotations: JSON.stringify(beatmap.annotations),
         });
+
+        await db
+          .insert(beatmapMetadata)
+          .values({
+            beatmapId: beatmap.beatmapId,
+            title: beatmapData.metadata.title,
+            artist: beatmapData.metadata.artist,
+            difficultyName: beatmapData.metadata.difficultyName,
+            mapper: beatmapData.metadata.mapper,
+            coverUrl: beatmapData.metadata.coverUrl,
+            totalObjects: beatmapData.totalObjects,
+            fetchedAt: Date.now(),
+          })
+          .onConflictDoUpdate({
+            target: beatmapMetadata.beatmapId,
+            set: {
+              title: beatmapData.metadata.title,
+              artist: beatmapData.metadata.artist,
+              difficultyName: beatmapData.metadata.difficultyName,
+              mapper: beatmapData.metadata.mapper,
+              coverUrl: beatmapData.metadata.coverUrl,
+              totalObjects: beatmapData.totalObjects,
+              fetchedAt: Date.now(),
+            },
+          });
       }
 
-      await db.delete(beatmaps).where(eq(beatmaps.courseId, course.id));
-      await db.insert(beatmaps).values(beatmapValues);
+      if (!existingCourse || existingCourse.status === "draft") {
+        await db.delete(beatmaps).where(eq(beatmaps.courseId, course.id));
+        await db.insert(beatmaps).values(beatmapValues);
+      }
+    }
+
+    await db.delete(courseAliases).where(eq(courseAliases.danSystemId, system.id));
+    for (const course of system.courses) {
+      for (const aliasKey of course.aliases) {
+        await db.insert(courseAliases).values({
+          danSystemId: system.id,
+          aliasKey,
+          courseId: course.id,
+        });
+      }
     }
   }
 
@@ -161,9 +252,139 @@ export async function clearAllData(
 ) {
   await db.delete(mapResults);
   await db.delete(runs);
+  await db.delete(courseAliases);
   await db.delete(beatmaps);
+  await db.delete(beatmapMetadata);
   await db.delete(courses);
   await db.delete(danSystems);
+}
+
+function getPublishedAt(
+  existingCourse: typeof courses.$inferSelect | undefined,
+  nextStatus: CourseStatus,
+) {
+  if (nextStatus !== "published") {
+    return existingCourse?.publishedAt ?? null;
+  }
+
+  return existingCourse?.publishedAt ?? Date.now();
+}
+
+function getMutableCourseFields(
+  existingCourse: typeof courses.$inferSelect | undefined,
+  course: DanSystemSeed["courses"][number],
+) {
+  if (existingCourse && existingCourse.status !== "draft") {
+    return {};
+  }
+
+  return {
+    ordinal: course.ordinal,
+    scoreModel: course.scoreModel,
+    overallPassType: course.overallPassType,
+    overallPassThreshold: course.overallPassThreshold,
+  };
+}
+
+function assertAllowedCourseChange(
+  existingCourse: typeof courses.$inferSelect | undefined,
+  existingBeatmaps: Array<{
+    id: string;
+    beatmapId: number;
+    mods: string;
+    passConditionType: DanSystemSeed["courses"][number]["beatmaps"][number]["passConditionType"];
+    passConditionThreshold: number;
+    ordinal: number;
+  }>,
+  course: DanSystemSeed["courses"][number],
+) {
+  if (!existingCourse) {
+    return;
+  }
+
+  if (
+    (existingCourse.status === "published" || existingCourse.status === "archived") &&
+    course.status === "draft"
+  ) {
+    throw new Error(
+      `Course "${course.id}" cannot move from ${existingCourse.status} back to draft.`,
+    );
+  }
+
+  if (existingCourse.status === "draft") {
+    return;
+  }
+
+  const changedFields = getGameplayChangedFields(existingCourse, existingBeatmaps, course);
+  if (changedFields.length > 0) {
+    throw new Error(
+      `Course "${course.id}" is ${existingCourse.status}; gameplay fields are immutable after publish. Changed: ${changedFields.join(
+        ", ",
+      )}. Create a new course for gameplay changes.`,
+    );
+  }
+}
+
+function getGameplayChangedFields(
+  existingCourse: typeof courses.$inferSelect,
+  existingBeatmaps: Array<{
+    id: string;
+    beatmapId: number;
+    mods: string;
+    passConditionType: DanSystemSeed["courses"][number]["beatmaps"][number]["passConditionType"];
+    passConditionThreshold: number;
+    ordinal: number;
+  }>,
+  course: DanSystemSeed["courses"][number],
+) {
+  const changedFields = [];
+
+  if (existingCourse.ordinal !== course.ordinal) {
+    changedFields.push("ordinal");
+  }
+  if (existingCourse.scoreModel !== course.scoreModel) {
+    changedFields.push("scoreModel");
+  }
+  if (existingCourse.overallPassType !== course.overallPassType) {
+    changedFields.push("overallPassType");
+  }
+  if (existingCourse.overallPassThreshold !== course.overallPassThreshold) {
+    changedFields.push("overallPassThreshold");
+  }
+
+  const existingSignature = existingBeatmaps
+    .map((beatmap) => ({
+      id: beatmap.id,
+      beatmapId: beatmap.beatmapId,
+      mods: beatmap.mods,
+      passConditionType: beatmap.passConditionType,
+      passConditionThreshold: beatmap.passConditionThreshold,
+      ordinal: beatmap.ordinal,
+    }))
+    .sort(compareBeatmapSignatures);
+  const nextSignature = course.beatmaps
+    .map((beatmap) => ({
+      id: beatmap.id,
+      beatmapId: beatmap.beatmapId,
+      mods: beatmap.mods,
+      passConditionType: beatmap.passConditionType,
+      passConditionThreshold: beatmap.passConditionThreshold,
+      ordinal: beatmap.ordinal,
+    }))
+    .sort(compareBeatmapSignatures);
+
+  if (JSON.stringify(existingSignature) !== JSON.stringify(nextSignature)) {
+    changedFields.push("beatmaps");
+  }
+
+  return changedFields;
+}
+
+function compareBeatmapSignatures(
+  left: { ordinal: number; id: string },
+  right: { ordinal: number; id: string },
+) {
+  return left.ordinal - right.ordinal || left.id.localeCompare(right.id);
 }
 
 async function resolveSeedBeatmapData(

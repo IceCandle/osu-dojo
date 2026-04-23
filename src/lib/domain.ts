@@ -1,5 +1,6 @@
 export type PassConditionType = "acc" | "score";
 export type DanScoreModel = "scorev1" | "scorev2";
+export type CourseStatus = "draft" | "published" | "archived";
 
 export interface CourseBeatmapDefinition {
   id: string;
@@ -26,7 +27,9 @@ export interface CourseDefinition {
   name: string;
   slug: string;
   description: string;
+  tags: string[];
   ordinal: number;
+  status: CourseStatus;
   scoreModel: DanScoreModel;
   overallPassType: PassConditionType | null;
   overallPassThreshold: number | null;

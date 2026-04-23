@@ -1,7 +1,15 @@
 import { randomUUID } from "node:crypto";
-import { asc, desc, eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { getDatabase, type AppDatabase } from "@/db/client";
-import { beatmaps, courses, danSystems, mapResults, runs } from "@/db/schema";
+import {
+  beatmapMetadata,
+  beatmaps,
+  courseAliases,
+  courses,
+  danSystems,
+  mapResults,
+  runs,
+} from "@/db/schema";
 import type {
   CourseBeatmapDefinition,
   CourseDefinition,
@@ -17,7 +25,9 @@ type CourseRow = {
   courseName: string;
   slug: string;
   courseDescription: string;
+  tags: string;
   courseOrdinal: number;
+  status: CourseDefinition["status"];
   scoreModel: CourseDefinition["scoreModel"] | null;
   overallPassType: CourseDefinition["overallPassType"];
   overallPassThreshold: number | null;
@@ -43,13 +53,18 @@ export async function listDanSystemsWithCourses(db?: AppDatabase) {
       courseName: courses.name,
       slug: courses.slug,
       courseDescription: courses.description,
+      tags: courses.tags,
       courseOrdinal: courses.ordinal,
+      status: courses.status,
       scoreModel: courses.scoreModel,
       overallPassType: courses.overallPassType,
       overallPassThreshold: courses.overallPassThreshold,
     })
     .from(danSystems)
-    .leftJoin(courses, eq(courses.danSystemId, danSystems.id))
+    .leftJoin(
+      courses,
+      and(eq(courses.danSystemId, danSystems.id), eq(courses.status, "published")),
+    )
     .orderBy(asc(danSystems.name), asc(courses.ordinal));
 
   const systems = new Map<
@@ -113,7 +128,9 @@ export async function listCoursesByDanSystemNameKey(
       courseName: courses.name,
       slug: courses.slug,
       courseDescription: courses.description,
+      tags: courses.tags,
       courseOrdinal: courses.ordinal,
+      status: courses.status,
       scoreModel: courses.scoreModel,
       overallPassType: courses.overallPassType,
       overallPassThreshold: courses.overallPassThreshold,
@@ -124,6 +141,7 @@ export async function listCoursesByDanSystemNameKey(
     })
     .from(courses)
     .innerJoin(danSystems, eq(courses.danSystemId, danSystems.id))
+    .where(eq(courses.status, "published"))
     .orderBy(asc(danSystems.name), asc(courses.ordinal));
 
   const normalizedSystemNameKey = kebabizeName(systemNameKey);
@@ -153,8 +171,102 @@ export async function getCourseByNameKey(
   return (
     courseDefinitions.find(
       (course) => kebabizeName(course.name) === normalizedCourseNameKey,
-    ) ?? null
+    ) ??
+    (await getPublishedCourseByAlias(systemNameKey, normalizedCourseNameKey, database))
   );
+}
+
+export async function getDraftCourseByNameKey(
+  systemNameKey: string,
+  courseNameKey: string,
+  db?: AppDatabase,
+): Promise<CourseDefinition | null> {
+  const database = await useDb(db);
+  return getCourseByNameKeyAndStatus(systemNameKey, courseNameKey, "draft", database);
+}
+
+async function getCourseByNameKeyAndStatus(
+  systemNameKey: string,
+  courseNameKey: string,
+  status: CourseDefinition["status"],
+  database: AppDatabase,
+): Promise<CourseDefinition | null> {
+  const normalizedSystemNameKey = kebabizeName(systemNameKey);
+  const normalizedCourseNameKey = kebabizeName(courseNameKey);
+  const rows = await database
+    .select({
+      courseId: courses.id,
+      courseName: courses.name,
+      slug: courses.slug,
+      courseDescription: courses.description,
+      tags: courses.tags,
+      courseOrdinal: courses.ordinal,
+      status: courses.status,
+      scoreModel: courses.scoreModel,
+      overallPassType: courses.overallPassType,
+      overallPassThreshold: courses.overallPassThreshold,
+      danSystemId: danSystems.id,
+      danSystemName: danSystems.name,
+      danSystemSlug: danSystems.slug,
+      danSystemDescription: danSystems.description,
+    })
+    .from(courses)
+    .innerJoin(danSystems, eq(courses.danSystemId, danSystems.id))
+    .where(eq(courses.status, status))
+    .orderBy(asc(danSystems.name), asc(courses.ordinal));
+
+  const matchingRows = rows.filter(
+    (row) =>
+      kebabizeName(row.danSystemName) === normalizedSystemNameKey &&
+      kebabizeName(row.courseName) === normalizedCourseNameKey,
+  );
+
+  if (matchingRows.length === 0) {
+    return null;
+  }
+
+  const [course] = await hydrateCourseRows(matchingRows, database);
+  return course ?? null;
+}
+
+async function getPublishedCourseByAlias(
+  systemNameKey: string,
+  aliasKey: string,
+  database: AppDatabase,
+) {
+  const normalizedSystemNameKey = kebabizeName(systemNameKey);
+  const aliasRows = await database
+    .select({
+      courseId: courses.id,
+      courseName: courses.name,
+      slug: courses.slug,
+      courseDescription: courses.description,
+      tags: courses.tags,
+      courseOrdinal: courses.ordinal,
+      status: courses.status,
+      scoreModel: courses.scoreModel,
+      overallPassType: courses.overallPassType,
+      overallPassThreshold: courses.overallPassThreshold,
+      danSystemId: danSystems.id,
+      danSystemName: danSystems.name,
+      danSystemSlug: danSystems.slug,
+      danSystemDescription: danSystems.description,
+    })
+    .from(courseAliases)
+    .innerJoin(courses, eq(courseAliases.courseId, courses.id))
+    .innerJoin(danSystems, eq(courseAliases.danSystemId, danSystems.id))
+    .where(and(eq(courseAliases.aliasKey, aliasKey), eq(courses.status, "published")));
+
+  const matchingRows = aliasRows.filter(
+    (row) => kebabizeName(row.danSystemName) === normalizedSystemNameKey,
+  );
+
+  if (matchingRows.length === 0) {
+    return null;
+  }
+
+  const [course] = await hydrateCourseRows(matchingRows, database);
+  return course ?? null;
 }
 
 async function hydrateCourseRows(
@@ -170,15 +282,16 @@ async function hydrateCourseRows(
       passConditionType: beatmaps.passConditionType,
       passConditionThreshold: beatmaps.passConditionThreshold,
       ordinal: beatmaps.ordinal,
-      title: beatmaps.title,
-      artist: beatmaps.artist,
-      difficultyName: beatmaps.difficultyName,
-      mapper: beatmaps.mapper,
-      coverUrl: beatmaps.coverUrl,
-      totalObjects: beatmaps.totalObjects,
       annotations: beatmaps.annotations,
+      title: beatmapMetadata.title,
+      artist: beatmapMetadata.artist,
+      difficultyName: beatmapMetadata.difficultyName,
+      mapper: beatmapMetadata.mapper,
+      coverUrl: beatmapMetadata.coverUrl,
+      totalObjects: beatmapMetadata.totalObjects,
     })
     .from(beatmaps)
+    .leftJoin(beatmapMetadata, eq(beatmaps.beatmapId, beatmapMetadata.beatmapId))
     .where(
       inArray(
         beatmaps.courseId,
@@ -203,7 +316,9 @@ async function hydrateCourseRows(
     name: row.courseName,
     slug: row.slug,
     description: row.courseDescription,
+    tags: parseTags(row.tags),
     ordinal: row.courseOrdinal,
+    status: row.status,
     scoreModel: row.scoreModel ?? "scorev2",
     overallPassType: row.overallPassType,
     overallPassThreshold: row.overallPassThreshold,
@@ -423,11 +538,11 @@ function parseBeatmapRow(row: {
   passConditionType: CourseBeatmapDefinition["passConditionType"];
   passConditionThreshold: number;
   ordinal: number;
-  title: string;
-  artist: string;
-  difficultyName: string;
-  mapper: string;
-  coverUrl: string;
+  title: string | null;
+  artist: string | null;
+  difficultyName: string | null;
+  mapper: string | null;
+  coverUrl: string | null;
   totalObjects: unknown;
   annotations: string;
 }): CourseBeatmapDefinition {
@@ -438,14 +553,25 @@ function parseBeatmapRow(row: {
     passConditionType: row.passConditionType,
     passConditionThreshold: row.passConditionThreshold,
     ordinal: row.ordinal,
-    title: row.title,
-    artist: row.artist,
-    difficultyName: row.difficultyName,
-    mapper: row.mapper,
-    coverUrl: row.coverUrl,
+    title: row.title ?? "",
+    artist: row.artist ?? "",
+    difficultyName: row.difficultyName ?? "",
+    mapper: row.mapper ?? "",
+    coverUrl: row.coverUrl ?? "",
     totalObjects: normalizeTotalObjects(row.totalObjects),
     annotations: parseAnnotations(row.annotations),
   };
+}
+
+function parseTags(value: string): string[] {
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) && parsed.every((entry) => typeof entry === "string")
+      ? parsed
+      : [];
+  } catch {
+    return [];
+  }
 }
 
 function normalizeTotalObjects(value: unknown): number | null {
@@ -473,6 +599,8 @@ function deriveRunStatus(
   maps: Array<{ passed: boolean }>,
   beatmapCount: number,
 ): DerivedRunStatus {
+  // This uses the live course beatmap count only because published course gameplay is
+  // immutable; draft runs are never persisted.
   if (passed) {
     return "pass";
   }
