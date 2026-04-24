@@ -343,6 +343,34 @@ code {
   margin-bottom: 18px;
 }
 
+.system-title-row,
+.detail-title-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.system-status-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  padding: 4px 10px;
+  border: 1px solid rgba(255, 179, 71, 0.35);
+  border-radius: 999px;
+  color: var(--accent);
+  background: rgba(255, 179, 71, 0.15);
+  font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.detail-status-pill {
+  margin-top: 8px;
+}
+
 .system-card-description {
   display: -webkit-box;
   overflow: hidden;

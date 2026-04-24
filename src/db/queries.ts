@@ -1,10 +1,9 @@
 import { randomUUID } from "node:crypto";
-import { and, asc, desc, eq, inArray } from "drizzle-orm";
+import { asc, desc, eq, inArray } from "drizzle-orm";
 import { getDatabase, type AppDatabase } from "@/db/client";
 import {
   beatmapMetadata,
   beatmaps,
-  courseAliases,
   courses,
   danSystems,
   mapResults,
@@ -14,8 +13,10 @@ import type {
   CourseBeatmapDefinition,
   CourseDefinition,
   CourseRunResult,
+  DanSystemDefinition,
   JudgedMapResult,
 } from "@/lib/domain";
+import { catalogSystemStatuses, playableSystemStatuses } from "@/lib/domain";
 import { kebabizeName } from "@/lib/format";
 
 type DerivedRunStatus = "pass" | "fail" | "dnf";
@@ -27,7 +28,6 @@ type CourseRow = {
   courseDescription: string;
   tags: string;
   courseOrdinal: number;
-  status: CourseDefinition["status"];
   scoreModel: CourseDefinition["scoreModel"] | null;
   overallPassType: CourseDefinition["overallPassType"];
   overallPassThreshold: number | null;
@@ -35,6 +35,7 @@ type CourseRow = {
   danSystemName: string;
   danSystemSlug: string;
   danSystemDescription: string;
+  danSystemStatus: DanSystemDefinition["status"];
 };
 
 async function useDb(db?: AppDatabase): Promise<AppDatabase> {
@@ -49,22 +50,20 @@ export async function listDanSystemsWithCourses(db?: AppDatabase) {
       danSystemName: danSystems.name,
       danSystemSlug: danSystems.slug,
       danSystemDescription: danSystems.description,
+      danSystemStatus: danSystems.status,
       courseId: courses.id,
       courseName: courses.name,
       slug: courses.slug,
       courseDescription: courses.description,
       tags: courses.tags,
       courseOrdinal: courses.ordinal,
-      status: courses.status,
       scoreModel: courses.scoreModel,
       overallPassType: courses.overallPassType,
       overallPassThreshold: courses.overallPassThreshold,
     })
     .from(danSystems)
-    .leftJoin(
-      courses,
-      and(eq(courses.danSystemId, danSystems.id), eq(courses.status, "published")),
-    )
+    .leftJoin(courses, eq(courses.danSystemId, danSystems.id))
+    .where(inArray(danSystems.status, catalogSystemStatuses()))
     .orderBy(asc(danSystems.name), asc(courses.ordinal));
 
   const systems = new Map<
@@ -74,6 +73,7 @@ export async function listDanSystemsWithCourses(db?: AppDatabase) {
       name: string;
       slug: string;
       description: string;
+      status: DanSystemDefinition["status"];
       courses: Array<{
         id: string;
         name: string;
@@ -95,6 +95,7 @@ export async function listDanSystemsWithCourses(db?: AppDatabase) {
         name: row.danSystemName,
         slug: row.danSystemSlug,
         description: row.danSystemDescription,
+        status: row.danSystemStatus,
         courses: [],
       };
 
@@ -114,13 +115,21 @@ export async function listDanSystemsWithCourses(db?: AppDatabase) {
     systems.set(system.id, system);
   }
 
-  return [...systems.values()];
+  return [...systems.values()].sort(compareSystemSummaries);
 }
 
 export async function listCoursesByDanSystemNameKey(
   systemNameKey: string,
   db?: AppDatabase,
 ): Promise<CourseDefinition[]> {
+  const detail = await getDanSystemDetailByNameKey(systemNameKey, db);
+  return detail?.courses ?? [];
+}
+
+export async function getDanSystemDetailByNameKey(
+  systemNameKey: string,
+  db?: AppDatabase,
+): Promise<{ system: DanSystemDefinition; courses: CourseDefinition[] } | null> {
   const database = await useDb(db);
   const rows = await database
     .select({
@@ -130,7 +139,6 @@ export async function listCoursesByDanSystemNameKey(
       courseDescription: courses.description,
       tags: courses.tags,
       courseOrdinal: courses.ordinal,
-      status: courses.status,
       scoreModel: courses.scoreModel,
       overallPassType: courses.overallPassType,
       overallPassThreshold: courses.overallPassThreshold,
@@ -138,10 +146,11 @@ export async function listCoursesByDanSystemNameKey(
       danSystemName: danSystems.name,
       danSystemSlug: danSystems.slug,
       danSystemDescription: danSystems.description,
+      danSystemStatus: danSystems.status,
     })
     .from(courses)
     .innerJoin(danSystems, eq(courses.danSystemId, danSystems.id))
-    .where(eq(courses.status, "published"))
+    .where(inArray(danSystems.status, playableSystemStatuses()))
     .orderBy(asc(danSystems.name), asc(courses.ordinal));
 
   const normalizedSystemNameKey = kebabizeName(systemNameKey);
@@ -150,10 +159,20 @@ export async function listCoursesByDanSystemNameKey(
   );
 
   if (matchingRows.length === 0) {
-    return [];
+    return null;
   }
 
-  return hydrateCourseRows(matchingRows, database);
+  const firstRow = matchingRows[0]!;
+  return {
+    system: {
+      id: firstRow.danSystemId,
+      name: firstRow.danSystemName,
+      slug: firstRow.danSystemSlug,
+      description: firstRow.danSystemDescription,
+      status: firstRow.danSystemStatus,
+    },
+    courses: await hydrateCourseRows(matchingRows, database),
+  };
 }
 
 export async function getCourseByNameKey(
@@ -162,111 +181,15 @@ export async function getCourseByNameKey(
   db?: AppDatabase,
 ): Promise<CourseDefinition | null> {
   const database = await useDb(db);
-  const courseDefinitions = await listCoursesByDanSystemNameKey(
-    systemNameKey,
-    database,
-  );
+  const detail = await getDanSystemDetailByNameKey(systemNameKey, database);
+  const courseDefinitions = detail?.courses ?? [];
   const normalizedCourseNameKey = kebabizeName(courseNameKey);
 
   return (
     courseDefinitions.find(
       (course) => kebabizeName(course.name) === normalizedCourseNameKey,
-    ) ??
-    (await getPublishedCourseByAlias(systemNameKey, normalizedCourseNameKey, database))
+    ) ?? null
   );
-}
-
-export async function getDraftCourseByNameKey(
-  systemNameKey: string,
-  courseNameKey: string,
-  db?: AppDatabase,
-): Promise<CourseDefinition | null> {
-  const database = await useDb(db);
-  return getCourseByNameKeyAndStatus(systemNameKey, courseNameKey, "draft", database);
-}
-
-async function getCourseByNameKeyAndStatus(
-  systemNameKey: string,
-  courseNameKey: string,
-  status: CourseDefinition["status"],
-  database: AppDatabase,
-): Promise<CourseDefinition | null> {
-  const normalizedSystemNameKey = kebabizeName(systemNameKey);
-  const normalizedCourseNameKey = kebabizeName(courseNameKey);
-  const rows = await database
-    .select({
-      courseId: courses.id,
-      courseName: courses.name,
-      slug: courses.slug,
-      courseDescription: courses.description,
-      tags: courses.tags,
-      courseOrdinal: courses.ordinal,
-      status: courses.status,
-      scoreModel: courses.scoreModel,
-      overallPassType: courses.overallPassType,
-      overallPassThreshold: courses.overallPassThreshold,
-      danSystemId: danSystems.id,
-      danSystemName: danSystems.name,
-      danSystemSlug: danSystems.slug,
-      danSystemDescription: danSystems.description,
-    })
-    .from(courses)
-    .innerJoin(danSystems, eq(courses.danSystemId, danSystems.id))
-    .where(eq(courses.status, status))
-    .orderBy(asc(danSystems.name), asc(courses.ordinal));
-
-  const matchingRows = rows.filter(
-    (row) =>
-      kebabizeName(row.danSystemName) === normalizedSystemNameKey &&
-      kebabizeName(row.courseName) === normalizedCourseNameKey,
-  );
-
-  if (matchingRows.length === 0) {
-    return null;
-  }
-
-  const [course] = await hydrateCourseRows(matchingRows, database);
-  return course ?? null;
-}
-
-async function getPublishedCourseByAlias(
-  systemNameKey: string,
-  aliasKey: string,
-  database: AppDatabase,
-) {
-  const normalizedSystemNameKey = kebabizeName(systemNameKey);
-  const aliasRows = await database
-    .select({
-      courseId: courses.id,
-      courseName: courses.name,
-      slug: courses.slug,
-      courseDescription: courses.description,
-      tags: courses.tags,
-      courseOrdinal: courses.ordinal,
-      status: courses.status,
-      scoreModel: courses.scoreModel,
-      overallPassType: courses.overallPassType,
-      overallPassThreshold: courses.overallPassThreshold,
-      danSystemId: danSystems.id,
-      danSystemName: danSystems.name,
-      danSystemSlug: danSystems.slug,
-      danSystemDescription: danSystems.description,
-    })
-    .from(courseAliases)
-    .innerJoin(courses, eq(courseAliases.courseId, courses.id))
-    .innerJoin(danSystems, eq(courseAliases.danSystemId, danSystems.id))
-    .where(and(eq(courseAliases.aliasKey, aliasKey), eq(courses.status, "published")));
-
-  const matchingRows = aliasRows.filter(
-    (row) => kebabizeName(row.danSystemName) === normalizedSystemNameKey,
-  );
-
-  if (matchingRows.length === 0) {
-    return null;
-  }
-
-  const [course] = await hydrateCourseRows(matchingRows, database);
-  return course ?? null;
 }
 
 async function hydrateCourseRows(
@@ -318,7 +241,6 @@ async function hydrateCourseRows(
     description: row.courseDescription,
     tags: parseTags(row.tags),
     ordinal: row.courseOrdinal,
-    status: row.status,
     scoreModel: row.scoreModel ?? "scorev2",
     overallPassType: row.overallPassType,
     overallPassThreshold: row.overallPassThreshold,
@@ -572,6 +494,28 @@ function parseTags(value: string): string[] {
   } catch {
     return [];
   }
+}
+
+function compareSystemSummaries(
+  left: { name: string; status: DanSystemDefinition["status"] },
+  right: { name: string; status: DanSystemDefinition["status"] },
+) {
+  return (
+    getCatalogStatusWeight(left.status) - getCatalogStatusWeight(right.status) ||
+    left.name.localeCompare(right.name)
+  );
+}
+
+function getCatalogStatusWeight(status: DanSystemDefinition["status"]) {
+  if (status === "current") {
+    return 0;
+  }
+
+  if (status === "legacy") {
+    return 1;
+  }
+
+  return 2;
 }
 
 function normalizeTotalObjects(value: unknown): number | null {

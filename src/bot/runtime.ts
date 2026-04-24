@@ -12,8 +12,7 @@ import {
 } from "bancho.js";
 import { getDatabase, type AppDatabase } from "@/db/client";
 import {
-  getCourseByNameKey,
-  getDraftCourseByNameKey,
+  getDanSystemDetailByNameKey,
   storeCourseRunResult,
 } from "@/db/queries";
 import { DOJO_USAGE_LINE, parseDojoCommand } from "@/bot/command";
@@ -31,7 +30,8 @@ import { totalHitObjects } from "@/lib/accuracy";
 import { judgeCourseRun, judgeThreshold } from "@/lib/judging";
 import { parseCourseMods, validateCourseMods } from "@/lib/mods";
 import { formatConditionValue, kebabizeName } from "@/lib/format";
-import type { CourseDefinition, JudgedMapResult } from "@/lib/domain";
+import { systemCapabilities } from "@/lib/domain";
+import type { CourseDefinition, DanSystemDefinition, JudgedMapResult } from "@/lib/domain";
 import { sleep as defaultSleep } from "@/lib/sleep";
 
 if (existsSync(".env")) {
@@ -117,6 +117,7 @@ type ActiveRunStatus =
 
 interface ActiveRun {
   runId: string;
+  system: DanSystemDefinition;
   course: CourseDefinition;
   playerUserId: number;
   playerUsername: string;
@@ -503,7 +504,6 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
 
       await handleStartCommand(message.user, playerIdentity, previousStart, {
         rememberStart: false,
-        draft: false,
       });
       return;
     }
@@ -511,15 +511,6 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
     if (command.type === "start") {
       await handleStartCommand(message.user, playerIdentity, command, {
         rememberStart: true,
-        draft: false,
-      });
-      return;
-    }
-
-    if (command.type === "draft") {
-      await handleStartCommand(message.user, playerIdentity, command, {
-        rememberStart: false,
-        draft: true,
       });
       return;
     }
@@ -532,7 +523,7 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
     user: BotUserLike,
     playerIdentity: PlayerIdentity,
     command: PreviousStartCommand,
-    optionsForStart: { rememberStart: boolean; draft: boolean },
+    optionsForStart: { rememberStart: boolean },
   ) {
     const database = await getDb();
     logger.info("dojo command received", {
@@ -553,17 +544,15 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
       return;
     }
 
-    const course = optionsForStart.draft
-      ? await getDraftCourseByNameKey(
-          command.systemNameKey,
-          command.courseNameKey,
-          database,
-        )
-      : await getCourseByNameKey(
-          command.systemNameKey,
-          command.courseNameKey,
-          database,
-        );
+    const systemDetail = await getDanSystemDetailByNameKey(
+      command.systemNameKey,
+      database,
+    );
+    const normalizedCourseNameKey = kebabizeName(command.courseNameKey);
+    const course =
+      systemDetail?.courses.find(
+        (candidate) => kebabizeName(candidate.name) === normalizedCourseNameKey,
+      ) ?? null;
     if (!course) {
       logger.warn("dojo unknown route", {
         systemNameKey: command.systemNameKey,
@@ -573,9 +562,16 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
       });
       await safeSendUserMessage(
         user,
-        optionsForStart.draft
-          ? `Unknown draft course "${command.systemNameKey} ${command.courseNameKey}".`
-          : `Unknown course "${command.systemNameKey} ${command.courseNameKey}".`,
+        `Unknown course "${command.systemNameKey} ${command.courseNameKey}".`,
+      );
+      return;
+    }
+    const system = systemDetail!.system;
+    const capabilities = systemCapabilities(system.status);
+    if (!capabilities.playable) {
+      await safeSendUserMessage(
+        user,
+        `Unknown course "${command.systemNameKey} ${command.courseNameKey}".`,
       );
       return;
     }
@@ -617,6 +613,7 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
 
     const run: ActiveRun = {
       runId: randomUUID(),
+      system,
       course,
       playerUserId: playerIdentity.userId,
       playerUsername: playerIdentity.username,
@@ -652,23 +649,20 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
     };
 
     try {
-      const lobbyTitle = getLobbyTitle(course);
-      if (course.status === "draft") {
+      const lobbyTitle = getLobbyTitle(system, course);
+      if (!capabilities.persistRuns) {
         await safeSendUserMessage(
           user,
-          `Creating draft playtest room ${lobbyTitle}. Results will not be saved. Watch for an invite from BanchoBot.`,
+          `Creating multiplayer room ${lobbyTitle}. Results will not be saved. Watch for an invite from BanchoBot.`,
         );
       } else {
         await safeSendUserMessage(
           user,
-          `Creating multiplayer room ${lobbyTitle}. Download the maps before joining: ${getCoursePageUrl(course)}. Watch for an invite from BanchoBot.`,
+          `Creating multiplayer room ${lobbyTitle}. Download the maps before joining: ${getCoursePageUrl(system, course)}. Watch for an invite from BanchoBot.`,
         );
       }
 
-      const lobbyChannel = await client.createLobby(
-        lobbyTitle,
-        course.status === "draft" ? true : undefined,
-      );
+      const lobbyChannel = await client.createLobby(lobbyTitle);
       run.lobby = lobbyChannel.lobby;
       await checkAborted();
       activeRunsByLobbyId.set(run.lobby.id, run);
@@ -1398,8 +1392,8 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
     if (plan.skipWhenNoMaps && run.mapResults.length === 0) {
       return;
     }
-    if (run.course.status === "draft") {
-      logger.info("dojo draft run completed without persistence", getRunLogFields(run));
+    if (!systemCapabilities(run.system.status).persistRuns) {
+      logger.info("dojo run completed without persistence", getRunLogFields(run));
       return;
     }
 
@@ -1639,16 +1633,15 @@ function requiredEnv(name: string) {
   return value;
 }
 
-function getCoursePageUrl(course: CourseDefinition) {
+function getCoursePageUrl(system: DanSystemDefinition, course: CourseDefinition) {
   const baseUrl = (process.env.DOJO_SITE_URL ?? "http://localhost:3000").replace(/\/$/, "");
   return `${baseUrl}/dan/${encodeURIComponent(
-    kebabizeName(course.danSystemName),
+    kebabizeName(system.name),
   )}?course=${encodeURIComponent(kebabizeName(course.name))}`;
 }
 
-function getLobbyTitle(course: CourseDefinition) {
-  const prefix = course.status === "draft" ? "[DRAFT] " : "";
-  return `${prefix}osu!dojo: ${course.danSystemName} / ${course.name}`;
+function getLobbyTitle(system: DanSystemDefinition, course: CourseDefinition) {
+  return `osu!dojo: ${system.name} / ${course.name}`;
 }
 
 function loadEnvFallback(filePath: string) {

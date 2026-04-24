@@ -6,14 +6,13 @@ import { loadCoursesFromDir, type DanSystemSeed } from "@/db/courseLoader";
 import {
   beatmapMetadata,
   beatmaps,
-  courseAliases,
   courses,
   danSystems,
   mapResults,
   runs,
 } from "@/db/schema";
 import type { BeatmapMetadata, BeatmapResolutionResult } from "@/lib/beatmapMetadata";
-import type { CourseStatus } from "@/lib/domain";
+import { systemCapabilities, type DanSystemStatus } from "@/lib/domain";
 import { kebabizeName } from "@/lib/format";
 import { sleep } from "@/lib/sleep";
 
@@ -50,16 +49,15 @@ export async function seedDatabase(
     const existingSystem = await db.query.danSystems.findFirst({
       where: eq(danSystems.id, system.id),
     });
-    if (
-      existingSystem &&
-      kebabizeName(existingSystem.name) !== kebabizeName(system.name)
-    ) {
-      throw new Error(
-        `System "${system.id}" changed public name key from "${kebabizeName(
-          existingSystem.name,
-        )}" to "${kebabizeName(system.name)}". System name-key changes are not allowed.`,
-      );
-    }
+    const existingSystemCourses = existingSystem
+      ? await db.select().from(courses).where(eq(courses.danSystemId, system.id))
+      : [];
+    await assertAllowedSystemChange(
+      db,
+      existingSystem,
+      existingSystemCourses,
+      system,
+    );
 
     await db
       .insert(danSystems)
@@ -68,6 +66,7 @@ export async function seedDatabase(
         name: system.name,
         slug: system.slug,
         description: system.description,
+        status: system.status,
       })
       .onConflictDoUpdate({
         target: danSystems.id,
@@ -75,6 +74,7 @@ export async function seedDatabase(
           name: system.name,
           slug: system.slug,
           description: system.description,
+          status: system.status,
         },
       });
 
@@ -97,30 +97,7 @@ export async function seedDatabase(
         if (existingCourse.danSystemId !== system.id) {
           throw new Error(`Course "${course.id}" cannot move between dan systems.`);
         }
-        if (existingCourse.slug !== course.slug) {
-          throw new Error(`Course "${course.id}" cannot change slug after creation.`);
-        }
-        const oldNameKey = kebabizeName(existingCourse.name);
-        const newNameKey = kebabizeName(course.name);
-        if (oldNameKey !== newNameKey && !course.aliases.includes(oldNameKey)) {
-          throw new Error(
-            `Course "${course.id}" changed public name key from "${oldNameKey}" to "${newNameKey}" without an alias for the old key.`,
-          );
-        }
       }
-
-      const existingBeatmaps = await db
-        .select({
-          id: beatmaps.id,
-          beatmapId: beatmaps.beatmapId,
-          mods: beatmaps.mods,
-          passConditionType: beatmaps.passConditionType,
-          passConditionThreshold: beatmaps.passConditionThreshold,
-          ordinal: beatmaps.ordinal,
-        })
-        .from(beatmaps)
-        .where(eq(beatmaps.courseId, course.id));
-      assertAllowedCourseChange(existingCourse, existingBeatmaps, course);
 
       await db
         .insert(courses)
@@ -136,19 +113,19 @@ export async function seedDatabase(
           scoreModel: course.scoreModel,
           overallPassType: course.overallPassType,
           overallPassThreshold: course.overallPassThreshold,
-          status: course.status,
-          publishedAt: getPublishedAt(existingCourse, course.status),
           updatedAt: Date.now(),
         })
         .onConflictDoUpdate({
           target: courses.id,
           set: {
             name: course.name,
+            slug: course.slug,
             description: course.description,
             tags: JSON.stringify(course.tags),
-            ...getMutableCourseFields(existingCourse, course),
-            status: course.status,
-            publishedAt: getPublishedAt(existingCourse, course.status),
+            ordinal: course.ordinal,
+            scoreModel: course.scoreModel,
+            overallPassType: course.overallPassType,
+            overallPassThreshold: course.overallPassThreshold,
             updatedAt: Date.now(),
           },
         });
@@ -208,20 +185,9 @@ export async function seedDatabase(
           });
       }
 
-      if (!existingCourse || existingCourse.status === "draft") {
+      if (!existingSystem || !systemCapabilities(existingSystem.status).frozen) {
         await db.delete(beatmaps).where(eq(beatmaps.courseId, course.id));
         await db.insert(beatmaps).values(beatmapValues);
-      }
-    }
-
-    await db.delete(courseAliases).where(eq(courseAliases.danSystemId, system.id));
-    for (const course of system.courses) {
-      for (const aliasKey of course.aliases) {
-        await db.insert(courseAliases).values({
-          danSystemId: system.id,
-          aliasKey,
-          courseId: course.id,
-        });
       }
     }
   }
@@ -252,75 +218,101 @@ export async function clearAllData(
 ) {
   await db.delete(mapResults);
   await db.delete(runs);
-  await db.delete(courseAliases);
   await db.delete(beatmaps);
   await db.delete(beatmapMetadata);
   await db.delete(courses);
   await db.delete(danSystems);
 }
 
-function getPublishedAt(
-  existingCourse: typeof courses.$inferSelect | undefined,
-  nextStatus: CourseStatus,
+async function assertAllowedSystemChange(
+  db: SeedDatabase,
+  existingSystem: typeof danSystems.$inferSelect | undefined,
+  existingCourses: Array<typeof courses.$inferSelect>,
+  system: DanSystemSeed,
 ) {
-  if (nextStatus !== "published") {
-    return existingCourse?.publishedAt ?? null;
-  }
-
-  return existingCourse?.publishedAt ?? Date.now();
-}
-
-function getMutableCourseFields(
-  existingCourse: typeof courses.$inferSelect | undefined,
-  course: DanSystemSeed["courses"][number],
-) {
-  if (existingCourse && existingCourse.status !== "draft") {
-    return {};
-  }
-
-  return {
-    ordinal: course.ordinal,
-    scoreModel: course.scoreModel,
-    overallPassType: course.overallPassType,
-    overallPassThreshold: course.overallPassThreshold,
-  };
-}
-
-function assertAllowedCourseChange(
-  existingCourse: typeof courses.$inferSelect | undefined,
-  existingBeatmaps: Array<{
-    id: string;
-    beatmapId: number;
-    mods: string;
-    passConditionType: DanSystemSeed["courses"][number]["beatmaps"][number]["passConditionType"];
-    passConditionThreshold: number;
-    ordinal: number;
-  }>,
-  course: DanSystemSeed["courses"][number],
-) {
-  if (!existingCourse) {
+  if (!existingSystem) {
     return;
   }
 
-  if (
-    (existingCourse.status === "published" || existingCourse.status === "archived") &&
-    course.status === "draft"
-  ) {
+  assertAllowedStatusTransition(existingSystem.status, system.status, system.id);
+
+  const oldSystemKey = kebabizeName(existingSystem.name);
+  const newSystemKey = kebabizeName(system.name);
+  const isRolloverRename =
+    existingSystem.status === "current" && system.status === "legacy";
+  if (oldSystemKey !== newSystemKey && !isRolloverRename) {
     throw new Error(
-      `Course "${course.id}" cannot move from ${existingCourse.status} back to draft.`,
+      `System "${system.id}" changed public name key from "${oldSystemKey}" to "${newSystemKey}". System name-key changes are only allowed during current to legacy rollover.`,
     );
   }
 
-  if (existingCourse.status === "draft") {
+  if (!systemCapabilities(existingSystem.status).frozen) {
     return;
   }
 
-  const changedFields = getGameplayChangedFields(existingCourse, existingBeatmaps, course);
-  if (changedFields.length > 0) {
+  const existingCourseIds = new Set(existingCourses.map((course) => course.id));
+  const incomingCourseIds = new Set(system.courses.map((course) => course.id));
+  if (!setsEqual(existingCourseIds, incomingCourseIds)) {
     throw new Error(
-      `Course "${course.id}" is ${existingCourse.status}; gameplay fields are immutable after publish. Changed: ${changedFields.join(
-        ", ",
-      )}. Create a new course for gameplay changes.`,
+      `System "${system.id}" is ${existingSystem.status}; course add/remove is immutable after publish.`,
+    );
+  }
+
+  const existingCoursesById = new Map(
+    existingCourses.map((course) => [course.id, course]),
+  );
+  for (const course of system.courses) {
+    const existingCourse = existingCoursesById.get(course.id);
+    if (!existingCourse) {
+      continue;
+    }
+
+    const existingBeatmaps = await db
+      .select({
+        id: beatmaps.id,
+        beatmapId: beatmaps.beatmapId,
+        mods: beatmaps.mods,
+        passConditionType: beatmaps.passConditionType,
+        passConditionThreshold: beatmaps.passConditionThreshold,
+        ordinal: beatmaps.ordinal,
+      })
+      .from(beatmaps)
+      .where(eq(beatmaps.courseId, course.id));
+    const changedFields = getGameplayChangedFields(
+      existingCourse,
+      existingBeatmaps,
+      course,
+    );
+    if (changedFields.length > 0) {
+      throw new Error(
+        `System "${system.id}" is ${existingSystem.status}; course "${course.id}" has immutable gameplay changes: ${changedFields.join(
+          ", ",
+        )}. Create a new system version for gameplay changes.`,
+      );
+    }
+  }
+}
+
+function assertAllowedStatusTransition(
+  existingStatus: DanSystemStatus,
+  incomingStatus: DanSystemStatus,
+  systemId: string,
+) {
+  if (existingStatus === incomingStatus) {
+    return;
+  }
+
+  const allowed =
+    (existingStatus === "draft" &&
+      (incomingStatus === "current" || incomingStatus === "archived")) ||
+    (existingStatus === "current" &&
+      (incomingStatus === "legacy" || incomingStatus === "archived")) ||
+    (existingStatus === "legacy" &&
+      (incomingStatus === "current" || incomingStatus === "archived"));
+
+  if (!allowed) {
+    throw new Error(
+      `System "${systemId}" cannot transition from ${existingStatus} to ${incomingStatus}.`,
     );
   }
 }
@@ -341,6 +333,12 @@ function getGameplayChangedFields(
 
   if (existingCourse.ordinal !== course.ordinal) {
     changedFields.push("ordinal");
+  }
+  if (existingCourse.slug !== course.slug) {
+    changedFields.push("slug");
+  }
+  if (kebabizeName(existingCourse.name) !== kebabizeName(course.name)) {
+    changedFields.push("nameKey");
   }
   if (existingCourse.scoreModel !== course.scoreModel) {
     changedFields.push("scoreModel");
@@ -378,6 +376,20 @@ function getGameplayChangedFields(
   }
 
   return changedFields;
+}
+
+function setsEqual<T>(left: Set<T>, right: Set<T>) {
+  if (left.size !== right.size) {
+    return false;
+  }
+
+  for (const value of left) {
+    if (!right.has(value)) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 function compareBeatmapSignatures(

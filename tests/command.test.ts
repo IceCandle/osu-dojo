@@ -15,19 +15,6 @@ test("parseDojoCommand parses valid start commands", () => {
   });
 });
 
-test("parseDojoCommand parses valid draft commands", () => {
-  assert.deepEqual(parseDojoCommand("!dojo draft test 1st"), {
-    type: "draft",
-    systemNameKey: "test",
-    courseNameKey: "1st",
-  });
-  assert.deepEqual(parseDojoCommand("  !Dojo   Draft   FOO   bar  "), {
-    type: "draft",
-    systemNameKey: "foo",
-    courseNameKey: "bar",
-  });
-});
-
 test("parseDojoCommand parses help, previous, and skip commands", () => {
   assert.deepEqual(parseDojoCommand("!dojo help"), { type: "help" });
   assert.deepEqual(parseDojoCommand("!DOJO HELP  "), { type: "help" });
@@ -45,6 +32,7 @@ test("parseDojoCommand marks malformed dojo commands invalid", () => {
   assert.deepEqual(parseDojoCommand("!dojo unknownsub"), { type: "invalid" });
   assert.deepEqual(parseDojoCommand("!dojo start ABC! xyz"), { type: "invalid" });
   assert.deepEqual(parseDojoCommand("!dojo cancel"), { type: "invalid" });
+  assert.deepEqual(parseDojoCommand(`!dojo ${"draft"} test 1st`), { type: "invalid" });
   assert.deepEqual(parseDojoCommand("!dojo abort"), { type: "invalid" });
   assert.deepEqual(parseDojoCommand("!dojo abort now"), { type: "invalid" });
   assert.deepEqual(parseDojoCommand("!dojo skip map"), { type: "invalid" });
@@ -59,9 +47,9 @@ test("parseDojoCommand ignores messages outside the dojo command boundary", () =
 
 test("DOJO_USAGE_LINE mentions every supported command", () => {
   assert.match(DOJO_USAGE_LINE, /!dojo start <system-name> <course-name>/);
-  assert.match(DOJO_USAGE_LINE, /!dojo draft <system-name> <course-name>/);
   assert.match(DOJO_USAGE_LINE, /!dojo prev/);
   assert.match(DOJO_USAGE_LINE, /!dojo skip/);
   assert.match(DOJO_USAGE_LINE, /!dojo help/);
   assert.doesNotMatch(DOJO_USAGE_LINE, /!dojo abort/);
+  assert.doesNotMatch(DOJO_USAGE_LINE, new RegExp(`!dojo ${"draft"}`));
 });

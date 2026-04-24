@@ -1,6 +1,6 @@
 import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
-import type { CourseStatus, DanScoreModel, PassConditionType } from "@/lib/domain";
+import type { DanScoreModel, DanSystemStatus, PassConditionType } from "@/lib/domain";
 import { kebabizeName } from "@/lib/format";
 import { validateCourseMods } from "@/lib/mods";
 
@@ -28,8 +28,6 @@ interface CourseSeed {
   description: string;
   tags: string[];
   ordinal: number;
-  status: CourseStatus;
-  aliases: string[];
   scoreModel: DanScoreModel;
   overallPassType: PassConditionType | null;
   overallPassThreshold: number | null;
@@ -41,6 +39,7 @@ export interface DanSystemSeed {
   name: string;
   slug: string;
   description: string;
+  status: DanSystemStatus;
   courses: CourseSeed[];
 }
 
@@ -77,6 +76,7 @@ function parseDanSystem(value: unknown, source: string): DanSystemSeed {
     name: expectDisplayName(record.name, "name", source),
     slug: expectString(record.slug, "slug", source),
     description: expectString(record.description, "description", source),
+    status: expectDanSystemStatus(record.status, "status", source),
     courses: expectArray(record.courses, "courses", source).map((course, index) =>
       parseCourse(course, `${source} courses[${index}]`),
     ),
@@ -93,8 +93,6 @@ function parseCourse(value: unknown, source: string): CourseSeed {
     description: expectString(record.description, "description", source),
     tags: optionalStringArray(record.tags, "tags", source, []),
     ordinal: expectInteger(record.ordinal, "ordinal", source),
-    status: expectCourseStatus(record.status, "status", source),
-    aliases: optionalAliasArray(record.aliases, "aliases", source),
     scoreModel: expectScoreModel(record.scoreModel, "scoreModel", source),
     overallPassType: expectPassConditionTypeOrNull(
       record.overallPassType,
@@ -213,24 +211,6 @@ function optionalStringArray(
   return expectStringArray(value, field, source);
 }
 
-function optionalAliasArray(value: unknown, field: string, source: string): string[] {
-  return optionalStringArray(value, field, source, []).map((alias) =>
-    expectAliasKey(alias, field, source),
-  );
-}
-
-function expectAliasKey(value: string, field: string, source: string): string {
-  const aliasKey = value.trim().toLowerCase();
-
-  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(aliasKey)) {
-    throw new Error(
-      `${source} field "${field}" entries must be public name keys like "first-dan".`,
-    );
-  }
-
-  return aliasKey;
-}
-
 function expectNumber(value: unknown, field: string, source: string): number {
   if (typeof value !== "number" || Number.isNaN(value)) {
     throw new Error(`${source} field "${field}" must be a number.`);
@@ -301,21 +281,26 @@ function expectScoreModel(
   );
 }
 
-function expectCourseStatus(
+function expectDanSystemStatus(
   value: unknown,
   field: string,
   source: string,
-): CourseStatus {
+): DanSystemStatus {
   if (value === undefined) {
-    return "published";
+    return "current";
   }
 
-  if (value === "draft" || value === "published" || value === "archived") {
+  if (
+    value === "draft" ||
+    value === "current" ||
+    value === "legacy" ||
+    value === "archived"
+  ) {
     return value;
   }
 
   throw new Error(
-    `${source} field "${field}" must be "draft", "published", or "archived".`,
+    `${source} field "${field}" must be "draft", "current", "legacy", or "archived".`,
   );
 }
 
@@ -333,8 +318,6 @@ function assertUniqueNameKeys(systems: DanSystemSeed[]) {
     systemKeys.set(systemNameKey, system.name);
 
     const courseKeys = new Map<string, string>();
-    const nonArchivedCourseKeys = new Map<string, string>();
-    const aliasKeys = new Map<string, string>();
     for (const course of system.courses) {
       const courseNameKey = kebabizeName(course.name);
       const existingCourseName = courseKeys.get(courseNameKey);
@@ -344,28 +327,6 @@ function assertUniqueNameKeys(systems: DanSystemSeed[]) {
         );
       }
       courseKeys.set(courseNameKey, course.name);
-      if (course.status !== "archived") {
-        nonArchivedCourseKeys.set(courseNameKey, course.name);
-      }
-
-      for (const aliasKey of course.aliases) {
-        const existingAliasName = aliasKeys.get(aliasKey);
-        if (existingAliasName) {
-          throw new Error(
-            `Duplicate course alias key "${aliasKey}" in system "${system.name}" from "${existingAliasName}" and "${course.name}".`,
-          );
-        }
-        aliasKeys.set(aliasKey, course.name);
-      }
-    }
-
-    for (const [aliasKey, courseName] of aliasKeys) {
-      const existingCourseName = nonArchivedCourseKeys.get(aliasKey);
-      if (existingCourseName) {
-        throw new Error(
-          `Course alias key "${aliasKey}" in system "${system.name}" from "${courseName}" collides with course "${existingCourseName}".`,
-        );
-      }
     }
   }
 }

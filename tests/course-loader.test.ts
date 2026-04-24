@@ -435,24 +435,24 @@ test("course loader rejects duplicate display name keys", () => {
   }
 });
 
-test("course loader validates alias collisions against non-archived course names", () => {
+test("course loader reads system status and defaults to current", () => {
   const temp = createTempDirectory();
 
   try {
     writeFileSync(
-      path.join(temp.directory, "aliases.json"),
+      path.join(temp.directory, "draft.json"),
       JSON.stringify({
-        id: "system-aliases",
-        name: "aliases",
-        slug: "aliases",
-        description: "aliases",
+        id: "system-draft",
+        name: "draft system",
+        slug: "draft-system",
+        description: "draft",
+        status: "draft",
         courses: [
           {
-            id: "course-old",
-            name: "old",
-            slug: "old",
-            description: "old",
-            status: "archived",
+            id: "course-draft",
+            name: "draft",
+            slug: "draft",
+            description: "draft",
             ordinal: 1,
             scoreModel: "scorev2",
             overallPassType: "acc",
@@ -469,19 +469,29 @@ test("course loader validates alias collisions against non-archived course names
               },
             ],
           },
+        ],
+      }),
+    );
+    writeFileSync(
+      path.join(temp.directory, "current.json"),
+      JSON.stringify({
+        id: "system-current",
+        name: "current system",
+        slug: "current-system",
+        description: "current",
+        courses: [
           {
-            id: "course-new",
-            name: "new",
-            slug: "new",
-            description: "new",
-            aliases: ["old"],
-            ordinal: 2,
+            id: "course-current",
+            name: "current",
+            slug: "current",
+            description: "current",
+            ordinal: 1,
             scoreModel: "scorev2",
             overallPassType: "acc",
             overallPassThreshold: 95,
             beatmaps: [
               {
-                id: "beatmap-new",
+                id: "beatmap-current",
                 beatmapId: 2,
                 mods: "",
                 passConditionType: "acc",
@@ -496,7 +506,64 @@ test("course loader validates alias collisions against non-archived course names
     );
 
     const systems = loadCoursesFromDir(temp.directory);
-    assert.deepEqual(systems[0]?.courses[1]?.aliases, ["old"]);
+    assert.equal(systems.find((system) => system.id === "system-draft")?.status, "draft");
+    assert.equal(
+      systems.find((system) => system.id === "system-current")?.status,
+      "current",
+    );
+    assert.equal("status" in systems[0]!.courses[0]!, false);
+  } finally {
+    temp.cleanup();
+  }
+});
+
+test("course loader rejects duplicate system keys regardless of status", () => {
+  const temp = createTempDirectory();
+
+  try {
+    const system = (id: string, status: string) => ({
+      id,
+      name: "duplicate",
+      slug: id,
+      description: id,
+      status,
+      courses: [
+        {
+          id: `${id}-course`,
+          name: id.replace(/-/g, " "),
+          slug: `${id}-course`,
+          description: id,
+          ordinal: 1,
+          scoreModel: "scorev2",
+          overallPassType: "acc",
+          overallPassThreshold: 95,
+          beatmaps: [
+            {
+              id: `${id}-beatmap`,
+              beatmapId: 1,
+              mods: "",
+              passConditionType: "acc",
+              passConditionThreshold: 95,
+              ordinal: 1,
+              annotations: ["x"],
+            },
+          ],
+        },
+      ],
+    });
+    writeFileSync(
+      path.join(temp.directory, "current.json"),
+      JSON.stringify(system("system-current", "current")),
+    );
+    writeFileSync(
+      path.join(temp.directory, "legacy.json"),
+      JSON.stringify(system("system-legacy", "legacy")),
+    );
+
+    assert.throws(
+      () => loadCoursesFromDir(temp.directory),
+      /Duplicate system display name key "duplicate"/,
+    );
   } finally {
     temp.cleanup();
   }

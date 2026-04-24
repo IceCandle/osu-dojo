@@ -39,6 +39,9 @@
    pnpm dev
    ```
 
+   If you pulled the system-lifecycle schema change over an older local checkout,
+   delete `dojo.db` first and let `pnpm dev` reseed it.
+
 5. Check routes.
 
    - `http://localhost:3000/`

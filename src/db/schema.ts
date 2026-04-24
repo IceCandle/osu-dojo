@@ -1,12 +1,13 @@
 import { sql } from "drizzle-orm";
 import { index, integer, real, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
-import type { CourseStatus, DanScoreModel, PassConditionType } from "@/lib/domain";
+import type { DanScoreModel, DanSystemStatus, PassConditionType } from "@/lib/domain";
 
 export const danSystems = sqliteTable("dan_systems", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
   slug: text("slug").notNull().unique(),
   description: text("description").notNull(),
+  status: text("status").$type<DanSystemStatus>().notNull().default("current"),
 });
 
 export const courses = sqliteTable(
@@ -25,8 +26,6 @@ export const courses = sqliteTable(
     scoreModel: text("score_model").$type<DanScoreModel>().notNull(),
     overallPassType: text("overall_pass_type").$type<PassConditionType | null>(),
     overallPassThreshold: real("overall_pass_threshold"),
-    status: text("status").$type<CourseStatus>().notNull().default("published"),
-    publishedAt: integer("published_at"),
     createdAt: integer("created_at")
       .notNull()
       .default(sql`(unixepoch() * 1000)`),
@@ -90,25 +89,6 @@ export const runs = sqliteTable(
   },
   (table) => [
     index("runs_course_completed_idx").on(table.courseId, table.completedAt),
-  ],
-);
-
-export const courseAliases = sqliteTable(
-  "course_aliases",
-  {
-    danSystemId: text("dan_system_id")
-      .notNull()
-      .references(() => danSystems.id),
-    aliasKey: text("alias_key").notNull(),
-    courseId: text("course_id")
-      .notNull()
-      .references(() => courses.id),
-  },
-  (table) => [
-    uniqueIndex("course_aliases_system_alias_unique").on(
-      table.danSystemId,
-      table.aliasKey,
-    ),
   ],
 );
 

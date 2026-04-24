@@ -2,6 +2,7 @@ import React from "react";
 import Link from "next/link";
 import { listDanSystemsWithCourses } from "@/db/queries";
 import { kebabizeName } from "@/lib/format";
+import { systemCapabilities } from "@/lib/domain";
 
 export const dynamic = "force-dynamic";
 
@@ -36,7 +37,14 @@ export default async function DanSystemsPage() {
           >
             <article className="system-card system-card-index">
               <div className="system-heading">
-                <h2>{system.name}</h2>
+                <div className="system-title-row">
+                  <h2>{system.name}</h2>
+                  {systemCapabilities(system.status).badge ? (
+                    <span className="system-status-pill">
+                      {systemCapabilities(system.status).badge}
+                    </span>
+                  ) : null}
+                </div>
                 <p className="system-card-description">{system.description}</p>
               </div>
 

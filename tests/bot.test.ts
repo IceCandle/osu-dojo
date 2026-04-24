@@ -659,8 +659,8 @@ test("bot playtests draft courses without storing results", async () => {
     const { db } = await createTestDatabase(temp.url);
     const seededBeatmapIds = await getSeededBeatmapIds(db);
     db.$client
-      .prepare("UPDATE courses SET status = 'draft', published_at = NULL WHERE slug = ?")
-      .run(SEEDED_COURSE_SLUG);
+      .prepare("UPDATE dan_systems SET status = 'draft' WHERE slug = ?")
+      .run(SEEDED_SYSTEM_NAME_KEY);
 
     const client = new FakeClient();
     const user = new FakeUser(42, "PlayerOne");
@@ -689,20 +689,11 @@ test("bot playtests draft courses without storing results", async () => {
     });
 
     await bot.handlePrivateMessage(createSeededStartMessage(user));
-    assert.match(user.messages.at(-1) ?? "", /Unknown course/i);
-    assert.equal(client.createLobbyCalls.length, 0);
 
-    await bot.handlePrivateMessage(
-      createPrivateMessage(
-        user,
-        `!dojo draft ${SEEDED_SYSTEM_NAME_KEY} ${SEEDED_COURSE_NAME_KEY}`,
-      ),
-    );
-
-    assert.equal(client.createLobbyCalls[0]?.privateLobby, true);
-    assert.match(client.createLobbyCalls[0]?.name ?? "", /^\[DRAFT\] osu!dojo/);
+    assert.equal(client.createLobbyCalls[0]?.privateLobby, undefined);
+    assert.match(client.createLobbyCalls[0]?.name ?? "", /^osu!dojo/);
     assert.deepEqual(client.lobby.invites, ["#42"]);
-    assert.match(user.messages[1] ?? "", /Results will not be saved/i);
+    assert.match(user.messages[0] ?? "", /Results will not be saved/i);
 
     client.lobby.emit("playerJoined", {
       player: client.lobby.registerPlayer(user),
@@ -723,7 +714,7 @@ test("bot playtests draft courses without storing results", async () => {
       SEEDED_COURSE_NAME_KEY,
       db,
     );
-    assert.equal(results, null);
+    assert.equal(results?.runs.length, 0);
     const runCount = db.$client.prepare("SELECT COUNT(*) AS count FROM runs").get() as {
       count: number;
     };

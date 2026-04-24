@@ -3,6 +3,7 @@
   "name": "test",
   "slug": "test",
   "description": "Sample dan system for the MVP.",
+  "status": "draft",
   "courses": [
     {
       "id": "course-test-1dan",
