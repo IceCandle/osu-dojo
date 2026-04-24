@@ -665,3 +665,50 @@ test("DanCoursePage renders the integrated leaderboard and empty state on the sy
     temp.cleanup();
   }
 });
+
+test("DanCoursePage renders an empty state for systems with no courses", async () => {
+  const temp = createTempDatabaseUrl();
+  const previousDatabaseUrl = process.env.DATABASE_URL;
+  const previousBundle = globalThis.__osuDojoDatabaseBundle;
+
+  try {
+    const databaseBundle = await createTestDatabase(temp.url);
+    const { db } = databaseBundle;
+    const systems = cloneCourseSystems(
+      loadCoursesFromDir(path.join(process.cwd(), "data/courses")),
+    );
+
+    systems.push({
+      id: "system-empty",
+      name: "empty",
+      slug: "empty",
+      description: "A system shell with no courses yet.",
+      status: "current",
+      courses: [],
+    });
+
+    await clearAllData(db);
+    await seedDatabase(db, systems, { suppressMissingObjectCountWarnings: true });
+
+    process.env.DATABASE_URL = temp.url;
+    globalThis.__osuDojoDatabaseBundle = databaseBundle;
+
+    const html = renderToStaticMarkup(
+      await DanCoursePage({
+        params: Promise.resolve({
+          systemNameKey: "empty",
+        }),
+      }),
+    );
+
+    assert.match(html, /empty/);
+    assert.match(html, /No courses available/);
+    assert.match(html, /does not have any playable courses yet/);
+    assert.doesNotMatch(html, /Course sequence/);
+    assert.doesNotMatch(html, /Top runs/);
+  } finally {
+    process.env.DATABASE_URL = previousDatabaseUrl;
+    globalThis.__osuDojoDatabaseBundle = previousBundle;
+    temp.cleanup();
+  }
+});

@@ -131,6 +131,27 @@ export async function getDanSystemDetailByNameKey(
   db?: AppDatabase,
 ): Promise<{ system: DanSystemDefinition; courses: CourseDefinition[] } | null> {
   const database = await useDb(db);
+  const systemRows = await database
+    .select({
+      id: danSystems.id,
+      name: danSystems.name,
+      slug: danSystems.slug,
+      description: danSystems.description,
+      status: danSystems.status,
+    })
+    .from(danSystems)
+    .where(inArray(danSystems.status, playableSystemStatuses()))
+    .orderBy(asc(danSystems.name));
+
+  const normalizedSystemNameKey = kebabizeName(systemNameKey);
+  const system = systemRows.find(
+    (row) => kebabizeName(row.name) === normalizedSystemNameKey,
+  );
+
+  if (!system) {
+    return null;
+  }
+
   const rows = await database
     .select({
       courseId: courses.id,
@@ -150,28 +171,18 @@ export async function getDanSystemDetailByNameKey(
     })
     .from(courses)
     .innerJoin(danSystems, eq(courses.danSystemId, danSystems.id))
-    .where(inArray(danSystems.status, playableSystemStatuses()))
+    .where(eq(courses.danSystemId, system.id))
     .orderBy(asc(danSystems.name), asc(courses.ordinal));
 
-  const normalizedSystemNameKey = kebabizeName(systemNameKey);
-  const matchingRows = rows.filter(
-    (row) => kebabizeName(row.danSystemName) === normalizedSystemNameKey,
-  );
-
-  if (matchingRows.length === 0) {
-    return null;
-  }
-
-  const firstRow = matchingRows[0]!;
   return {
     system: {
-      id: firstRow.danSystemId,
-      name: firstRow.danSystemName,
-      slug: firstRow.danSystemSlug,
-      description: firstRow.danSystemDescription,
-      status: firstRow.danSystemStatus,
+      id: system.id,
+      name: system.name,
+      slug: system.slug,
+      description: system.description,
+      status: system.status,
     },
-    courses: await hydrateCourseRows(matchingRows, database),
+    courses: await hydrateCourseRows(rows, database),
   };
 }
 
@@ -196,6 +207,10 @@ async function hydrateCourseRows(
   rows: CourseRow[],
   database: AppDatabase,
 ): Promise<CourseDefinition[]> {
+  if (rows.length === 0) {
+    return [];
+  }
+
   const beatmapRows = await database
     .select({
       courseId: beatmaps.courseId,
