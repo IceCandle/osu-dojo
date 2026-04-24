@@ -38,8 +38,7 @@ async function seedRankingCourses(databaseUrl: string) {
       slug: "ranking-acc",
       description: "Accuracy-ranked test course for the integrated leaderboard.",
       scoreModel: "scorev1",
-      overallPassType: "acc",
-      overallPassThreshold: 95,
+      overallPassConditions: [{ type: "courseAccuracy", threshold: 95 }],
     }),
     cloneCourse(baseCourse, {
       id: "course-ranking-sv2",
@@ -47,8 +46,7 @@ async function seedRankingCourses(databaseUrl: string) {
       slug: "ranking-sv2",
       description: "Score-ranked test course for the integrated leaderboard.",
       scoreModel: "scorev2",
-      overallPassType: "score",
-      overallPassThreshold: 1_800_000,
+      overallPassConditions: [{ type: "totalScore", threshold: 1_800_000 }],
     }),
     cloneCourse(baseCourse, {
       id: "course-ranking-empty",
@@ -56,8 +54,7 @@ async function seedRankingCourses(databaseUrl: string) {
       slug: "ranking-empty",
       description: "Empty test course for the integrated leaderboard.",
       scoreModel: "scorev2",
-      overallPassType: "acc",
-      overallPassThreshold: 90,
+      overallPassConditions: [{ type: "courseAccuracy", threshold: 90 }],
     }),
   );
 
@@ -96,8 +93,7 @@ function cloneCourse(
     | "slug"
     | "description"
     | "scoreModel"
-    | "overallPassType"
-    | "overallPassThreshold"
+    | "overallPassConditions"
   >,
 ): DanSystemSeed["courses"][number] {
   return {
@@ -170,8 +166,7 @@ function buildMapResult(
     gameId: stats.gameId ?? beatmap.ordinal,
     beatmapId: beatmap.beatmapId,
     mods: beatmap.mods,
-    passConditionType: beatmap.passConditionType,
-    passConditionThreshold: beatmap.passConditionThreshold,
+    passConditions: beatmap.passConditions,
     ordinal: beatmap.ordinal,
     score: stats.score,
     accuracy: stats.accuracy,

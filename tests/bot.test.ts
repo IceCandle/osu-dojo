@@ -113,7 +113,7 @@ class FakeLobby extends EventEmitter implements LobbyLike {
     return player;
   }
 
-  setPlayerState(userId: number, state: symbol) {
+  setPlayerState(userId: number, state: symbol | Symbol) {
     const player = this.players.get(userId);
     if (!player) {
       throw new Error(`Fake player #${userId} is not registered.`);
@@ -1467,12 +1467,19 @@ test("bot halts the course immediately when a map fails", async () => {
       .prepare(
         `
         UPDATE beatmaps
-        SET pass_condition_type = ?, pass_condition_threshold = ?
+        SET pass_conditions = ?
         WHERE course_id = (SELECT id FROM courses WHERE slug = ?)
           AND ordinal = ?
         `,
       )
-      .run("acc", 99, SEEDED_COURSE_SLUG, 1);
+      .run(
+        JSON.stringify([
+          { type: "accuracy", threshold: 99 },
+          { type: "missCount", threshold: 0 },
+        ]),
+        SEEDED_COURSE_SLUG,
+        1,
+      );
 
     const client = new FakeClient();
     const user = new FakeUser(42, "PlayerOne");
@@ -1489,7 +1496,7 @@ test("bot halts the course immediately when a map fails", async () => {
         beatmapId: seededBeatmapIds[0] ?? 0,
         userId: 42,
         score: 0,
-        accuracy: 0,
+        accuracy: 100,
         maxCombo: 50,
         count300: 0,
         count100: 0,
@@ -1512,6 +1519,11 @@ test("bot halts the course immediately when a map fails", async () => {
 
     assert.equal(client.lobby.startHistory.length, 1);
     assert.match(latestMeaningfulLobbyMessage(client.lobby), /1st: FAIL/i);
+    assert.ok(
+      client.lobby.channelMessages.some((message) =>
+        /30 <= 0 required/.test(message),
+      ),
+    );
 
     const results = await listCourseRunsByNameKey(
       SEEDED_SYSTEM_NAME_KEY,

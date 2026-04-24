@@ -79,11 +79,8 @@ export default async function DanSystemPage({
   const command = `!dojo start ${systemNameKeyForLinks} ${kebabizeName(selectedCourse.name)}`;
   const topResults = ranking.results.slice(0, 10);
   const overallRequirement =
-    selectedCourse.overallPassType && selectedCourse.overallPassThreshold !== null
-      ? formatConditionCompact(
-          selectedCourse.overallPassType,
-          selectedCourse.overallPassThreshold,
-        )
+    selectedCourse.overallPassConditions.length > 0
+      ? selectedCourse.overallPassConditions.map(formatConditionCompact).join(" / ")
       : "Per-map pass only";
 
   return (
@@ -182,10 +179,7 @@ export default async function DanSystemPage({
 
                       <div className="course-beatmap-footer">
                         <p className="course-beatmap-condition">
-                          {formatConditionCompact(
-                            beatmap.passConditionType,
-                            beatmap.passConditionThreshold,
-                          )}
+                          {beatmap.passConditions.map(formatConditionCompact).join(" / ")}
                         </p>
 
                         {beatmap.annotations.length > 0 ? (

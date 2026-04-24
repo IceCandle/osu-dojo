@@ -27,7 +27,11 @@ import {
   ScoreApiTimeoutError,
 } from "@/bot/osuApi";
 import { totalHitObjects } from "@/lib/accuracy";
-import { judgeCourseRun, judgeThreshold } from "@/lib/judging";
+import {
+  evaluateMapConditions,
+  judgeCourseRun,
+  type JudgedThreshold,
+} from "@/lib/judging";
 import { parseCourseMods, validateCourseMods } from "@/lib/mods";
 import { formatConditionValue, kebabizeName } from "@/lib/format";
 import { systemCapabilities } from "@/lib/domain";
@@ -980,17 +984,18 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
     const isPartialPlay =
       beatmap.totalObjects !== null && playedObjects < beatmap.totalObjects;
 
-    const threshold = judgeThreshold(beatmap.passConditionType, beatmap.passConditionThreshold, {
+    const judgedMap = evaluateMapConditions(beatmap.passConditions, {
       accuracy: fetchedScore.accuracy,
       score: fetchedScore.score,
+      countMiss: fetchedScore.countMiss,
+      maxCombo: fetchedScore.maxCombo,
     });
 
     const judgedMapResult = {
       gameId: fetchedScore.gameId,
       beatmapId: beatmap.beatmapId,
       mods: ensureNoFailMods(beatmap.mods),
-      passConditionType: beatmap.passConditionType,
-      passConditionThreshold: beatmap.passConditionThreshold,
+      passConditions: beatmap.passConditions,
       ordinal: beatmap.ordinal,
       score: fetchedScore.score,
       accuracy: fetchedScore.accuracy,
@@ -999,7 +1004,7 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
       count100: fetchedScore.count100,
       count50: fetchedScore.count50,
       countMiss: fetchedScore.countMiss,
-      passed: !isPartialPlay && threshold.passed,
+      passed: !isPartialPlay && judgedMap.passed,
       createdAt: Date.now(),
     } satisfies Omit<JudgedMapResult, "id" | "runId">;
 
@@ -1013,7 +1018,7 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
           passed: false,
           playedObjects,
           expectedObjects: beatmap.totalObjects,
-          thresholdPassed: threshold.passed,
+          thresholdPassed: judgedMap.passed,
         }),
       );
       await safeSendLobbyMessage(
@@ -1025,22 +1030,20 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
         "dojo map judged",
         getRunLogFields(run, {
           beatmapId: beatmap.beatmapId,
-          passed: threshold.passed,
+          passed: judgedMap.passed,
           score: fetchedScore.score,
           accuracy: fetchedScore.accuracy,
-          conditionType: threshold.type,
-          value: threshold.value,
-          threshold: threshold.threshold,
+          conditions: judgedMap.evaluations,
         }),
       );
 
       await safeSendLobbyMessage(
         run.lobby,
-        `Map ${beatmap.ordinal}: ${threshold.passed ? "PASS" : "FAIL"} (${formatConditionValue(
-          threshold.type,
-          threshold.value,
-        )} >= ${formatConditionValue(threshold.type, threshold.threshold)} required)`,
+        `Map ${beatmap.ordinal}: ${judgedMap.passed ? "PASS" : "FAIL"}`,
       );
+      for (const evaluation of judgedMap.evaluations) {
+        await safeSendLobbyMessage(run.lobby, `  ${formatEvaluation(evaluation)}`);
+      }
     }
 
     if (!isActiveRun(run)) {
@@ -1290,11 +1293,11 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
 
   function getRunFinalStatus(run: ActiveRun) {
     if (run.mapResults.length === 0) {
-      return { passed: false, overall: null };
+      return { passed: false, allMapsPassed: false, overall: [] };
     }
 
     if (run.mapResults.length !== run.course.beatmaps.length) {
-      return { passed: false, overall: null };
+      return { passed: false, allMapsPassed: false, overall: [] };
     }
 
     return judgeCourseRun(run.course, run.mapResults as JudgedMapResult[]);
@@ -1455,17 +1458,14 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
 
   function buildFinalRunLine(run: ActiveRun) {
     const judgedDan = getRunFinalStatus(run);
-    const finalLine = judgedDan.overall
-      ? `${judgedDan.passed ? "PASS" : "FAIL"} (${formatConditionValue(
-          judgedDan.overall.type,
-          judgedDan.overall.value,
-        )} >= ${formatConditionValue(
-          judgedDan.overall.type,
-          judgedDan.overall.threshold,
-        )} required)`
-      : judgedDan.passed
-        ? "PASS"
-        : "FAIL";
+    const finalLine =
+      judgedDan.overall.length > 0
+        ? `${judgedDan.passed ? "PASS" : "FAIL"} (${judgedDan.overall
+            .map(formatEvaluation)
+            .join(", ")})`
+        : judgedDan.passed
+          ? "PASS"
+          : "FAIL";
 
     return {
       judgedDan,
@@ -1571,6 +1571,16 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
     activeRunsByLobbyId,
     events,
   };
+}
+
+function formatEvaluation(evaluation: JudgedThreshold) {
+  return `${formatConditionValue(
+    evaluation.type,
+    evaluation.value,
+  )} ${evaluation.comparison} ${formatConditionValue(
+    evaluation.type,
+    evaluation.threshold,
+  )} required`;
 }
 
 function getLobbyWinCondition(scoreModel: CourseDefinition["scoreModel"]) {

@@ -111,8 +111,7 @@ export async function seedDatabase(
           tags: JSON.stringify(course.tags),
           ordinal: course.ordinal,
           scoreModel: course.scoreModel,
-          overallPassType: course.overallPassType,
-          overallPassThreshold: course.overallPassThreshold,
+          overallPassConditions: JSON.stringify(course.overallPassConditions),
           updatedAt: Date.now(),
         })
         .onConflictDoUpdate({
@@ -124,8 +123,7 @@ export async function seedDatabase(
             tags: JSON.stringify(course.tags),
             ordinal: course.ordinal,
             scoreModel: course.scoreModel,
-            overallPassType: course.overallPassType,
-            overallPassThreshold: course.overallPassThreshold,
+            overallPassConditions: JSON.stringify(course.overallPassConditions),
             updatedAt: Date.now(),
           },
         });
@@ -153,8 +151,7 @@ export async function seedDatabase(
           courseId: course.id,
           beatmapId: beatmap.beatmapId,
           mods: beatmap.mods,
-          passConditionType: beatmap.passConditionType,
-          passConditionThreshold: beatmap.passConditionThreshold,
+          passConditions: JSON.stringify(beatmap.passConditions),
           ordinal: beatmap.ordinal,
           annotations: JSON.stringify(beatmap.annotations),
         });
@@ -208,7 +205,13 @@ export function cloneCourseSystems(systems: DanSystemSeed[]) {
     ...system,
     courses: system.courses.map((course) => ({
       ...course,
-      beatmaps: course.beatmaps.map((beatmap) => ({ ...beatmap })),
+      overallPassConditions: course.overallPassConditions.map((condition) => ({
+        ...condition,
+      })),
+      beatmaps: course.beatmaps.map((beatmap) => ({
+        ...beatmap,
+        passConditions: beatmap.passConditions.map((condition) => ({ ...condition })),
+      })),
     })),
   }));
 }
@@ -272,8 +275,7 @@ async function assertAllowedSystemChange(
         id: beatmaps.id,
         beatmapId: beatmaps.beatmapId,
         mods: beatmaps.mods,
-        passConditionType: beatmaps.passConditionType,
-        passConditionThreshold: beatmaps.passConditionThreshold,
+        passConditions: beatmaps.passConditions,
         ordinal: beatmaps.ordinal,
       })
       .from(beatmaps)
@@ -323,8 +325,7 @@ function getGameplayChangedFields(
     id: string;
     beatmapId: number;
     mods: string;
-    passConditionType: DanSystemSeed["courses"][number]["beatmaps"][number]["passConditionType"];
-    passConditionThreshold: number;
+    passConditions: string;
     ordinal: number;
   }>,
   course: DanSystemSeed["courses"][number],
@@ -343,11 +344,10 @@ function getGameplayChangedFields(
   if (existingCourse.scoreModel !== course.scoreModel) {
     changedFields.push("scoreModel");
   }
-  if (existingCourse.overallPassType !== course.overallPassType) {
-    changedFields.push("overallPassType");
-  }
-  if (existingCourse.overallPassThreshold !== course.overallPassThreshold) {
-    changedFields.push("overallPassThreshold");
+  if (
+    existingCourse.overallPassConditions !== JSON.stringify(course.overallPassConditions)
+  ) {
+    changedFields.push("overallPassConditions");
   }
 
   const existingSignature = existingBeatmaps
@@ -355,8 +355,7 @@ function getGameplayChangedFields(
       id: beatmap.id,
       beatmapId: beatmap.beatmapId,
       mods: beatmap.mods,
-      passConditionType: beatmap.passConditionType,
-      passConditionThreshold: beatmap.passConditionThreshold,
+      passConditions: beatmap.passConditions,
       ordinal: beatmap.ordinal,
     }))
     .sort(compareBeatmapSignatures);
@@ -365,8 +364,7 @@ function getGameplayChangedFields(
       id: beatmap.id,
       beatmapId: beatmap.beatmapId,
       mods: beatmap.mods,
-      passConditionType: beatmap.passConditionType,
-      passConditionThreshold: beatmap.passConditionThreshold,
+      passConditions: JSON.stringify(beatmap.passConditions),
       ordinal: beatmap.ordinal,
     }))
     .sort(compareBeatmapSignatures);

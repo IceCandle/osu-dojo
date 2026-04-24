@@ -1,6 +1,10 @@
 import type {
+  CoursePassCondition,
+  CoursePassConditionType,
   CourseDefinition,
   JudgedMapResult,
+  MapPassCondition,
+  MapPassConditionType,
   PassConditionType,
 } from "@/lib/domain";
 
@@ -8,27 +12,81 @@ export interface JudgedThreshold {
   type: PassConditionType;
   threshold: number;
   value: number;
+  comparison: ">=" | "<=";
   passed: boolean;
 }
 
 export interface JudgedCourseRunResult {
   passed: boolean;
   allMapsPassed: boolean;
-  overall: JudgedThreshold | null;
+  overall: JudgedThreshold[];
 }
 
 export function judgeThreshold(
   type: PassConditionType,
   threshold: number,
-  values: { accuracy: number; score: number },
+  value: number,
+  comparison: ">=" | "<=" = ">=",
 ): JudgedThreshold {
-  const value = type === "acc" ? values.accuracy : values.score;
-
   return {
     type,
     threshold,
     value,
-    passed: value >= threshold,
+    comparison,
+    passed: comparison === ">=" ? value >= threshold : value <= threshold,
+  };
+}
+
+export function evaluateMapConditions(
+  conditions: MapPassCondition[],
+  stats: { accuracy: number; score: number; countMiss: number; maxCombo: number },
+): { passed: boolean; evaluations: JudgedThreshold[] } {
+  const values = {
+    accuracy: stats.accuracy,
+    score: stats.score,
+    missCount: stats.countMiss,
+    maxCombo: stats.maxCombo,
+  } satisfies Record<MapPassConditionType, number>;
+
+  const evaluations = conditions.map((condition) =>
+    judgeThreshold(
+      condition.type,
+      condition.threshold,
+      values[condition.type],
+      condition.type === "missCount" ? "<=" : ">=",
+    ),
+  );
+
+  return {
+    passed: evaluations.every((evaluation) => evaluation.passed),
+    evaluations,
+  };
+}
+
+export function evaluateCourseConditions(
+  conditions: CoursePassCondition[],
+  mapResults: JudgedMapResult[],
+): { passed: boolean; evaluations: JudgedThreshold[] } {
+  const values = {
+    courseAccuracy: sum(
+      mapResults.filter((result) => result.passed).map((result) => result.accuracy),
+    ),
+    totalScore: sum(mapResults.map((result) => result.score)),
+    totalMissCount: sum(mapResults.map((result) => result.countMiss)),
+  } satisfies Record<CoursePassConditionType, number>;
+
+  const evaluations = conditions.map((condition) =>
+    judgeThreshold(
+      condition.type,
+      condition.threshold,
+      values[condition.type],
+      condition.type === "totalMissCount" ? "<=" : ">=",
+    ),
+  );
+
+  return {
+    passed: evaluations.every((evaluation) => evaluation.passed),
+    evaluations,
   };
 }
 
@@ -42,34 +100,24 @@ export function judgeCourseRun(
     return {
       passed: false,
       allMapsPassed,
-      overall: null,
+      overall: [],
     };
   }
 
-  if (course.overallPassType === null || course.overallPassThreshold === null) {
+  if (course.overallPassConditions.length === 0) {
     return {
       passed: true,
       allMapsPassed,
-      overall: null,
+      overall: [],
     };
   }
 
-  const overallValue =
-    course.overallPassType === "acc"
-      ? sum(mapResults.filter((result) => result.passed).map((result) => result.accuracy))
-      : sum(mapResults.map((result) => result.score));
-
-  const overall = {
-    type: course.overallPassType,
-    threshold: course.overallPassThreshold,
-    value: overallValue,
-    passed: overallValue >= course.overallPassThreshold,
-  } satisfies JudgedThreshold;
+  const overall = evaluateCourseConditions(course.overallPassConditions, mapResults);
 
   return {
     passed: allMapsPassed && overall.passed,
     allMapsPassed,
-    overall,
+    overall: overall.evaluations,
   };
 }
 

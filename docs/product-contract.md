@@ -24,9 +24,17 @@ DanSystem (id, name, slug, description, status: "draft"|"current"|"legacy"|"arch
     slug,
     danSystemId,
     ordinal,
-    scoreModel: "scorev1"|"scorev2"
+    scoreModel: "scorev1"|"scorev2",
+    overallPassConditions: Array<{type: "courseAccuracy"|"totalScore"|"totalMissCount", threshold: number}>
   )
-    has many Beatmap (id, courseId, beatmapId, mods, passCondition: {type: "acc"|"score", threshold: number}, ordinal)
+    has many Beatmap (
+      id,
+      courseId,
+      beatmapId,
+      mods,
+      passConditions: Array<{type: "accuracy"|"score"|"missCount"|"maxCombo", threshold: number}>,
+      ordinal
+    )
 
 BeatmapMetadata (beatmapId, title, artist, difficultyName, mapper, coverUrl, totalObjects)
 
@@ -88,10 +96,13 @@ CourseRun (id, userId, courseId, passed, timestamp, matchId?)
 
 ### AC4: Pass/Fail Judgment
 
-- 개별 map 판정은 course beatmap의 threshold와 accuracy 또는 score를 비교합니다.
-- 전체 판정은 모든 map이 passed이고, course 단위 score/accuracy 기준도 통과해야 passed입니다.
-- course 단위 `acc` 기준은 통과한 map accuracy의 합계와 threshold를 비교합니다. 실패했거나 플레이하지 않은 map은 Course Acc에 더하지 않습니다.
-- course 단위 `score` 기준은 플레이한 map score의 합계와 threshold를 비교합니다.
+- 개별 map 판정은 course beatmap의 `passConditions` 목록을 AND로 평가합니다.
+- map 조건 type은 `accuracy`, `score`, `missCount`, `maxCombo`입니다. `accuracy`, `score`, `maxCombo`는 실제 값이 threshold 이상이어야 하고, `missCount`는 threshold 이하여야 합니다.
+- 전체 판정은 모든 map이 passed이고, course 단위 `overallPassConditions` 목록도 모두 통과해야 passed입니다.
+- course 조건 type은 `courseAccuracy`, `totalScore`, `totalMissCount`입니다. `courseAccuracy`와 `totalScore`는 실제 값이 threshold 이상이어야 하고, `totalMissCount`는 threshold 이하여야 합니다.
+- course 단위 `courseAccuracy` 기준은 통과한 map accuracy의 합계와 threshold를 비교합니다. 실패했거나 플레이하지 않은 map은 Course Acc에 더하지 않습니다.
+- course 단위 `totalScore` 기준은 플레이한 map score의 합계와 threshold를 비교합니다.
+- 같은 condition list 안에서 같은 type은 한 번만 쓸 수 있고, course loading은 중복 type을 즉시 실패시킵니다.
 - bot은 멀티플레이어 채팅에 개별 map 결과와 최종 결과를 알립니다.
 
 ### AC5: Website
