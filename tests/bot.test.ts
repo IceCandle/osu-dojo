@@ -316,10 +316,14 @@ function setSeededBeatmapTotalObjects(
   db.$client
     .prepare(
       `
-      UPDATE beatmaps
+      UPDATE beatmap_metadata
       SET total_objects = ?
-      WHERE course_id = (SELECT id FROM courses WHERE slug = ?)
-        AND ordinal = ?
+      WHERE beatmap_id = (
+        SELECT beatmap_id
+        FROM beatmaps
+        WHERE course_id = (SELECT id FROM courses WHERE slug = ?)
+          AND ordinal = ?
+      )
       `,
     )
     .run(totalObjects, SEEDED_COURSE_SLUG, ordinal);
@@ -644,6 +648,78 @@ test("bot runs the seeded course, forces NF, switches to ScoreV2, and stores the
     } else {
       process.env.DOJO_SITE_URL = originalSiteUrl;
     }
+    temp.cleanup();
+  }
+});
+
+test("bot playtests draft courses without storing results", async () => {
+  const temp = createTempDatabaseUrl();
+
+  try {
+    const { db } = await createTestDatabase(temp.url);
+    const seededBeatmapIds = await getSeededBeatmapIds(db);
+    db.$client
+      .prepare("UPDATE dan_systems SET status = 'draft' WHERE slug = ?")
+      .run(SEEDED_SYSTEM_NAME_KEY);
+
+    const client = new FakeClient();
+    const user = new FakeUser(42, "PlayerOne");
+    let gameId = 0;
+    const bot = createDojoBot({
+      client,
+      db,
+      connectOnStart: false,
+      restDurationMs: 0,
+      finalGracePeriodMs: 0,
+      firstMapCountdownSeconds: 0,
+      sleep: async () => {},
+      fetchScore: async (options) => ({
+        gameId: (gameId += 1),
+        beatmapId: options.beatmapId,
+        userId: 42,
+        score: 999999,
+        accuracy: 100,
+        maxCombo: 800,
+        count300: 1000,
+        count100: 0,
+        count50: 0,
+        countMiss: 0,
+        passed: true,
+      }),
+    });
+
+    await bot.handlePrivateMessage(createSeededStartMessage(user));
+
+    assert.equal(client.createLobbyCalls[0]?.privateLobby, undefined);
+    assert.match(client.createLobbyCalls[0]?.name ?? "", /^osu!dojo/);
+    assert.deepEqual(client.lobby.invites, ["#42"]);
+    assert.match(user.messages[0] ?? "", /Results will not be saved/i);
+
+    client.lobby.emit("playerJoined", {
+      player: client.lobby.registerPlayer(user),
+    });
+    await flushAsyncWork();
+    assert.equal(client.lobby.mapHistory[0], seededBeatmapIds[0]);
+
+    client.lobby.emit("matchStarted");
+    client.lobby.emit("matchFinished");
+    await flushAsyncWork(8);
+    client.lobby.emit("matchStarted");
+    client.lobby.emit("matchFinished");
+    await flushAsyncWork(8);
+    await waitForTimer(20);
+
+    const results = await listCourseRunsByNameKey(
+      SEEDED_SYSTEM_NAME_KEY,
+      SEEDED_COURSE_NAME_KEY,
+      db,
+    );
+    assert.equal(results?.runs.length, 0);
+    const runCount = db.$client.prepare("SELECT COUNT(*) AS count FROM runs").get() as {
+      count: number;
+    };
+    assert.equal(runCount.count, 0);
+  } finally {
     temp.cleanup();
   }
 });

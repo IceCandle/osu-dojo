@@ -434,3 +434,137 @@ test("course loader rejects duplicate display name keys", () => {
     temp.cleanup();
   }
 });
+
+test("course loader reads system status and defaults to current", () => {
+  const temp = createTempDirectory();
+
+  try {
+    writeFileSync(
+      path.join(temp.directory, "draft.json"),
+      JSON.stringify({
+        id: "system-draft",
+        name: "draft system",
+        slug: "draft-system",
+        description: "draft",
+        status: "draft",
+        courses: [
+          {
+            id: "course-draft",
+            name: "draft",
+            slug: "draft",
+            description: "draft",
+            ordinal: 1,
+            scoreModel: "scorev2",
+            overallPassType: "acc",
+            overallPassThreshold: 95,
+            beatmaps: [
+              {
+                id: "beatmap-old",
+                beatmapId: 1,
+                mods: "",
+                passConditionType: "acc",
+                passConditionThreshold: 95,
+                ordinal: 1,
+                annotations: ["x"],
+              },
+            ],
+          },
+        ],
+      }),
+    );
+    writeFileSync(
+      path.join(temp.directory, "current.json"),
+      JSON.stringify({
+        id: "system-current",
+        name: "current system",
+        slug: "current-system",
+        description: "current",
+        courses: [
+          {
+            id: "course-current",
+            name: "current",
+            slug: "current",
+            description: "current",
+            ordinal: 1,
+            scoreModel: "scorev2",
+            overallPassType: "acc",
+            overallPassThreshold: 95,
+            beatmaps: [
+              {
+                id: "beatmap-current",
+                beatmapId: 2,
+                mods: "",
+                passConditionType: "acc",
+                passConditionThreshold: 95,
+                ordinal: 1,
+                annotations: ["x"],
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    const systems = loadCoursesFromDir(temp.directory);
+    assert.equal(systems.find((system) => system.id === "system-draft")?.status, "draft");
+    assert.equal(
+      systems.find((system) => system.id === "system-current")?.status,
+      "current",
+    );
+    assert.equal("status" in systems[0]!.courses[0]!, false);
+  } finally {
+    temp.cleanup();
+  }
+});
+
+test("course loader rejects duplicate system keys regardless of status", () => {
+  const temp = createTempDirectory();
+
+  try {
+    const system = (id: string, status: string) => ({
+      id,
+      name: "duplicate",
+      slug: id,
+      description: id,
+      status,
+      courses: [
+        {
+          id: `${id}-course`,
+          name: id.replace(/-/g, " "),
+          slug: `${id}-course`,
+          description: id,
+          ordinal: 1,
+          scoreModel: "scorev2",
+          overallPassType: "acc",
+          overallPassThreshold: 95,
+          beatmaps: [
+            {
+              id: `${id}-beatmap`,
+              beatmapId: 1,
+              mods: "",
+              passConditionType: "acc",
+              passConditionThreshold: 95,
+              ordinal: 1,
+              annotations: ["x"],
+            },
+          ],
+        },
+      ],
+    });
+    writeFileSync(
+      path.join(temp.directory, "current.json"),
+      JSON.stringify(system("system-current", "current")),
+    );
+    writeFileSync(
+      path.join(temp.directory, "legacy.json"),
+      JSON.stringify(system("system-legacy", "legacy")),
+    );
+
+    assert.throws(
+      () => loadCoursesFromDir(temp.directory),
+      /Duplicate system display name key "duplicate"/,
+    );
+  } finally {
+    temp.cleanup();
+  }
+});

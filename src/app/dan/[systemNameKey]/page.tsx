@@ -1,7 +1,7 @@
 import React from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getRankingForCourse, listCoursesByDanSystemNameKey } from "@/db/queries";
+import { getDanSystemDetailByNameKey, getRankingForCourse } from "@/db/queries";
 import {
   formatConditionCompact,
   formatMods,
@@ -9,6 +9,7 @@ import {
   formatScoreModel,
   kebabizeName,
 } from "@/lib/format";
+import { systemCapabilities } from "@/lib/domain";
 
 export const dynamic = "force-dynamic";
 
@@ -20,11 +21,14 @@ export default async function DanSystemPage({
   searchParams?: Promise<{ course?: string | string[] }>;
 }) {
   const { systemNameKey } = await params;
-  const courses = await listCoursesByDanSystemNameKey(systemNameKey);
+  const detail = await getDanSystemDetailByNameKey(systemNameKey);
+  const courses = detail?.courses ?? [];
 
-  if (courses.length === 0) {
+  if (!detail || courses.length === 0) {
     notFound();
   }
+  const { system } = detail;
+  const capabilities = systemCapabilities(system.status);
 
   const resolvedSearchParams = searchParams ? await searchParams : undefined;
   const requestedCourseNameKey = Array.isArray(resolvedSearchParams?.course)
@@ -42,8 +46,7 @@ export default async function DanSystemPage({
   }
 
   const ranking = await getRankingForCourse(selectedCourse);
-  const firstCourse = courses[0]!;
-  const systemNameKeyForLinks = kebabizeName(firstCourse.danSystemName);
+  const systemNameKeyForLinks = kebabizeName(system.name);
   const command = `!dojo start ${systemNameKeyForLinks} ${kebabizeName(selectedCourse.name)}`;
   const topResults = ranking.results.slice(0, 10);
   const overallRequirement =
@@ -59,8 +62,15 @@ export default async function DanSystemPage({
       <section className="detail-header dan-overview-header">
         <div className="system-header-grid">
           <div>
-            <h1>{firstCourse.danSystemName}</h1>
-            <p className="detail-copy">{firstCourse.danSystemDescription}</p>
+            <div className="detail-title-row">
+              <h1>{system.name}</h1>
+              {capabilities.badge ? (
+                <span className="system-status-pill detail-status-pill">
+                  {capabilities.badge}
+                </span>
+              ) : null}
+            </div>
+            <p className="detail-copy">{system.description}</p>
           </div>
         </div>
         <div className="detail-stats system-score-model">
@@ -234,10 +244,14 @@ export default async function DanSystemPage({
             ) : (
               <article className="empty-card compact-empty-card">
                 <h2>No runs saved yet</h2>
-                <p>
-                  Start the bot with <code>{command}</code> and the next completed
-                  course will appear here.
-                </p>
+                {capabilities.persistRuns ? (
+                  <p>
+                    Start the bot with <code>{command}</code> and the next completed
+                    course will appear here.
+                  </p>
+                ) : (
+                  <p>Runs on draft systems are not recorded.</p>
+                )}
               </article>
             )}
           </section>

@@ -1,13 +1,22 @@
 import { randomUUID } from "node:crypto";
 import { asc, desc, eq, inArray } from "drizzle-orm";
 import { getDatabase, type AppDatabase } from "@/db/client";
-import { beatmaps, courses, danSystems, mapResults, runs } from "@/db/schema";
+import {
+  beatmapMetadata,
+  beatmaps,
+  courses,
+  danSystems,
+  mapResults,
+  runs,
+} from "@/db/schema";
 import type {
   CourseBeatmapDefinition,
   CourseDefinition,
   CourseRunResult,
+  DanSystemDefinition,
   JudgedMapResult,
 } from "@/lib/domain";
+import { catalogSystemStatuses, playableSystemStatuses } from "@/lib/domain";
 import { kebabizeName } from "@/lib/format";
 
 type DerivedRunStatus = "pass" | "fail" | "dnf";
@@ -17,6 +26,7 @@ type CourseRow = {
   courseName: string;
   slug: string;
   courseDescription: string;
+  tags: string;
   courseOrdinal: number;
   scoreModel: CourseDefinition["scoreModel"] | null;
   overallPassType: CourseDefinition["overallPassType"];
@@ -25,6 +35,7 @@ type CourseRow = {
   danSystemName: string;
   danSystemSlug: string;
   danSystemDescription: string;
+  danSystemStatus: DanSystemDefinition["status"];
 };
 
 async function useDb(db?: AppDatabase): Promise<AppDatabase> {
@@ -39,10 +50,12 @@ export async function listDanSystemsWithCourses(db?: AppDatabase) {
       danSystemName: danSystems.name,
       danSystemSlug: danSystems.slug,
       danSystemDescription: danSystems.description,
+      danSystemStatus: danSystems.status,
       courseId: courses.id,
       courseName: courses.name,
       slug: courses.slug,
       courseDescription: courses.description,
+      tags: courses.tags,
       courseOrdinal: courses.ordinal,
       scoreModel: courses.scoreModel,
       overallPassType: courses.overallPassType,
@@ -50,6 +63,7 @@ export async function listDanSystemsWithCourses(db?: AppDatabase) {
     })
     .from(danSystems)
     .leftJoin(courses, eq(courses.danSystemId, danSystems.id))
+    .where(inArray(danSystems.status, catalogSystemStatuses()))
     .orderBy(asc(danSystems.name), asc(courses.ordinal));
 
   const systems = new Map<
@@ -59,6 +73,7 @@ export async function listDanSystemsWithCourses(db?: AppDatabase) {
       name: string;
       slug: string;
       description: string;
+      status: DanSystemDefinition["status"];
       courses: Array<{
         id: string;
         name: string;
@@ -80,6 +95,7 @@ export async function listDanSystemsWithCourses(db?: AppDatabase) {
         name: row.danSystemName,
         slug: row.danSystemSlug,
         description: row.danSystemDescription,
+        status: row.danSystemStatus,
         courses: [],
       };
 
@@ -99,13 +115,21 @@ export async function listDanSystemsWithCourses(db?: AppDatabase) {
     systems.set(system.id, system);
   }
 
-  return [...systems.values()];
+  return [...systems.values()].sort(compareSystemSummaries);
 }
 
 export async function listCoursesByDanSystemNameKey(
   systemNameKey: string,
   db?: AppDatabase,
 ): Promise<CourseDefinition[]> {
+  const detail = await getDanSystemDetailByNameKey(systemNameKey, db);
+  return detail?.courses ?? [];
+}
+
+export async function getDanSystemDetailByNameKey(
+  systemNameKey: string,
+  db?: AppDatabase,
+): Promise<{ system: DanSystemDefinition; courses: CourseDefinition[] } | null> {
   const database = await useDb(db);
   const rows = await database
     .select({
@@ -113,6 +137,7 @@ export async function listCoursesByDanSystemNameKey(
       courseName: courses.name,
       slug: courses.slug,
       courseDescription: courses.description,
+      tags: courses.tags,
       courseOrdinal: courses.ordinal,
       scoreModel: courses.scoreModel,
       overallPassType: courses.overallPassType,
@@ -121,9 +146,11 @@ export async function listCoursesByDanSystemNameKey(
       danSystemName: danSystems.name,
       danSystemSlug: danSystems.slug,
       danSystemDescription: danSystems.description,
+      danSystemStatus: danSystems.status,
     })
     .from(courses)
     .innerJoin(danSystems, eq(courses.danSystemId, danSystems.id))
+    .where(inArray(danSystems.status, playableSystemStatuses()))
     .orderBy(asc(danSystems.name), asc(courses.ordinal));
 
   const normalizedSystemNameKey = kebabizeName(systemNameKey);
@@ -132,10 +159,20 @@ export async function listCoursesByDanSystemNameKey(
   );
 
   if (matchingRows.length === 0) {
-    return [];
+    return null;
   }
 
-  return hydrateCourseRows(matchingRows, database);
+  const firstRow = matchingRows[0]!;
+  return {
+    system: {
+      id: firstRow.danSystemId,
+      name: firstRow.danSystemName,
+      slug: firstRow.danSystemSlug,
+      description: firstRow.danSystemDescription,
+      status: firstRow.danSystemStatus,
+    },
+    courses: await hydrateCourseRows(matchingRows, database),
+  };
 }
 
 export async function getCourseByNameKey(
@@ -144,10 +181,8 @@ export async function getCourseByNameKey(
   db?: AppDatabase,
 ): Promise<CourseDefinition | null> {
   const database = await useDb(db);
-  const courseDefinitions = await listCoursesByDanSystemNameKey(
-    systemNameKey,
-    database,
-  );
+  const detail = await getDanSystemDetailByNameKey(systemNameKey, database);
+  const courseDefinitions = detail?.courses ?? [];
   const normalizedCourseNameKey = kebabizeName(courseNameKey);
 
   return (
@@ -170,15 +205,16 @@ async function hydrateCourseRows(
       passConditionType: beatmaps.passConditionType,
       passConditionThreshold: beatmaps.passConditionThreshold,
       ordinal: beatmaps.ordinal,
-      title: beatmaps.title,
-      artist: beatmaps.artist,
-      difficultyName: beatmaps.difficultyName,
-      mapper: beatmaps.mapper,
-      coverUrl: beatmaps.coverUrl,
-      totalObjects: beatmaps.totalObjects,
       annotations: beatmaps.annotations,
+      title: beatmapMetadata.title,
+      artist: beatmapMetadata.artist,
+      difficultyName: beatmapMetadata.difficultyName,
+      mapper: beatmapMetadata.mapper,
+      coverUrl: beatmapMetadata.coverUrl,
+      totalObjects: beatmapMetadata.totalObjects,
     })
     .from(beatmaps)
+    .leftJoin(beatmapMetadata, eq(beatmaps.beatmapId, beatmapMetadata.beatmapId))
     .where(
       inArray(
         beatmaps.courseId,
@@ -203,6 +239,7 @@ async function hydrateCourseRows(
     name: row.courseName,
     slug: row.slug,
     description: row.courseDescription,
+    tags: parseTags(row.tags),
     ordinal: row.courseOrdinal,
     scoreModel: row.scoreModel ?? "scorev2",
     overallPassType: row.overallPassType,
@@ -423,11 +460,11 @@ function parseBeatmapRow(row: {
   passConditionType: CourseBeatmapDefinition["passConditionType"];
   passConditionThreshold: number;
   ordinal: number;
-  title: string;
-  artist: string;
-  difficultyName: string;
-  mapper: string;
-  coverUrl: string;
+  title: string | null;
+  artist: string | null;
+  difficultyName: string | null;
+  mapper: string | null;
+  coverUrl: string | null;
   totalObjects: unknown;
   annotations: string;
 }): CourseBeatmapDefinition {
@@ -438,14 +475,47 @@ function parseBeatmapRow(row: {
     passConditionType: row.passConditionType,
     passConditionThreshold: row.passConditionThreshold,
     ordinal: row.ordinal,
-    title: row.title,
-    artist: row.artist,
-    difficultyName: row.difficultyName,
-    mapper: row.mapper,
-    coverUrl: row.coverUrl,
+    title: row.title ?? "",
+    artist: row.artist ?? "",
+    difficultyName: row.difficultyName ?? "",
+    mapper: row.mapper ?? "",
+    coverUrl: row.coverUrl ?? "",
     totalObjects: normalizeTotalObjects(row.totalObjects),
     annotations: parseAnnotations(row.annotations),
   };
+}
+
+function parseTags(value: string): string[] {
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) && parsed.every((entry) => typeof entry === "string")
+      ? parsed
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function compareSystemSummaries(
+  left: { name: string; status: DanSystemDefinition["status"] },
+  right: { name: string; status: DanSystemDefinition["status"] },
+) {
+  return (
+    getCatalogStatusWeight(left.status) - getCatalogStatusWeight(right.status) ||
+    left.name.localeCompare(right.name)
+  );
+}
+
+function getCatalogStatusWeight(status: DanSystemDefinition["status"]) {
+  if (status === "current") {
+    return 0;
+  }
+
+  if (status === "legacy") {
+    return 1;
+  }
+
+  return 2;
 }
 
 function normalizeTotalObjects(value: unknown): number | null {
@@ -473,6 +543,8 @@ function deriveRunStatus(
   maps: Array<{ passed: boolean }>,
   beatmapCount: number,
 ): DerivedRunStatus {
+  // This uses the live course beatmap count only because published course gameplay is
+  // immutable; draft runs are never persisted.
   if (passed) {
     return "pass";
   }

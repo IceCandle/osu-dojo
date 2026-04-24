@@ -25,7 +25,7 @@ async function seedRankingCourses(databaseUrl: string) {
   const systems = cloneCourseSystems(
     loadCoursesFromDir(path.join(process.cwd(), "data/courses")),
   );
-  const system = systems[0];
+  const system = systems.find((s) => s.slug === SEEDED_SYSTEM_NAME_KEY);
   const baseCourse = system?.courses.find((entry) => entry.slug === SEEDED_COURSE_SLUG);
 
   assert.ok(system);

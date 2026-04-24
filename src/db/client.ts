@@ -25,19 +25,24 @@ CREATE TABLE IF NOT EXISTS dan_systems (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
   slug TEXT NOT NULL UNIQUE,
-  description TEXT NOT NULL
+  description TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'current'
 );
 
 CREATE TABLE IF NOT EXISTS courses (
   id TEXT PRIMARY KEY,
   dan_system_id TEXT NOT NULL REFERENCES dan_systems(id),
+  creator_user_id INTEGER,
   name TEXT NOT NULL,
   slug TEXT NOT NULL,
   description TEXT NOT NULL DEFAULT '',
+  tags TEXT NOT NULL DEFAULT '[]',
   ordinal INTEGER NOT NULL,
   score_model TEXT NOT NULL DEFAULT 'scorev2',
   overall_pass_type TEXT,
   overall_pass_threshold REAL,
+  created_at INTEGER NOT NULL DEFAULT (unixepoch() * 1000),
+  updated_at INTEGER NOT NULL DEFAULT (unixepoch() * 1000),
   UNIQUE(dan_system_id, slug)
 );
 
@@ -49,13 +54,18 @@ CREATE TABLE IF NOT EXISTS beatmaps (
   pass_condition_type TEXT NOT NULL,
   pass_condition_threshold REAL NOT NULL,
   ordinal INTEGER NOT NULL,
+  annotations TEXT NOT NULL DEFAULT '[]'
+);
+
+CREATE TABLE IF NOT EXISTS beatmap_metadata (
+  beatmap_id INTEGER PRIMARY KEY,
   title TEXT NOT NULL DEFAULT '',
   artist TEXT NOT NULL DEFAULT '',
   difficulty_name TEXT NOT NULL DEFAULT '',
   mapper TEXT NOT NULL DEFAULT '',
   cover_url TEXT NOT NULL DEFAULT '',
   total_objects INTEGER CHECK (total_objects IS NULL OR total_objects >= 0),
-  annotations TEXT NOT NULL DEFAULT '[]'
+  fetched_at INTEGER NOT NULL DEFAULT (unixepoch() * 1000)
 );
 
 CREATE TABLE IF NOT EXISTS runs (
@@ -100,6 +110,7 @@ CREATE INDEX IF NOT EXISTS runs_course_completed_idx
 
 CREATE INDEX IF NOT EXISTS map_results_run_ordinal_idx
   ON map_results(run_id, ordinal);
+
 `;
 
 function resolveDatabaseSource(url: string): string {
@@ -145,13 +156,99 @@ export async function createTestDatabase(url: string): Promise<DatabaseBundle> {
 }
 
 function migrateDatabase(sqlite: BetterSqliteConnection) {
-  const columns = (sqlite.pragma("table_info(beatmaps)") as Array<{ name: string }>)
+  const systemColumns = (sqlite.pragma("table_info(dan_systems)") as Array<{ name: string }>)
+    .map((col) => col.name);
+  addColumnIfMissing(
+    sqlite,
+    "dan_systems",
+    systemColumns,
+    "status TEXT NOT NULL DEFAULT 'current'",
+  );
+
+  const courseColumns = (sqlite.pragma("table_info(courses)") as Array<{ name: string }>)
     .map((col) => col.name);
 
-  if (!columns.includes("total_objects")) {
+  addColumnIfMissing(sqlite, "courses", courseColumns, "creator_user_id INTEGER");
+  addColumnIfMissing(sqlite, "courses", courseColumns, "tags TEXT NOT NULL DEFAULT '[]'");
+  addColumnIfMissing(sqlite, "courses", courseColumns, "created_at INTEGER");
+  addColumnIfMissing(sqlite, "courses", courseColumns, "updated_at INTEGER");
+  sqlite.exec(`
+    UPDATE courses
+    SET created_at = COALESCE(created_at, unixepoch() * 1000),
+        updated_at = COALESCE(updated_at, unixepoch() * 1000)
+  `);
+
+  const beatmapColumns = (sqlite.pragma("table_info(beatmaps)") as Array<{ name: string }>)
+    .map((col) => col.name);
+
+  if (beatmapColumns.includes("title") && !beatmapColumns.includes("total_objects")) {
     sqlite.exec(
       "ALTER TABLE beatmaps ADD COLUMN total_objects INTEGER CHECK (total_objects IS NULL OR total_objects >= 0)",
     );
+  }
+
+  sqlite.exec(`
+    CREATE TABLE IF NOT EXISTS beatmap_metadata (
+      beatmap_id INTEGER PRIMARY KEY,
+      title TEXT NOT NULL DEFAULT '',
+      artist TEXT NOT NULL DEFAULT '',
+      difficulty_name TEXT NOT NULL DEFAULT '',
+      mapper TEXT NOT NULL DEFAULT '',
+      cover_url TEXT NOT NULL DEFAULT '',
+      total_objects INTEGER CHECK (total_objects IS NULL OR total_objects >= 0),
+      fetched_at INTEGER NOT NULL DEFAULT (unixepoch() * 1000)
+    );
+
+  `);
+
+  const metadataColumns = new Set(
+    (sqlite.pragma("table_info(beatmaps)") as Array<{ name: string }>).map(
+      (col) => col.name,
+    ),
+  );
+  if (
+    metadataColumns.has("title") &&
+    metadataColumns.has("artist") &&
+    metadataColumns.has("difficulty_name") &&
+    metadataColumns.has("mapper") &&
+    metadataColumns.has("cover_url") &&
+    metadataColumns.has("total_objects")
+  ) {
+    sqlite.exec(`
+      INSERT OR IGNORE INTO beatmap_metadata (
+        beatmap_id,
+        title,
+        artist,
+        difficulty_name,
+        mapper,
+        cover_url,
+        total_objects,
+        fetched_at
+      )
+      SELECT
+        beatmap_id,
+        COALESCE(NULLIF(title, ''), ''),
+        COALESCE(NULLIF(artist, ''), ''),
+        COALESCE(NULLIF(difficulty_name, ''), ''),
+        COALESCE(NULLIF(mapper, ''), ''),
+        COALESCE(NULLIF(cover_url, ''), ''),
+        total_objects,
+        unixepoch() * 1000
+      FROM beatmaps;
+    `);
+  }
+}
+
+function addColumnIfMissing(
+  sqlite: BetterSqliteConnection,
+  table: string,
+  columns: string[],
+  definition: string,
+) {
+  const column = definition.split(/\s+/, 1)[0];
+  if (!columns.includes(column)) {
+    sqlite.exec(`ALTER TABLE ${table} ADD COLUMN ${definition}`);
+    columns.push(column);
   }
 }
 

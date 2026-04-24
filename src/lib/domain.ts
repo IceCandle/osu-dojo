@@ -1,5 +1,70 @@
 export type PassConditionType = "acc" | "score";
 export type DanScoreModel = "scorev1" | "scorev2";
+export type DanSystemStatus = "draft" | "current" | "legacy" | "archived";
+
+export interface SystemCapabilities {
+  playable: boolean;
+  listed: boolean;
+  persistRuns: boolean;
+  frozen: boolean;
+  badge: "draft" | "legacy" | null;
+}
+
+export function systemCapabilities(status: DanSystemStatus): SystemCapabilities {
+  if (status === "draft") {
+    return {
+      playable: true,
+      listed: false,
+      persistRuns: false,
+      frozen: false,
+      badge: "draft",
+    };
+  }
+
+  if (status === "current") {
+    return {
+      playable: true,
+      listed: true,
+      persistRuns: true,
+      frozen: true,
+      badge: null,
+    };
+  }
+
+  if (status === "legacy") {
+    return {
+      playable: true,
+      listed: true,
+      persistRuns: true,
+      frozen: true,
+      badge: "legacy",
+    };
+  }
+
+  return {
+    playable: false,
+    listed: false,
+    persistRuns: false,
+    frozen: true,
+    badge: null,
+  };
+}
+
+export function catalogSystemStatuses(): DanSystemStatus[] {
+  return ["current", "legacy"];
+}
+
+export function playableSystemStatuses(): DanSystemStatus[] {
+  return ["draft", "current", "legacy"];
+}
+
+export interface DanSystemDefinition {
+  id: string;
+  name: string;
+  slug: string;
+  description: string;
+  status: DanSystemStatus;
+}
 
 export interface CourseBeatmapDefinition {
   id: string;
@@ -26,6 +91,7 @@ export interface CourseDefinition {
   name: string;
   slug: string;
   description: string;
+  tags: string[];
   ordinal: number;
   scoreModel: DanScoreModel;
   overallPassType: PassConditionType | null;

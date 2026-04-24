@@ -11,7 +11,10 @@ import {
   type BanchoMod,
 } from "bancho.js";
 import { getDatabase, type AppDatabase } from "@/db/client";
-import { getCourseByNameKey, storeCourseRunResult } from "@/db/queries";
+import {
+  getDanSystemDetailByNameKey,
+  storeCourseRunResult,
+} from "@/db/queries";
 import { DOJO_USAGE_LINE, parseDojoCommand } from "@/bot/command";
 import { noopLogger, type BotLogFields, type BotLogger } from "@/bot/logger";
 import {
@@ -27,7 +30,8 @@ import { totalHitObjects } from "@/lib/accuracy";
 import { judgeCourseRun, judgeThreshold } from "@/lib/judging";
 import { parseCourseMods, validateCourseMods } from "@/lib/mods";
 import { formatConditionValue, kebabizeName } from "@/lib/format";
-import type { CourseDefinition, JudgedMapResult } from "@/lib/domain";
+import { systemCapabilities } from "@/lib/domain";
+import type { CourseDefinition, DanSystemDefinition, JudgedMapResult } from "@/lib/domain";
 import { sleep as defaultSleep } from "@/lib/sleep";
 
 if (existsSync(".env")) {
@@ -113,6 +117,7 @@ type ActiveRunStatus =
 
 interface ActiveRun {
   runId: string;
+  system: DanSystemDefinition;
   course: CourseDefinition;
   playerUserId: number;
   playerUsername: string;
@@ -539,11 +544,15 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
       return;
     }
 
-    const course = await getCourseByNameKey(
+    const systemDetail = await getDanSystemDetailByNameKey(
       command.systemNameKey,
-      command.courseNameKey,
       database,
     );
+    const normalizedCourseNameKey = kebabizeName(command.courseNameKey);
+    const course =
+      systemDetail?.courses.find(
+        (candidate) => kebabizeName(candidate.name) === normalizedCourseNameKey,
+      ) ?? null;
     if (!course) {
       logger.warn("dojo unknown route", {
         systemNameKey: command.systemNameKey,
@@ -551,6 +560,15 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
         userId: playerIdentity.userId,
         username: playerIdentity.username,
       });
+      await safeSendUserMessage(
+        user,
+        `Unknown course "${command.systemNameKey} ${command.courseNameKey}".`,
+      );
+      return;
+    }
+    const system = systemDetail!.system;
+    const capabilities = systemCapabilities(system.status);
+    if (!capabilities.playable) {
       await safeSendUserMessage(
         user,
         `Unknown course "${command.systemNameKey} ${command.courseNameKey}".`,
@@ -595,6 +613,7 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
 
     const run: ActiveRun = {
       runId: randomUUID(),
+      system,
       course,
       playerUserId: playerIdentity.userId,
       playerUsername: playerIdentity.username,
@@ -630,11 +649,18 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
     };
 
     try {
-      const lobbyTitle = getLobbyTitle(course);
-      await safeSendUserMessage(
-        user,
-        `Creating multiplayer room ${lobbyTitle}. Download the maps before joining: ${getCoursePageUrl(course)}. Watch for an invite from BanchoBot.`,
-      );
+      const lobbyTitle = getLobbyTitle(system, course);
+      if (!capabilities.persistRuns) {
+        await safeSendUserMessage(
+          user,
+          `Creating multiplayer room ${lobbyTitle}. Results will not be saved. Watch for an invite from BanchoBot.`,
+        );
+      } else {
+        await safeSendUserMessage(
+          user,
+          `Creating multiplayer room ${lobbyTitle}. Download the maps before joining: ${getCoursePageUrl(system, course)}. Watch for an invite from BanchoBot.`,
+        );
+      }
 
       const lobbyChannel = await client.createLobby(lobbyTitle);
       run.lobby = lobbyChannel.lobby;
@@ -1366,6 +1392,10 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
     if (plan.skipWhenNoMaps && run.mapResults.length === 0) {
       return;
     }
+    if (!systemCapabilities(run.system.status).persistRuns) {
+      logger.info("dojo run completed without persistence", getRunLogFields(run));
+      return;
+    }
 
     await storeCourseRunResult(
       {
@@ -1603,15 +1633,15 @@ function requiredEnv(name: string) {
   return value;
 }
 
-function getCoursePageUrl(course: CourseDefinition) {
+function getCoursePageUrl(system: DanSystemDefinition, course: CourseDefinition) {
   const baseUrl = (process.env.DOJO_SITE_URL ?? "http://localhost:3000").replace(/\/$/, "");
   return `${baseUrl}/dan/${encodeURIComponent(
-    kebabizeName(course.danSystemName),
+    kebabizeName(system.name),
   )}?course=${encodeURIComponent(kebabizeName(course.name))}`;
 }
 
-function getLobbyTitle(course: CourseDefinition) {
-  return `osu!dojo: ${course.danSystemName} / ${course.name}`;
+function getLobbyTitle(system: DanSystemDefinition, course: CourseDefinition) {
+  return `osu!dojo: ${system.name} / ${course.name}`;
 }
 
 function loadEnvFallback(filePath: string) {

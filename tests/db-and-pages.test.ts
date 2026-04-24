@@ -67,6 +67,22 @@ function addSampleBeatmapMetadata(systems: ReturnType<typeof cloneCourseSystems>
   return systems;
 }
 
+function markSeededCourseDraft(
+  db: Awaited<ReturnType<typeof createTestDatabase>>["db"],
+  systems: ReturnType<typeof cloneCourseSystems>,
+) {
+  db.$client
+    .prepare("UPDATE dan_systems SET status = 'draft' WHERE slug = ?")
+    .run(SEEDED_SYSTEM_NAME_KEY);
+
+  const seededCourse = systems[0]?.courses.find((entry) => entry.slug === SEEDED_COURSE_SLUG);
+  if (!seededCourse) {
+    throw new Error("Missing seeded test course.");
+  }
+  systems[0]!.status = "draft";
+  return seededCourse;
+}
+
 test("seeded queries expose the sample course and runs", async () => {
   const temp = createTempDatabaseUrl();
 
@@ -119,10 +135,14 @@ test("course queries hydrate and normalize beatmap total object counts", async (
     db.$client
       .prepare(
         `
-        UPDATE beatmaps
+        UPDATE beatmap_metadata
         SET total_objects = ?
-        WHERE course_id = (SELECT id FROM courses WHERE slug = ?)
-          AND ordinal = ?
+        WHERE beatmap_id = (
+          SELECT beatmap_id
+          FROM beatmaps
+          WHERE course_id = (SELECT id FROM courses WHERE slug = ?)
+            AND ordinal = ?
+        )
         `,
       )
       .run(710, SEEDED_COURSE_SLUG, 1);
@@ -138,10 +158,14 @@ test("course queries hydrate and normalize beatmap total object counts", async (
     db.$client
       .prepare(
         `
-        UPDATE beatmaps
+        UPDATE beatmap_metadata
         SET total_objects = ?
-        WHERE course_id = (SELECT id FROM courses WHERE slug = ?)
-          AND ordinal = ?
+        WHERE beatmap_id = (
+          SELECT beatmap_id
+          FROM beatmaps
+          WHERE course_id = (SELECT id FROM courses WHERE slug = ?)
+            AND ordinal = ?
+        )
         `,
       )
       .run(-1, SEEDED_COURSE_SLUG, 1);
@@ -280,6 +304,75 @@ test("pages render seeded course data from SQLite", async () => {
   }
 });
 
+test("catalog hides drafts but exact-key draft detail renders", async () => {
+  const temp = createTempDatabaseUrl();
+  const previousDatabaseUrl = process.env.DATABASE_URL;
+  const previousBundle = globalThis.__osuDojoDatabaseBundle;
+
+  try {
+    process.env.DATABASE_URL = temp.url;
+    const databaseBundle = await createTestDatabase(temp.url);
+    const systems = addSampleBeatmapMetadata(
+      cloneCourseSystems(loadCoursesFromDir(path.join(process.cwd(), "data/courses"))),
+    );
+    const baseSystem = systems[0]!;
+    const copySystem = (
+      id: string,
+      name: string,
+      status: "draft" | "archived",
+    ) => ({
+      ...baseSystem,
+      id,
+      name,
+      slug: name,
+      description: `${name} system`,
+      status,
+      courses: baseSystem.courses.map((course) => ({
+        ...course,
+        id: `${id}-${course.id}`,
+        slug: `${name}-${course.slug}`,
+        beatmaps: course.beatmaps.map((beatmap) => ({
+          ...beatmap,
+          id: `${id}-${beatmap.id}`,
+        })),
+      })),
+    });
+
+    await seedDatabase(
+      databaseBundle.db,
+      [
+        ...systems,
+        copySystem("system-beta", "beta", "draft"),
+        copySystem("system-archive", "archive", "archived"),
+      ],
+      { suppressMissingObjectCountWarnings: true },
+    );
+    globalThis.__osuDojoDatabaseBundle = databaseBundle;
+
+    const systemsHtml = renderToStaticMarkup(await DanSystemsPage());
+    const draftHtml = renderToStaticMarkup(
+      await DanCoursePage({
+        params: Promise.resolve({ systemNameKey: "beta" }),
+        searchParams: Promise.resolve({ course: SEEDED_COURSE_NAME_KEY }),
+      }),
+    );
+    const draftCourse = await getCourseByNameKey("beta", SEEDED_COURSE_NAME_KEY);
+    const archivedCourse = await getCourseByNameKey("archive", SEEDED_COURSE_NAME_KEY);
+
+    assert.doesNotMatch(systemsHtml, /\/dan\/beta/);
+    assert.doesNotMatch(systemsHtml, /\/dan\/archive/);
+    assert.ok(draftCourse);
+    assert.equal(archivedCourse, null);
+    assert.match(draftHtml, /Draft/i);
+    assert.match(draftHtml, /Runs on draft systems are not recorded/);
+    assert.match(draftHtml, /!dojo start beta 1st/);
+  } finally {
+    process.env.DATABASE_URL = previousDatabaseUrl;
+    globalThis.__osuDojoDatabaseBundle = previousBundle;
+    temp.cleanup();
+  }
+});
+
 function escapeRegExp(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -363,7 +456,7 @@ test("course run queries and page derive DNF for interrupted partial runs", asyn
   }
 });
 
-test("seedDatabase synchronizes updated seeded beatmaps on an existing SQLite file", async () => {
+test("seedDatabase synchronizes updated draft beatmaps on an existing SQLite file", async () => {
   const temp = createTempDatabaseUrl();
 
   try {
@@ -376,7 +469,7 @@ test("seedDatabase synchronizes updated seeded beatmaps on an existing SQLite fi
     const systems = addSampleBeatmapMetadata(
       cloneCourseSystems(loadCoursesFromDir(path.join(process.cwd(), "data/courses"))),
     );
-    const seededCourse = systems[0]?.courses.find((entry) => entry.slug === SEEDED_COURSE_SLUG);
+    const seededCourse = markSeededCourseDraft(db, systems);
 
     assert.ok(originalCourse);
     assert.ok(seededCourse);
@@ -429,6 +522,152 @@ test("seedDatabase synchronizes updated seeded beatmaps on an existing SQLite fi
       ],
     );
     assert.equal(updatedResults?.runs.length, 0);
+  } finally {
+    temp.cleanup();
+  }
+});
+
+test("seedDatabase rejects gameplay edits on current systems", async () => {
+  const temp = createTempDatabaseUrl();
+
+  try {
+    const { db } = await createTestDatabase(temp.url);
+    const systems = cloneCourseSystems(loadCoursesFromDir(path.join(process.cwd(), "data/courses")));
+    const seededCourse = systems[0]?.courses.find((entry) => entry.slug === SEEDED_COURSE_SLUG);
+
+    assert.ok(seededCourse);
+    seededCourse!.beatmaps[0] = {
+      ...seededCourse!.beatmaps[0]!,
+      passConditionThreshold: 99,
+    };
+
+    await assert.rejects(
+      () => seedDatabase(db, systems, { suppressMissingObjectCountWarnings: true }),
+      /immutable gameplay changes.*beatmaps/i,
+    );
+  } finally {
+    temp.cleanup();
+  }
+});
+
+test("seedDatabase allows current systems to roll over to legacy keys", async () => {
+  const temp = createTempDatabaseUrl();
+
+  try {
+    const { db } = await createTestDatabase(temp.url);
+    const systems = cloneCourseSystems(loadCoursesFromDir(path.join(process.cwd(), "data/courses")));
+    const system = systems[0];
+
+    assert.ok(system);
+    system!.name = "test 2025";
+    system!.slug = "test-2025";
+    system!.status = "legacy";
+
+    await seedDatabase(db, systems, { suppressMissingObjectCountWarnings: true });
+
+    const legacyCourse = await getCourseByNameKey(
+      "test-2025",
+      SEEDED_COURSE_NAME_KEY,
+      db,
+    );
+    const oldKeyCourse = await getCourseByNameKey(
+      SEEDED_SYSTEM_NAME_KEY,
+      SEEDED_COURSE_NAME_KEY,
+      db,
+    );
+
+    assert.equal(legacyCourse?.slug, SEEDED_COURSE_SLUG);
+    assert.equal(oldKeyCourse, null);
+  } finally {
+    temp.cleanup();
+  }
+});
+
+test("seedDatabase rejects disallowed system status transitions", async () => {
+  const cases: Array<{
+    name: string;
+    existing: "current" | "legacy" | "draft" | "archived";
+    incoming: "current" | "legacy" | "draft" | "archived";
+  }> = [
+    { name: "current to draft", existing: "current", incoming: "draft" },
+    { name: "legacy to draft", existing: "legacy", incoming: "draft" },
+    { name: "draft to legacy", existing: "draft", incoming: "legacy" },
+    { name: "archived to current", existing: "archived", incoming: "current" },
+    { name: "archived to legacy", existing: "archived", incoming: "legacy" },
+    { name: "archived to draft", existing: "archived", incoming: "draft" },
+  ];
+
+  for (const transitionCase of cases) {
+    const temp = createTempDatabaseUrl();
+
+    try {
+      const { db } = await createTestDatabase(temp.url);
+      db.$client
+        .prepare("UPDATE dan_systems SET status = ? WHERE slug = ?")
+        .run(transitionCase.existing, SEEDED_SYSTEM_NAME_KEY);
+
+      const systems = cloneCourseSystems(
+        loadCoursesFromDir(path.join(process.cwd(), "data/courses")),
+      );
+      systems[0]!.status = transitionCase.incoming;
+
+      await assert.rejects(
+        () => seedDatabase(db, systems, { suppressMissingObjectCountWarnings: true }),
+        new RegExp(
+          `cannot transition from ${transitionCase.existing} to ${transitionCase.incoming}`,
+        ),
+        transitionCase.name,
+      );
+    } finally {
+      temp.cleanup();
+    }
+  }
+});
+
+test("seedDatabase allows draft to publish with simultaneous gameplay edits", async () => {
+  const temp = createTempDatabaseUrl();
+
+  try {
+    const { db } = await createTestDatabase(temp.url);
+    db.$client
+      .prepare("UPDATE dan_systems SET status = 'draft' WHERE slug = ?")
+      .run(SEEDED_SYSTEM_NAME_KEY);
+
+    const originalCourse = await getCourseByNameKey(
+      SEEDED_SYSTEM_NAME_KEY,
+      SEEDED_COURSE_NAME_KEY,
+      db,
+    );
+    const systems = cloneCourseSystems(
+      loadCoursesFromDir(path.join(process.cwd(), "data/courses")),
+    );
+    const seededCourse = systems[0]?.courses.find((entry) => entry.slug === SEEDED_COURSE_SLUG);
+
+    assert.ok(originalCourse);
+    assert.ok(seededCourse);
+
+    systems[0]!.status = "current";
+    seededCourse!.beatmaps[0] = {
+      ...seededCourse!.beatmaps[0]!,
+      beatmapId: (originalCourse!.beatmaps[0]?.beatmapId ?? 0) + 10_000,
+    };
+
+    await seedDatabase(db, systems, { suppressMissingObjectCountWarnings: true });
+
+    const updatedCourse = await getCourseByNameKey(
+      SEEDED_SYSTEM_NAME_KEY,
+      SEEDED_COURSE_NAME_KEY,
+      db,
+    );
+    const systemRow = db.$client
+      .prepare("SELECT status FROM dan_systems WHERE slug = ?")
+      .get(SEEDED_SYSTEM_NAME_KEY) as { status: string };
+
+    assert.equal(systemRow.status, "current");
+    assert.equal(
+      updatedCourse?.beatmaps[0]?.beatmapId,
+      seededCourse!.beatmaps[0]!.beatmapId,
+    );
   } finally {
     temp.cleanup();
   }
@@ -598,9 +837,7 @@ test("seedDatabase does not reuse total object counts after beatmap id changes",
     const updatedSystems = addSampleBeatmapMetadata(
       cloneCourseSystems(loadCoursesFromDir(path.join(process.cwd(), "data/courses"))),
     );
-    const seededCourse = updatedSystems[0]?.courses.find(
-      (entry) => entry.slug === SEEDED_COURSE_SLUG,
-    );
+    const seededCourse = markSeededCourseDraft(db, updatedSystems);
 
     assert.ok(seededCourse);
     seededCourse!.beatmaps[0] = {
@@ -651,7 +888,7 @@ test("seedDatabase keeps existing total object counts when resolver returns null
     db.$client
       .prepare(
         `
-        UPDATE beatmaps
+        UPDATE beatmap_metadata
         SET title = '', artist = '', difficulty_name = '', mapper = '', cover_url = ''
         `,
       )
@@ -696,7 +933,7 @@ test("seedDatabase stores defaults for missing metadata when no resolver is conf
     const systems = addSampleBeatmapMetadata(
       cloneCourseSystems(loadCoursesFromDir(path.join(process.cwd(), "data/courses"))),
     );
-    const seededCourse = systems[0]?.courses.find((entry) => entry.slug === SEEDED_COURSE_SLUG);
+    const seededCourse = markSeededCourseDraft(db, systems);
 
     assert.ok(seededCourse);
 
@@ -742,7 +979,7 @@ test("seedDatabase resolves missing metadata and stores defaults on resolver fai
     const systems = addSampleBeatmapMetadata(
       cloneCourseSystems(loadCoursesFromDir(path.join(process.cwd(), "data/courses"))),
     );
-    const seededCourse = systems[0]?.courses.find((entry) => entry.slug === SEEDED_COURSE_SLUG);
+    const seededCourse = markSeededCourseDraft(db, systems);
     const resolverBeatmapIds: number[] = [];
 
     assert.ok(seededCourse);

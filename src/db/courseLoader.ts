@@ -1,6 +1,6 @@
 import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
-import type { DanScoreModel, PassConditionType } from "@/lib/domain";
+import type { DanScoreModel, DanSystemStatus, PassConditionType } from "@/lib/domain";
 import { kebabizeName } from "@/lib/format";
 import { validateCourseMods } from "@/lib/mods";
 
@@ -26,6 +26,7 @@ interface CourseSeed {
   name: string;
   slug: string;
   description: string;
+  tags: string[];
   ordinal: number;
   scoreModel: DanScoreModel;
   overallPassType: PassConditionType | null;
@@ -38,6 +39,7 @@ export interface DanSystemSeed {
   name: string;
   slug: string;
   description: string;
+  status: DanSystemStatus;
   courses: CourseSeed[];
 }
 
@@ -74,6 +76,7 @@ function parseDanSystem(value: unknown, source: string): DanSystemSeed {
     name: expectDisplayName(record.name, "name", source),
     slug: expectString(record.slug, "slug", source),
     description: expectString(record.description, "description", source),
+    status: expectDanSystemStatus(record.status, "status", source),
     courses: expectArray(record.courses, "courses", source).map((course, index) =>
       parseCourse(course, `${source} courses[${index}]`),
     ),
@@ -88,6 +91,7 @@ function parseCourse(value: unknown, source: string): CourseSeed {
     name: expectDisplayName(record.name, "name", source),
     slug: expectString(record.slug, "slug", source),
     description: expectString(record.description, "description", source),
+    tags: optionalStringArray(record.tags, "tags", source, []),
     ordinal: expectInteger(record.ordinal, "ordinal", source),
     scoreModel: expectScoreModel(record.scoreModel, "scoreModel", source),
     overallPassType: expectPassConditionTypeOrNull(
@@ -194,6 +198,19 @@ function expectStringArray(value: unknown, field: string, source: string): strin
   return value;
 }
 
+function optionalStringArray(
+  value: unknown,
+  field: string,
+  source: string,
+  fallback: string[],
+): string[] {
+  if (value === undefined) {
+    return fallback;
+  }
+
+  return expectStringArray(value, field, source);
+}
+
 function expectNumber(value: unknown, field: string, source: string): number {
   if (typeof value !== "number" || Number.isNaN(value)) {
     throw new Error(`${source} field "${field}" must be a number.`);
@@ -261,6 +278,29 @@ function expectScoreModel(
 
   throw new Error(
     `${source} field "${field}" must be "scorev1" or "scorev2".`,
+  );
+}
+
+function expectDanSystemStatus(
+  value: unknown,
+  field: string,
+  source: string,
+): DanSystemStatus {
+  if (value === undefined) {
+    return "current";
+  }
+
+  if (
+    value === "draft" ||
+    value === "current" ||
+    value === "legacy" ||
+    value === "archived"
+  ) {
+    return value;
+  }
+
+  throw new Error(
+    `${source} field "${field}" must be "draft", "current", "legacy", or "archived".`,
   );
 }
 

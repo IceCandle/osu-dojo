@@ -32,6 +32,7 @@ test("parseDojoCommand marks malformed dojo commands invalid", () => {
   assert.deepEqual(parseDojoCommand("!dojo unknownsub"), { type: "invalid" });
   assert.deepEqual(parseDojoCommand("!dojo start ABC! xyz"), { type: "invalid" });
   assert.deepEqual(parseDojoCommand("!dojo cancel"), { type: "invalid" });
+  assert.deepEqual(parseDojoCommand(`!dojo ${"draft"} test 1st`), { type: "invalid" });
   assert.deepEqual(parseDojoCommand("!dojo abort"), { type: "invalid" });
   assert.deepEqual(parseDojoCommand("!dojo abort now"), { type: "invalid" });
   assert.deepEqual(parseDojoCommand("!dojo skip map"), { type: "invalid" });
@@ -50,4 +51,5 @@ test("DOJO_USAGE_LINE mentions every supported command", () => {
   assert.match(DOJO_USAGE_LINE, /!dojo skip/);
   assert.match(DOJO_USAGE_LINE, /!dojo help/);
   assert.doesNotMatch(DOJO_USAGE_LINE, /!dojo abort/);
+  assert.doesNotMatch(DOJO_USAGE_LINE, new RegExp(`!dojo ${"draft"}`));
 });
