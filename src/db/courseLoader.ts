@@ -1,6 +1,19 @@
 import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
-import type { DanScoreModel, DanSystemStatus, PassConditionType } from "@/lib/domain";
+import {
+  COURSE_CONDITION_TYPES,
+  MAP_CONDITION_TYPES,
+  isCoursePassConditionType,
+  isMapPassConditionType,
+} from "@/lib/domain";
+import type {
+  CoursePassCondition,
+  CoursePassConditionType,
+  DanScoreModel,
+  DanSystemStatus,
+  MapPassCondition,
+  MapPassConditionType,
+} from "@/lib/domain";
 import { kebabizeName } from "@/lib/format";
 import { validateCourseMods } from "@/lib/mods";
 
@@ -10,8 +23,7 @@ interface CourseBeatmapSeed {
   id: string;
   beatmapId: number;
   mods: string;
-  passConditionType: PassConditionType;
-  passConditionThreshold: number;
+  passConditions: MapPassCondition[];
   ordinal: number;
   title?: string;
   artist?: string;
@@ -29,8 +41,7 @@ interface CourseSeed {
   tags: string[];
   ordinal: number;
   scoreModel: DanScoreModel;
-  overallPassType: PassConditionType | null;
-  overallPassThreshold: number | null;
+  overallPassConditions: CoursePassCondition[];
   beatmaps: CourseBeatmapSeed[];
 }
 
@@ -85,6 +96,9 @@ function parseDanSystem(value: unknown, source: string): DanSystemSeed {
 
 function parseCourse(value: unknown, source: string): CourseSeed {
   const record = expectRecord(value, "course", source);
+  const beatmaps = expectArray(record.beatmaps, "beatmaps", source).map(
+    (beatmap, index) => parseCourseBeatmap(beatmap, `${source} beatmaps[${index}]`),
+  );
 
   return {
     id: expectString(record.id, "id", source),
@@ -94,19 +108,13 @@ function parseCourse(value: unknown, source: string): CourseSeed {
     tags: optionalStringArray(record.tags, "tags", source, []),
     ordinal: expectInteger(record.ordinal, "ordinal", source),
     scoreModel: expectScoreModel(record.scoreModel, "scoreModel", source),
-    overallPassType: expectPassConditionTypeOrNull(
-      record.overallPassType,
-      "overallPassType",
+    overallPassConditions: expectCourseConditionList(
+      record.overallPassConditions,
+      "overallPassConditions",
       source,
+      beatmaps.length,
     ),
-    overallPassThreshold: expectNumberOrNull(
-      record.overallPassThreshold,
-      "overallPassThreshold",
-      source,
-    ),
-    beatmaps: expectArray(record.beatmaps, "beatmaps", source).map((beatmap, index) =>
-      parseCourseBeatmap(beatmap, `${source} beatmaps[${index}]`),
-    ),
+    beatmaps,
   };
 }
 
@@ -117,14 +125,9 @@ function parseCourseBeatmap(value: unknown, source: string): CourseBeatmapSeed {
     id: expectString(record.id, "id", source),
     beatmapId: expectInteger(record.beatmapId, "beatmapId", source),
     mods: validateCourseMods(expectString(record.mods, "mods", source)),
-    passConditionType: expectPassConditionType(
-      record.passConditionType,
-      "passConditionType",
-      source,
-    ),
-    passConditionThreshold: expectNumber(
-      record.passConditionThreshold,
-      "passConditionThreshold",
+    passConditions: expectMapConditionList(
+      record.passConditions,
+      "passConditions",
       source,
     ),
     ordinal: expectInteger(record.ordinal, "ordinal", source),
@@ -212,7 +215,7 @@ function optionalStringArray(
 }
 
 function expectNumber(value: unknown, field: string, source: string): number {
-  if (typeof value !== "number" || Number.isNaN(value)) {
+  if (typeof value !== "number" || Number.isNaN(value) || !Number.isFinite(value)) {
     throw new Error(`${source} field "${field}" must be a number.`);
   }
 
@@ -229,44 +232,6 @@ function expectInteger(value: unknown, field: string, source: string): number {
   return number;
 }
 
-function expectNumberOrNull(
-  value: unknown,
-  field: string,
-  source: string,
-): number | null {
-  if (value === null) {
-    return null;
-  }
-
-  return expectNumber(value, field, source);
-}
-
-function expectPassConditionType(
-  value: unknown,
-  field: string,
-  source: string,
-): PassConditionType {
-  if (value === "acc" || value === "score") {
-    return value;
-  }
-
-  throw new Error(
-    `${source} field "${field}" must be "acc" or "score".`,
-  );
-}
-
-function expectPassConditionTypeOrNull(
-  value: unknown,
-  field: string,
-  source: string,
-): PassConditionType | null {
-  if (value === null) {
-    return null;
-  }
-
-  return expectPassConditionType(value, field, source);
-}
-
 function expectScoreModel(
   value: unknown,
   field: string,
@@ -278,6 +243,156 @@ function expectScoreModel(
 
   throw new Error(
     `${source} field "${field}" must be "scorev1" or "scorev2".`,
+  );
+}
+
+function expectMapConditionList(
+  value: unknown,
+  field: string,
+  source: string,
+): MapPassCondition[] {
+  const conditions = expectArray(value, field, source).map((condition, index) =>
+    parseMapCondition(condition, `${source} ${field}[${index}]`),
+  );
+
+  if (conditions.length === 0) {
+    throw new Error(`${source} field "${field}" must contain at least one condition.`);
+  }
+
+  assertUniqueConditionTypes(conditions, source, field);
+  return sortConditions(conditions, MAP_CONDITION_TYPES);
+}
+
+function expectCourseConditionList(
+  value: unknown,
+  field: string,
+  source: string,
+  beatmapCount: number,
+): CoursePassCondition[] {
+  const conditions = expectArray(value, field, source).map((condition, index) =>
+    parseCourseCondition(condition, `${source} ${field}[${index}]`, beatmapCount),
+  );
+
+  assertUniqueConditionTypes(conditions, source, field);
+  return sortConditions(conditions, COURSE_CONDITION_TYPES);
+}
+
+function parseMapCondition(value: unknown, source: string): MapPassCondition {
+  const record = expectRecord(value, "map pass condition", source);
+  const type = expectMapConditionType(record.type, "type", source);
+
+  return {
+    type,
+    threshold: expectConditionThreshold(type, record.threshold, "threshold", source, null),
+  };
+}
+
+function parseCourseCondition(
+  value: unknown,
+  source: string,
+  beatmapCount: number,
+): CoursePassCondition {
+  const record = expectRecord(value, "course pass condition", source);
+  const type = expectCourseConditionType(record.type, "type", source);
+
+  return {
+    type,
+    threshold: expectConditionThreshold(
+      type,
+      record.threshold,
+      "threshold",
+      source,
+      beatmapCount,
+    ),
+  };
+}
+
+function expectMapConditionType(
+  value: unknown,
+  field: string,
+  source: string,
+): MapPassConditionType {
+  if (isMapPassConditionType(value)) {
+    return value;
+  }
+
+  throw new Error(
+    `${source} field "${field}" must be "accuracy", "score", "missCount", or "maxCombo".`,
+  );
+}
+
+function expectCourseConditionType(
+  value: unknown,
+  field: string,
+  source: string,
+): CoursePassConditionType {
+  if (isCoursePassConditionType(value)) {
+    return value;
+  }
+
+  throw new Error(
+    `${source} field "${field}" must be "courseAccuracy", "totalScore", or "totalMissCount".`,
+  );
+}
+
+function expectConditionThreshold(
+  type: MapPassConditionType | CoursePassConditionType,
+  value: unknown,
+  field: string,
+  source: string,
+  beatmapCount: number | null,
+): number {
+  const threshold = expectNumber(value, field, source);
+
+  if (type === "accuracy") {
+    if (threshold < 0 || threshold > 100) {
+      throw new Error(`${source} field "${field}" must be between 0 and 100.`);
+    }
+
+    return threshold;
+  }
+
+  if (type === "courseAccuracy") {
+    const max = beatmapCount === null ? null : beatmapCount * 100;
+    if (threshold < 0 || (max !== null && threshold > max)) {
+      throw new Error(
+        `${source} field "${field}" must be between 0 and ${max ?? "course maximum"}.`,
+      );
+    }
+
+    return threshold;
+  }
+
+  if (!Number.isInteger(threshold) || threshold < 0) {
+    throw new Error(`${source} field "${field}" must be a non-negative integer.`);
+  }
+
+  return threshold;
+}
+
+function assertUniqueConditionTypes<T extends { type: string }>(
+  conditions: T[],
+  source: string,
+  field: string,
+) {
+  const seen = new Set<string>();
+  for (const condition of conditions) {
+    if (seen.has(condition.type)) {
+      throw new Error(
+        `${source} field "${field}" contains duplicate pass condition type "${condition.type}".`,
+      );
+    }
+
+    seen.add(condition.type);
+  }
+}
+
+function sortConditions<T extends { type: string }>(
+  conditions: T[],
+  order: readonly string[],
+): T[] {
+  return [...conditions].sort(
+    (left, right) => order.indexOf(left.type) - order.indexOf(right.type),
   );
 }
 

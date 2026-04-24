@@ -24,11 +24,40 @@ export default async function DanSystemPage({
   const detail = await getDanSystemDetailByNameKey(systemNameKey);
   const courses = detail?.courses ?? [];
 
-  if (!detail || courses.length === 0) {
+  if (!detail) {
     notFound();
   }
   const { system } = detail;
   const capabilities = systemCapabilities(system.status);
+
+  if (courses.length === 0) {
+    return (
+      <main className="page-shell">
+        <section className="detail-header dan-overview-header">
+          <div className="system-header-grid">
+            <div>
+              <div className="detail-title-row">
+                <h1>{system.name}</h1>
+                {capabilities.badge ? (
+                  <span className="system-status-pill detail-status-pill">
+                    {capabilities.badge}
+                  </span>
+                ) : null}
+              </div>
+              <p className="detail-copy">{system.description}</p>
+            </div>
+          </div>
+        </section>
+
+        <section className="empty-card system-empty-card">
+          <h2>No courses available</h2>
+          <p>
+            This dan system exists, but it does not have any playable courses yet.
+          </p>
+        </section>
+      </main>
+    );
+  }
 
   const resolvedSearchParams = searchParams ? await searchParams : undefined;
   const requestedCourseNameKey = Array.isArray(resolvedSearchParams?.course)
@@ -50,11 +79,8 @@ export default async function DanSystemPage({
   const command = `!dojo start ${systemNameKeyForLinks} ${kebabizeName(selectedCourse.name)}`;
   const topResults = ranking.results.slice(0, 10);
   const overallRequirement =
-    selectedCourse.overallPassType && selectedCourse.overallPassThreshold !== null
-      ? formatConditionCompact(
-          selectedCourse.overallPassType,
-          selectedCourse.overallPassThreshold,
-        )
+    selectedCourse.overallPassConditions.length > 0
+      ? selectedCourse.overallPassConditions.map(formatConditionCompact).join(" / ")
       : "Per-map pass only";
 
   return (
@@ -153,10 +179,7 @@ export default async function DanSystemPage({
 
                       <div className="course-beatmap-footer">
                         <p className="course-beatmap-condition">
-                          {formatConditionCompact(
-                            beatmap.passConditionType,
-                            beatmap.passConditionThreshold,
-                          )}
+                          {beatmap.passConditions.map(formatConditionCompact).join(" / ")}
                         </p>
 
                         {beatmap.annotations.length > 0 ? (

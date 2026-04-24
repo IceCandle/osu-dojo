@@ -223,6 +223,220 @@ test("createTestDatabase migrates old beatmaps tables with total object counts",
   }
 });
 
+test("createTestDatabase backfills legacy pass condition columns", async () => {
+  const temp = createTempDatabaseUrl();
+
+  try {
+    const sqlite = new Database(temp.filePath);
+    sqlite.exec(`
+      CREATE TABLE dan_systems (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        slug TEXT NOT NULL UNIQUE,
+        description TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'current'
+      );
+      CREATE TABLE courses (
+        id TEXT PRIMARY KEY,
+        dan_system_id TEXT NOT NULL REFERENCES dan_systems(id),
+        creator_user_id INTEGER,
+        name TEXT NOT NULL,
+        slug TEXT NOT NULL,
+        description TEXT NOT NULL DEFAULT '',
+        tags TEXT NOT NULL DEFAULT '[]',
+        ordinal INTEGER NOT NULL,
+        score_model TEXT NOT NULL DEFAULT 'scorev2',
+        overall_pass_type TEXT,
+        overall_pass_threshold REAL,
+        created_at INTEGER,
+        updated_at INTEGER,
+        UNIQUE(dan_system_id, slug)
+      );
+      CREATE TABLE beatmaps (
+        id TEXT PRIMARY KEY,
+        course_id TEXT NOT NULL REFERENCES courses(id),
+        beatmap_id INTEGER NOT NULL,
+        mods TEXT NOT NULL,
+        pass_condition_type TEXT NOT NULL,
+        pass_condition_threshold REAL NOT NULL,
+        ordinal INTEGER NOT NULL,
+        annotations TEXT NOT NULL DEFAULT '[]'
+      );
+      CREATE TABLE runs (
+        id TEXT PRIMARY KEY,
+        user_id INTEGER NOT NULL,
+        username TEXT NOT NULL,
+        course_id TEXT NOT NULL REFERENCES courses(id),
+        passed INTEGER NOT NULL,
+        started_at INTEGER NOT NULL,
+        completed_at INTEGER NOT NULL,
+        match_id INTEGER
+      );
+      CREATE TABLE map_results (
+        id TEXT PRIMARY KEY,
+        run_id TEXT NOT NULL REFERENCES runs(id),
+        game_id INTEGER,
+        beatmap_id INTEGER NOT NULL,
+        mods TEXT NOT NULL,
+        pass_condition_type TEXT NOT NULL,
+        pass_condition_threshold REAL NOT NULL,
+        ordinal INTEGER NOT NULL,
+        score INTEGER NOT NULL,
+        accuracy REAL NOT NULL,
+        max_combo INTEGER NOT NULL,
+        count_300 INTEGER NOT NULL,
+        count_100 INTEGER NOT NULL,
+        count_50 INTEGER NOT NULL,
+        count_miss INTEGER NOT NULL,
+        passed INTEGER NOT NULL,
+        created_at INTEGER NOT NULL DEFAULT (unixepoch() * 1000)
+      );
+      INSERT INTO dan_systems (id, name, slug, description, status)
+      VALUES ('system-old', 'old', 'old', 'old', 'draft');
+      INSERT INTO courses (
+        id,
+        dan_system_id,
+        name,
+        slug,
+        description,
+        ordinal,
+        score_model,
+        overall_pass_type,
+        overall_pass_threshold
+      )
+      VALUES ('course-old', 'system-old', 'old', 'old', 'old', 1, 'scorev2', 'acc', 95);
+      INSERT INTO beatmaps (
+        id,
+        course_id,
+        beatmap_id,
+        mods,
+        pass_condition_type,
+        pass_condition_threshold,
+        ordinal
+      )
+      VALUES ('beatmap-old', 'course-old', 1, '', 'score', 10000, 1);
+      INSERT INTO runs (
+        id,
+        user_id,
+        username,
+        course_id,
+        passed,
+        started_at,
+        completed_at
+      )
+      VALUES ('run-old', 1, 'OldPlayer', 'course-old', 1, 1, 2);
+      INSERT INTO map_results (
+        id,
+        run_id,
+        beatmap_id,
+        mods,
+        pass_condition_type,
+        pass_condition_threshold,
+        ordinal,
+        score,
+        accuracy,
+        max_combo,
+        count_300,
+        count_100,
+        count_50,
+        count_miss,
+        passed
+      )
+      VALUES ('map-result-old', 'run-old', 1, '', 'acc', 95, 1, 10000, 96, 100, 1, 0, 0, 0, 1);
+    `);
+    sqlite.close();
+
+    const { sqlite: migratedSqlite } = await createTestDatabase(temp.url);
+    const course = migratedSqlite
+      .prepare("SELECT overall_pass_conditions FROM courses WHERE id = ?")
+      .get("course-old") as { overall_pass_conditions: string };
+    const beatmap = migratedSqlite
+      .prepare("SELECT pass_conditions FROM beatmaps WHERE id = ?")
+      .get("beatmap-old") as { pass_conditions: string };
+    const mapResult = migratedSqlite
+      .prepare("SELECT pass_conditions FROM map_results WHERE id = ?")
+      .get("map-result-old") as { pass_conditions: string };
+    const beatmapColumns = (
+      migratedSqlite.pragma("table_info(beatmaps)") as { name: string }[]
+    ).map((column) => column.name);
+
+    assert.deepEqual(JSON.parse(course.overall_pass_conditions), [
+      { type: "courseAccuracy", threshold: 95 },
+    ]);
+    assert.deepEqual(JSON.parse(beatmap.pass_conditions), [
+      { type: "score", threshold: 10000 },
+    ]);
+    assert.deepEqual(JSON.parse(mapResult.pass_conditions), [
+      { type: "accuracy", threshold: 95 },
+    ]);
+    assert.equal(beatmapColumns.includes("pass_condition_type"), false);
+  } finally {
+    temp.cleanup();
+  }
+});
+
+test("course reads reject stale map pass condition types", async () => {
+  const temp = createTempDatabaseUrl();
+
+  try {
+    const { db } = await createTestDatabase(temp.url);
+
+    db.$client
+      .prepare(
+        `
+        UPDATE beatmaps
+        SET pass_conditions = ?
+        WHERE course_id = (SELECT id FROM courses WHERE slug = ?)
+          AND ordinal = ?
+        `,
+      )
+      .run(
+        JSON.stringify([{ type: "acc", threshold: 95 }]),
+        SEEDED_COURSE_SLUG,
+        1,
+      );
+
+    await assert.rejects(
+      () =>
+        getCourseByNameKey(
+          SEEDED_SYSTEM_NAME_KEY,
+          SEEDED_COURSE_NAME_KEY,
+          db,
+        ),
+      /map pass condition type "acc" is not valid/,
+    );
+  } finally {
+    temp.cleanup();
+  }
+});
+
+test("course reads reject map-only types in course pass conditions", async () => {
+  const temp = createTempDatabaseUrl();
+
+  try {
+    const { db } = await createTestDatabase(temp.url);
+
+    db.$client
+      .prepare("UPDATE courses SET overall_pass_conditions = ? WHERE slug = ?")
+      .run(
+        JSON.stringify([{ type: "accuracy", threshold: 95 }]),
+        SEEDED_COURSE_SLUG,
+      );
+
+    await assert.rejects(
+      () =>
+        getCourseByNameKey(
+          SEEDED_SYSTEM_NAME_KEY,
+          SEEDED_COURSE_NAME_KEY,
+          db,
+        ),
+      /course pass condition type "accuracy" is not valid/,
+    );
+  } finally {
+    temp.cleanup();
+  }
+});
+
 test("pages render seeded course data from SQLite", async () => {
   const temp = createTempDatabaseUrl();
   const previousDatabaseUrl = process.env.DATABASE_URL;
@@ -269,14 +483,13 @@ test("pages render seeded course data from SQLite", async () => {
     assert.match(courseHtml, /Sample dan system for the MVP\./);
     assert.match(courseHtml, new RegExp(course?.beatmaps[0]?.difficultyName ?? ""));
     assert.match(courseHtml, new RegExp(formatScoreModel(course.scoreModel)));
-    if (course.overallPassType && course.overallPassThreshold !== null) {
+    if (course.overallPassConditions.length > 0) {
       assert.match(
         courseHtml,
         new RegExp(
           escapeRegExp(
-            formatConditionCompact(
-              course.overallPassType,
-              course.overallPassThreshold,
+            escapeRenderedText(
+              course.overallPassConditions.map(formatConditionCompact).join(" / "),
             ),
           ),
         ),
@@ -287,9 +500,8 @@ test("pages render seeded course data from SQLite", async () => {
         courseHtml,
         new RegExp(
           escapeRegExp(
-            formatConditionCompact(
-              beatmap.passConditionType,
-              beatmap.passConditionThreshold,
+            escapeRenderedText(
+              beatmap.passConditions.map(formatConditionCompact).join(" / "),
             ),
           ),
         ),
@@ -377,6 +589,10 @@ function escapeRegExp(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+function escapeRenderedText(value: string) {
+  return value.replace(/</g, "&lt;");
+}
+
 test("course run queries and page derive DNF for interrupted partial runs", async () => {
   const temp = createTempDatabaseUrl();
   const previousDatabaseUrl = process.env.DATABASE_URL;
@@ -407,8 +623,7 @@ test("course run queries and page derive DNF for interrupted partial runs", asyn
             gameId: 1,
             beatmapId: course!.beatmaps[0]!.beatmapId,
             mods: course!.beatmaps[0]!.mods,
-            passConditionType: course!.beatmaps[0]!.passConditionType,
-            passConditionThreshold: course!.beatmaps[0]!.passConditionThreshold,
+            passConditions: course!.beatmaps[0]!.passConditions,
             ordinal: 1,
             score: 900_000,
             accuracy: 96,
@@ -489,8 +704,7 @@ test("seedDatabase synchronizes updated draft beatmaps on an existing SQLite fil
       id: "beatmap-test-3",
       beatmapId: newBeatmapId,
       mods: "DT",
-      passConditionType: "acc",
-      passConditionThreshold: 50,
+      passConditions: [{ type: "accuracy", threshold: 50 }],
       ordinal: 3,
       title: "test stage three",
       artist: "osu!dojo",
@@ -538,7 +752,7 @@ test("seedDatabase rejects gameplay edits on current systems", async () => {
     assert.ok(seededCourse);
     seededCourse!.beatmaps[0] = {
       ...seededCourse!.beatmaps[0]!,
-      passConditionThreshold: 99,
+      passConditions: [{ type: "accuracy", threshold: 99 }],
     };
 
     await assert.rejects(

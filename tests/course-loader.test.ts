@@ -33,8 +33,11 @@ test("course loader reads the seeded test course json", () => {
       assert.equal(typeof beatmap.beatmapId, "number");
       assert.equal(Number.isInteger(beatmap.beatmapId), true);
       assert.equal(typeof beatmap.mods, "string");
-      assert.match(beatmap.passConditionType, /^(acc|score)$/);
-      assert.equal(typeof beatmap.passConditionThreshold, "number");
+      assert.ok(beatmap.passConditions.length > 0);
+      for (const condition of beatmap.passConditions) {
+        assert.match(condition.type, /^(accuracy|score|missCount|maxCombo)$/);
+        assert.equal(typeof condition.threshold, "number");
+      }
       assert.equal(typeof beatmap.ordinal, "number");
       assert.equal(Number.isInteger(beatmap.ordinal), true);
     }
@@ -67,15 +70,13 @@ test("course loader rejects unsupported beatmap mods", () => {
             description: "invalid",
             ordinal: 1,
             scoreModel: "scorev2",
-            overallPassType: "acc",
-            overallPassThreshold: 95,
+            overallPassConditions: [{ type: "courseAccuracy", threshold: 95 }],
             beatmaps: [
               {
                 id: "beatmap-invalid",
                 beatmapId: 1,
                 mods: "RX",
-                passConditionType: "acc",
-                passConditionThreshold: 95,
+                passConditions: [{ type: "accuracy", threshold: 95 }],
                 ordinal: 1,
                 title: "x",
                 artist: "x",
@@ -118,15 +119,13 @@ test("course loader allows beatmap metadata to be omitted", () => {
             description: "optional",
             ordinal: 1,
             scoreModel: "scorev2",
-            overallPassType: "acc",
-            overallPassThreshold: 95,
+            overallPassConditions: [{ type: "courseAccuracy", threshold: 95 }],
             beatmaps: [
               {
                 id: "beatmap-optional",
                 beatmapId: 1,
                 mods: "",
-                passConditionType: "acc",
-                passConditionThreshold: 95,
+                passConditions: [{ type: "accuracy", threshold: 95 }],
                 ordinal: 1,
                 annotations: ["metadata resolved at seed time"],
               },
@@ -193,15 +192,13 @@ test("course loader rejects legacy courseSlug field", () => {
             description: "legacy",
             ordinal: 1,
             scoreModel: "scorev2",
-            overallPassType: "acc",
-            overallPassThreshold: 95,
+            overallPassConditions: [{ type: "courseAccuracy", threshold: 95 }],
             beatmaps: [
               {
                 id: "beatmap-legacy-slug",
                 beatmapId: 1,
                 mods: "",
-                passConditionType: "acc",
-                passConditionThreshold: 95,
+                passConditions: [{ type: "accuracy", threshold: 95 }],
                 ordinal: 1,
                 annotations: ["x"],
               },
@@ -239,15 +236,13 @@ test("course loader rejects unsupported score models", () => {
             description: "invalid-score",
             ordinal: 1,
             scoreModel: "legacy",
-            overallPassType: "score",
-            overallPassThreshold: 95,
+            overallPassConditions: [{ type: "totalScore", threshold: 95 }],
             beatmaps: [
               {
                 id: "beatmap-invalid-score",
                 beatmapId: 1,
                 mods: "",
-                passConditionType: "score",
-                passConditionThreshold: 95,
+                passConditions: [{ type: "score", threshold: 95 }],
                 ordinal: 1,
                 title: "x",
                 artist: "x",
@@ -290,15 +285,13 @@ test("course loader rejects non-array annotations", () => {
             description: "invalid-annotations",
             ordinal: 1,
             scoreModel: "scorev2",
-            overallPassType: "acc",
-            overallPassThreshold: 95,
+            overallPassConditions: [{ type: "courseAccuracy", threshold: 95 }],
             beatmaps: [
               {
                 id: "beatmap-invalid-annotations",
                 beatmapId: 1,
                 mods: "",
-                passConditionType: "acc",
-                passConditionThreshold: 95,
+                passConditions: [{ type: "accuracy", threshold: 95 }],
                 ordinal: 1,
                 title: "x",
                 artist: "x",
@@ -341,15 +334,13 @@ test("course loader rejects display names outside the public key contract", () =
             description: "invalid",
             ordinal: 1,
             scoreModel: "scorev2",
-            overallPassType: "acc",
-            overallPassThreshold: 95,
+            overallPassConditions: [{ type: "courseAccuracy", threshold: 95 }],
             beatmaps: [
               {
                 id: "beatmap-invalid-name",
                 beatmapId: 1,
                 mods: "",
-                passConditionType: "acc",
-                passConditionThreshold: 95,
+                passConditions: [{ type: "accuracy", threshold: 95 }],
                 ordinal: 1,
                 annotations: ["x"],
               },
@@ -387,15 +378,13 @@ test("course loader rejects duplicate display name keys", () => {
             description: "duplicates",
             ordinal: 1,
             scoreModel: "scorev2",
-            overallPassType: "acc",
-            overallPassThreshold: 95,
+            overallPassConditions: [{ type: "courseAccuracy", threshold: 95 }],
             beatmaps: [
               {
                 id: "beatmap-duplicates-1",
                 beatmapId: 1,
                 mods: "",
-                passConditionType: "acc",
-                passConditionThreshold: 95,
+                passConditions: [{ type: "accuracy", threshold: 95 }],
                 ordinal: 1,
                 annotations: ["x"],
               },
@@ -408,15 +397,13 @@ test("course loader rejects duplicate display name keys", () => {
             description: "duplicates",
             ordinal: 2,
             scoreModel: "scorev2",
-            overallPassType: "acc",
-            overallPassThreshold: 95,
+            overallPassConditions: [{ type: "courseAccuracy", threshold: 95 }],
             beatmaps: [
               {
                 id: "beatmap-duplicates-2",
                 beatmapId: 2,
                 mods: "",
-                passConditionType: "acc",
-                passConditionThreshold: 95,
+                passConditions: [{ type: "accuracy", threshold: 95 }],
                 ordinal: 1,
                 annotations: ["x"],
               },
@@ -455,15 +442,13 @@ test("course loader reads system status and defaults to current", () => {
             description: "draft",
             ordinal: 1,
             scoreModel: "scorev2",
-            overallPassType: "acc",
-            overallPassThreshold: 95,
+            overallPassConditions: [{ type: "courseAccuracy", threshold: 95 }],
             beatmaps: [
               {
                 id: "beatmap-old",
                 beatmapId: 1,
                 mods: "",
-                passConditionType: "acc",
-                passConditionThreshold: 95,
+                passConditions: [{ type: "accuracy", threshold: 95 }],
                 ordinal: 1,
                 annotations: ["x"],
               },
@@ -487,15 +472,13 @@ test("course loader reads system status and defaults to current", () => {
             description: "current",
             ordinal: 1,
             scoreModel: "scorev2",
-            overallPassType: "acc",
-            overallPassThreshold: 95,
+            overallPassConditions: [{ type: "courseAccuracy", threshold: 95 }],
             beatmaps: [
               {
                 id: "beatmap-current",
                 beatmapId: 2,
                 mods: "",
-                passConditionType: "acc",
-                passConditionThreshold: 95,
+                passConditions: [{ type: "accuracy", threshold: 95 }],
                 ordinal: 1,
                 annotations: ["x"],
               },
@@ -535,15 +518,13 @@ test("course loader rejects duplicate system keys regardless of status", () => {
           description: id,
           ordinal: 1,
           scoreModel: "scorev2",
-          overallPassType: "acc",
-          overallPassThreshold: 95,
+          overallPassConditions: [{ type: "courseAccuracy", threshold: 95 }],
           beatmaps: [
             {
               id: `${id}-beatmap`,
               beatmapId: 1,
               mods: "",
-              passConditionType: "acc",
-              passConditionThreshold: 95,
+              passConditions: [{ type: "accuracy", threshold: 95 }],
               ordinal: 1,
               annotations: ["x"],
             },
@@ -568,3 +549,126 @@ test("course loader rejects duplicate system keys regardless of status", () => {
     temp.cleanup();
   }
 });
+
+test("course loader canonicalizes condition order", () => {
+  const temp = createTempDirectory();
+
+  try {
+    writeFileSync(
+      path.join(temp.directory, "conditions.json"),
+      JSON.stringify(
+        systemFixture({
+          overallPassConditions: [
+            { type: "totalMissCount", threshold: 10 },
+            { type: "courseAccuracy", threshold: 95 },
+          ],
+          passConditions: [
+            { type: "maxCombo", threshold: 100 },
+            { type: "accuracy", threshold: 95 },
+            { type: "missCount", threshold: 2 },
+          ],
+        }),
+      ),
+    );
+
+    const course = loadCoursesFromDir(temp.directory)[0]?.courses[0];
+
+    assert.deepEqual(
+      course?.overallPassConditions.map((condition) => condition.type),
+      ["courseAccuracy", "totalMissCount"],
+    );
+    assert.deepEqual(
+      course?.beatmaps[0]?.passConditions.map((condition) => condition.type),
+      ["accuracy", "missCount", "maxCombo"],
+    );
+  } finally {
+    temp.cleanup();
+  }
+});
+
+test("course loader rejects invalid condition lists", () => {
+  const cases = [
+    {
+      name: "empty-map",
+      overrides: { passConditions: [] },
+      error: /passConditions.*at least one condition/,
+    },
+    {
+      name: "duplicate-map",
+      overrides: {
+        passConditions: [
+          { type: "accuracy", threshold: 95 },
+          { type: "accuracy", threshold: 96 },
+        ],
+      },
+      error: /duplicate pass condition type "accuracy"/,
+    },
+    {
+      name: "unknown-map",
+      overrides: { passConditions: [{ type: "rank", threshold: 1 }] },
+      error: /must be "accuracy", "score", "missCount", or "maxCombo"/,
+    },
+    {
+      name: "fractional-miss",
+      overrides: { passConditions: [{ type: "missCount", threshold: 1.5 }] },
+      error: /non-negative integer/,
+    },
+    {
+      name: "map-type-overall",
+      overrides: { overallPassConditions: [{ type: "maxCombo", threshold: 100 }] },
+      error: /must be "courseAccuracy", "totalScore", or "totalMissCount"/,
+    },
+    {
+      name: "course-acc-too-high",
+      overrides: { overallPassConditions: [{ type: "courseAccuracy", threshold: 101 }] },
+      error: /between 0 and 100/,
+    },
+  ];
+
+  for (const entry of cases) {
+    const temp = createTempDirectory();
+
+    try {
+      writeFileSync(
+        path.join(temp.directory, `${entry.name}.json`),
+        JSON.stringify(systemFixture(entry.overrides)),
+      );
+
+      assert.throws(() => loadCoursesFromDir(temp.directory), entry.error);
+    } finally {
+      temp.cleanup();
+    }
+  }
+});
+
+function systemFixture(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "system-conditions",
+    name: "conditions",
+    slug: "conditions",
+    description: "conditions",
+    courses: [
+      {
+        id: "course-conditions",
+        name: "first",
+        slug: "first",
+        description: "conditions",
+        ordinal: 1,
+        scoreModel: "scorev2",
+        overallPassConditions:
+          overrides.overallPassConditions ?? [{ type: "courseAccuracy", threshold: 95 }],
+        beatmaps: [
+          {
+            id: "beatmap-conditions",
+            beatmapId: 1,
+            mods: "",
+            passConditions:
+              overrides.passConditions ?? [{ type: "accuracy", threshold: 95 }],
+            ordinal: 1,
+            annotations: ["x"],
+          },
+        ],
+      },
+    ],
+  };
+}

@@ -1,6 +1,42 @@
-export type PassConditionType = "acc" | "score";
+export const MAP_CONDITION_TYPES = [
+  "accuracy",
+  "score",
+  "missCount",
+  "maxCombo",
+] as const;
+export const COURSE_CONDITION_TYPES = [
+  "courseAccuracy",
+  "totalScore",
+  "totalMissCount",
+] as const;
+
+export type MapPassConditionType = (typeof MAP_CONDITION_TYPES)[number];
+export type CoursePassConditionType = (typeof COURSE_CONDITION_TYPES)[number];
+export type PassConditionType = MapPassConditionType | CoursePassConditionType;
 export type DanScoreModel = "scorev1" | "scorev2";
 export type DanSystemStatus = "draft" | "current" | "legacy" | "archived";
+
+export function isMapPassConditionType(
+  value: unknown,
+): value is MapPassConditionType {
+  return (MAP_CONDITION_TYPES as readonly string[]).includes(value as string);
+}
+
+export function isCoursePassConditionType(
+  value: unknown,
+): value is CoursePassConditionType {
+  return (COURSE_CONDITION_TYPES as readonly string[]).includes(value as string);
+}
+
+export interface MapPassCondition {
+  type: MapPassConditionType;
+  threshold: number;
+}
+
+export interface CoursePassCondition {
+  type: CoursePassConditionType;
+  threshold: number;
+}
 
 export interface SystemCapabilities {
   playable: boolean;
@@ -70,8 +106,7 @@ export interface CourseBeatmapDefinition {
   id: string;
   beatmapId: number;
   mods: string;
-  passConditionType: PassConditionType;
-  passConditionThreshold: number;
+  passConditions: MapPassCondition[];
   ordinal: number;
   title: string;
   artist: string;
@@ -94,8 +129,7 @@ export interface CourseDefinition {
   tags: string[];
   ordinal: number;
   scoreModel: DanScoreModel;
-  overallPassType: PassConditionType | null;
-  overallPassThreshold: number | null;
+  overallPassConditions: CoursePassCondition[];
   beatmaps: CourseBeatmapDefinition[];
 }
 
@@ -112,8 +146,7 @@ export interface JudgedMapResult extends StableScoreStats {
   gameId: number | null;
   beatmapId: number;
   mods: string;
-  passConditionType: PassConditionType;
-  passConditionThreshold: number;
+  passConditions: MapPassCondition[];
   score: number;
   accuracy: number;
   maxCombo: number;

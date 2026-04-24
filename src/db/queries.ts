@@ -10,13 +10,20 @@ import {
   runs,
 } from "@/db/schema";
 import type {
+  CoursePassCondition,
   CourseBeatmapDefinition,
   CourseDefinition,
   CourseRunResult,
   DanSystemDefinition,
   JudgedMapResult,
+  MapPassCondition,
 } from "@/lib/domain";
-import { catalogSystemStatuses, playableSystemStatuses } from "@/lib/domain";
+import {
+  catalogSystemStatuses,
+  isCoursePassConditionType,
+  isMapPassConditionType,
+  playableSystemStatuses,
+} from "@/lib/domain";
 import { kebabizeName } from "@/lib/format";
 
 type DerivedRunStatus = "pass" | "fail" | "dnf";
@@ -29,8 +36,7 @@ type CourseRow = {
   tags: string;
   courseOrdinal: number;
   scoreModel: CourseDefinition["scoreModel"] | null;
-  overallPassType: CourseDefinition["overallPassType"];
-  overallPassThreshold: number | null;
+  overallPassConditions: string;
   danSystemId: string;
   danSystemName: string;
   danSystemSlug: string;
@@ -58,8 +64,7 @@ export async function listDanSystemsWithCourses(db?: AppDatabase) {
       tags: courses.tags,
       courseOrdinal: courses.ordinal,
       scoreModel: courses.scoreModel,
-      overallPassType: courses.overallPassType,
-      overallPassThreshold: courses.overallPassThreshold,
+      overallPassConditions: courses.overallPassConditions,
     })
     .from(danSystems)
     .leftJoin(courses, eq(courses.danSystemId, danSystems.id))
@@ -81,8 +86,7 @@ export async function listDanSystemsWithCourses(db?: AppDatabase) {
         description: string;
         ordinal: number;
         scoreModel: CourseDefinition["scoreModel"];
-        overallPassType: CourseDefinition["overallPassType"];
-        overallPassThreshold: number | null;
+        overallPassConditions: CourseDefinition["overallPassConditions"];
       }>;
     }
   >();
@@ -107,8 +111,10 @@ export async function listDanSystemsWithCourses(db?: AppDatabase) {
         description: row.courseDescription ?? "",
         ordinal: row.courseOrdinal ?? 0,
         scoreModel: row.scoreModel ?? "scorev2",
-        overallPassType: row.overallPassType,
-        overallPassThreshold: row.overallPassThreshold,
+        overallPassConditions: parseConditionList(
+          row.overallPassConditions ?? "[]",
+          "course",
+        ),
       });
     }
 
@@ -131,6 +137,27 @@ export async function getDanSystemDetailByNameKey(
   db?: AppDatabase,
 ): Promise<{ system: DanSystemDefinition; courses: CourseDefinition[] } | null> {
   const database = await useDb(db);
+  const systemRows = await database
+    .select({
+      id: danSystems.id,
+      name: danSystems.name,
+      slug: danSystems.slug,
+      description: danSystems.description,
+      status: danSystems.status,
+    })
+    .from(danSystems)
+    .where(inArray(danSystems.status, playableSystemStatuses()))
+    .orderBy(asc(danSystems.name));
+
+  const normalizedSystemNameKey = kebabizeName(systemNameKey);
+  const system = systemRows.find(
+    (row) => kebabizeName(row.name) === normalizedSystemNameKey,
+  );
+
+  if (!system) {
+    return null;
+  }
+
   const rows = await database
     .select({
       courseId: courses.id,
@@ -140,8 +167,7 @@ export async function getDanSystemDetailByNameKey(
       tags: courses.tags,
       courseOrdinal: courses.ordinal,
       scoreModel: courses.scoreModel,
-      overallPassType: courses.overallPassType,
-      overallPassThreshold: courses.overallPassThreshold,
+      overallPassConditions: courses.overallPassConditions,
       danSystemId: danSystems.id,
       danSystemName: danSystems.name,
       danSystemSlug: danSystems.slug,
@@ -150,28 +176,18 @@ export async function getDanSystemDetailByNameKey(
     })
     .from(courses)
     .innerJoin(danSystems, eq(courses.danSystemId, danSystems.id))
-    .where(inArray(danSystems.status, playableSystemStatuses()))
+    .where(eq(courses.danSystemId, system.id))
     .orderBy(asc(danSystems.name), asc(courses.ordinal));
 
-  const normalizedSystemNameKey = kebabizeName(systemNameKey);
-  const matchingRows = rows.filter(
-    (row) => kebabizeName(row.danSystemName) === normalizedSystemNameKey,
-  );
-
-  if (matchingRows.length === 0) {
-    return null;
-  }
-
-  const firstRow = matchingRows[0]!;
   return {
     system: {
-      id: firstRow.danSystemId,
-      name: firstRow.danSystemName,
-      slug: firstRow.danSystemSlug,
-      description: firstRow.danSystemDescription,
-      status: firstRow.danSystemStatus,
+      id: system.id,
+      name: system.name,
+      slug: system.slug,
+      description: system.description,
+      status: system.status,
     },
-    courses: await hydrateCourseRows(matchingRows, database),
+    courses: await hydrateCourseRows(rows, database),
   };
 }
 
@@ -196,14 +212,17 @@ async function hydrateCourseRows(
   rows: CourseRow[],
   database: AppDatabase,
 ): Promise<CourseDefinition[]> {
+  if (rows.length === 0) {
+    return [];
+  }
+
   const beatmapRows = await database
     .select({
       courseId: beatmaps.courseId,
       id: beatmaps.id,
       beatmapId: beatmaps.beatmapId,
       mods: beatmaps.mods,
-      passConditionType: beatmaps.passConditionType,
-      passConditionThreshold: beatmaps.passConditionThreshold,
+      passConditions: beatmaps.passConditions,
       ordinal: beatmaps.ordinal,
       annotations: beatmaps.annotations,
       title: beatmapMetadata.title,
@@ -242,8 +261,7 @@ async function hydrateCourseRows(
     tags: parseTags(row.tags),
     ordinal: row.courseOrdinal,
     scoreModel: row.scoreModel ?? "scorev2",
-    overallPassType: row.overallPassType,
-    overallPassThreshold: row.overallPassThreshold,
+    overallPassConditions: parseConditionList(row.overallPassConditions, "course"),
     beatmaps: (beatmapsByCourseId.get(row.courseId) ?? []).map(parseBeatmapRow),
   }));
 }
@@ -408,8 +426,7 @@ export async function storeCourseRunResult(
         gameId: map.gameId,
         beatmapId: map.beatmapId,
         mods: map.mods,
-        passConditionType: map.passConditionType,
-        passConditionThreshold: map.passConditionThreshold,
+        passConditions: JSON.stringify(map.passConditions),
         ordinal: map.ordinal,
         score: map.score,
         accuracy: map.accuracy,
@@ -432,7 +449,7 @@ export async function storeCourseRunResult(
 
   return {
     run,
-    maps: storedMaps,
+    maps: storedMaps.map(parseMapResultRow),
   };
 }
 
@@ -443,10 +460,10 @@ async function getMapsByRunId(runIds: string[], database: AppDatabase) {
     .where(inArray(mapResults.runId, runIds))
     .orderBy(asc(mapResults.ordinal), asc(mapResults.createdAt));
 
-  const mapsByRunId = new Map<string, typeof mapRows>();
+  const mapsByRunId = new Map<string, JudgedMapResult[]>();
   for (const row of mapRows) {
     const bucket = mapsByRunId.get(row.runId) ?? [];
-    bucket.push(row);
+    bucket.push(parseMapResultRow(row));
     mapsByRunId.set(row.runId, bucket);
   }
 
@@ -457,8 +474,7 @@ function parseBeatmapRow(row: {
   id: string;
   beatmapId: number;
   mods: string;
-  passConditionType: CourseBeatmapDefinition["passConditionType"];
-  passConditionThreshold: number;
+  passConditions: string;
   ordinal: number;
   title: string | null;
   artist: string | null;
@@ -472,8 +488,7 @@ function parseBeatmapRow(row: {
     id: row.id,
     beatmapId: row.beatmapId,
     mods: row.mods,
-    passConditionType: row.passConditionType,
-    passConditionThreshold: row.passConditionThreshold,
+    passConditions: parseConditionList(row.passConditions, "map"),
     ordinal: row.ordinal,
     title: row.title ?? "",
     artist: row.artist ?? "",
@@ -482,6 +497,80 @@ function parseBeatmapRow(row: {
     coverUrl: row.coverUrl ?? "",
     totalObjects: normalizeTotalObjects(row.totalObjects),
     annotations: parseAnnotations(row.annotations),
+  };
+}
+
+function parseMapResultRow(row: typeof mapResults.$inferSelect): JudgedMapResult {
+  return {
+    ...row,
+    passConditions: parseConditionList(row.passConditions, "map"),
+  };
+}
+
+function parseConditionList(raw: string, kind: "map"): MapPassCondition[];
+function parseConditionList(raw: string, kind: "course"): CoursePassCondition[];
+function parseConditionList(
+  raw: string,
+  kind: "map" | "course",
+): MapPassCondition[] | CoursePassCondition[] {
+  const parsed = JSON.parse(raw) as unknown;
+  if (!Array.isArray(parsed)) {
+    throw new Error(`${kind} pass conditions must be stored as an array.`);
+  }
+
+  if (kind === "map") {
+    return parsed.map((condition) => parseStoredMapCondition(condition, kind));
+  }
+
+  return parsed.map((condition) => parseStoredCourseCondition(condition, kind));
+}
+
+function parseStoredCondition(
+  condition: unknown,
+  kind: "map" | "course",
+): { type: string; threshold: number } {
+  if (!condition || typeof condition !== "object" || Array.isArray(condition)) {
+    throw new Error(`${kind} pass condition must be an object.`);
+  }
+
+  const record = condition as Record<string, unknown>;
+  if (typeof record.type !== "string" || typeof record.threshold !== "number") {
+    throw new Error(`${kind} pass condition must include type and threshold.`);
+  }
+
+  return {
+    type: record.type,
+    threshold: record.threshold,
+  };
+}
+
+function parseStoredMapCondition(
+  condition: unknown,
+  kind: "map",
+): MapPassCondition {
+  const record = parseStoredCondition(condition, kind);
+  if (!isMapPassConditionType(record.type)) {
+    throw new Error(`${kind} pass condition type "${record.type}" is not valid.`);
+  }
+
+  return {
+    type: record.type,
+    threshold: record.threshold,
+  };
+}
+
+function parseStoredCourseCondition(
+  condition: unknown,
+  kind: "course",
+): CoursePassCondition {
+  const record = parseStoredCondition(condition, kind);
+  if (!isCoursePassConditionType(record.type)) {
+    throw new Error(`${kind} pass condition type "${record.type}" is not valid.`);
+  }
+
+  return {
+    type: record.type,
+    threshold: record.threshold,
   };
 }
 

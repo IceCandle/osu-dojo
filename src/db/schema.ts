@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import { index, integer, real, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
-import type { DanScoreModel, DanSystemStatus, PassConditionType } from "@/lib/domain";
+import type { DanScoreModel, DanSystemStatus } from "@/lib/domain";
 
 export const danSystems = sqliteTable("dan_systems", {
   id: text("id").primaryKey(),
@@ -24,8 +24,10 @@ export const courses = sqliteTable(
     tags: text("tags").notNull().default("[]"),
     ordinal: integer("ordinal").notNull(),
     scoreModel: text("score_model").$type<DanScoreModel>().notNull(),
-    overallPassType: text("overall_pass_type").$type<PassConditionType | null>(),
-    overallPassThreshold: real("overall_pass_threshold"),
+    overallPassConditions: text("overall_pass_conditions")
+      .$type<string>()
+      .notNull()
+      .default("[]"),
     createdAt: integer("created_at")
       .notNull()
       .default(sql`(unixepoch() * 1000)`),
@@ -48,10 +50,7 @@ export const beatmaps = sqliteTable(
       .references(() => courses.id),
     beatmapId: integer("beatmap_id").notNull(),
     mods: text("mods").notNull(),
-    passConditionType: text("pass_condition_type")
-      .$type<PassConditionType>()
-      .notNull(),
-    passConditionThreshold: real("pass_condition_threshold").notNull(),
+    passConditions: text("pass_conditions").$type<string>().notNull(),
     ordinal: integer("ordinal").notNull(),
     annotations: text("annotations").notNull().default("[]"),
   },
@@ -102,10 +101,7 @@ export const mapResults = sqliteTable(
     gameId: integer("game_id"),
     beatmapId: integer("beatmap_id").notNull(),
     mods: text("mods").notNull(),
-    passConditionType: text("pass_condition_type")
-      .$type<PassConditionType>()
-      .notNull(),
-    passConditionThreshold: real("pass_condition_threshold").notNull(),
+    passConditions: text("pass_conditions").$type<string>().notNull(),
     ordinal: integer("ordinal").notNull(),
     score: integer("score").notNull(),
     accuracy: real("accuracy").notNull(),

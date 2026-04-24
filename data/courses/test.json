@@ -3,7 +3,7 @@
   "name": "test",
   "slug": "test",
   "description": "Sample dan system for the MVP.",
-  "status": "draft",
+  "status": "current",
   "courses": [
     {
       "id": "course-test-1dan",
@@ -12,15 +12,19 @@
       "description": "Two-map smoke-test sample course with short beatmaps and zeroed thresholds for quick manual verification.",
       "ordinal": 1,
       "scoreModel": "scorev2",
-      "overallPassType": "acc",
-      "overallPassThreshold": 0,
+      "overallPassConditions": [
+        { "type": "courseAccuracy", "threshold": 0 },
+        { "type": "totalMissCount", "threshold": 9999 }
+      ],
       "beatmaps": [
         {
           "id": "beatmap-test-1",
           "beatmapId": 315,
           "mods": "",
-          "passConditionType": "acc",
-          "passConditionThreshold": 0.1,
+          "passConditions": [
+            { "type": "accuracy", "threshold": 0.1 },
+            { "type": "missCount", "threshold": 1 }
+          ],
           "ordinal": 1,
           "annotations": ["aim"]
         },
@@ -28,8 +32,10 @@
           "id": "beatmap-test-2",
           "beatmapId": 259,
           "mods": "",
-          "passConditionType": "score",
-          "passConditionThreshold": 10000,
+          "passConditions": [
+            { "type": "score", "threshold": 10000 },
+            { "type": "maxCombo", "threshold": 0 }
+          ],
           "ordinal": 2,
           "annotations": ["speed"]
         }
@@ -42,15 +48,13 @@
       "description": "One-map scorev1 smoke-test sample course with a low accuracy threshold for quick manual verification.",
       "ordinal": 2,
       "scoreModel": "scorev1",
-      "overallPassType": "acc",
-      "overallPassThreshold": 30,
+      "overallPassConditions": [{ "type": "courseAccuracy", "threshold": 30 }],
       "beatmaps": [
         {
           "id": "beatmap-test-2dan-1",
           "beatmapId": 4923775,
           "mods": "",
-          "passConditionType": "acc",
-          "passConditionThreshold": 30,
+          "passConditions": [{ "type": "accuracy", "threshold": 30 }],
           "ordinal": 1,
           "annotations": ["aimslop"]
         }

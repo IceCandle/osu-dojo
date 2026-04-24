@@ -36,8 +36,7 @@ System field:
   "description": "Two-map sample course.",
   "ordinal": 1,
   "scoreModel": "scorev2",
-  "overallPassType": "acc",
-  "overallPassThreshold": 190,
+  "overallPassConditions": [{ "type": "courseAccuracy", "threshold": 190 }],
   "beatmaps": []
 }
 ```
@@ -51,11 +50,10 @@ Course field:
 - `tags`: 선택적 문자열 배열
 - `ordinal`: system 안에서의 표시 순서
 - `scoreModel`: `scorev1` 또는 `scorev2`
-- `overallPassType`: `acc`, `score`, 또는 `null`
-- `overallPassThreshold`: number. `overallPassType`이 `null`이면 `null`
+- `overallPassConditions`: course 전체 통과 조건 배열. 비어 있으면 map별 조건만 사용
 - `beatmaps`: beatmap object 배열
 
-`overallPassType`이 `acc`이면 `overallPassThreshold`는 평균 accuracy가 아니라 Course Acc와 비교합니다. Course Acc는 통과한 map accuracy의 합계입니다.
+Course 전체 조건 type은 `courseAccuracy`, `totalScore`, `totalMissCount`입니다. 조건 목록은 AND로 결합되며, 같은 목록 안에서 같은 type은 한 번만 쓸 수 있습니다. `courseAccuracy`는 평균 accuracy가 아니라 Course Acc와 비교합니다. Course Acc는 통과한 map accuracy의 합계입니다.
 
 각 beatmap object는 아래 형식을 사용합니다.
 
@@ -64,8 +62,7 @@ Course field:
   "id": "beatmap-test-1",
   "beatmapId": 315,
   "mods": "HR",
-  "passConditionType": "acc",
-  "passConditionThreshold": 95,
+  "passConditions": [{ "type": "accuracy", "threshold": 95 }],
   "ordinal": 1,
   "annotations": ["aim"]
 }
@@ -76,11 +73,23 @@ Beatmap field:
 - `id`: DB에 저장되는 고정 문자열 식별자
 - `beatmapId`: osu! beatmap ID 정수
 - `mods`: 지원하는 고정 모드 토큰을 이어 붙인 문자열. `NM`은 빈 문자열로 정규화됨
-- `passConditionType`: `acc` 또는 `score`
-- `passConditionThreshold`: 선택한 지표와 비교할 숫자
+- `passConditions`: map 통과 조건 배열. 최소 하나 이상의 조건 필요
 - `ordinal`: course 안에서의 플레이 순서
 - `annotations`: 문자열 배열
 - `title`, `artist`, `difficultyName`, `mapper`, `coverUrl`: 선택적 메타데이터 문자열
+
+Map 조건 type은 `accuracy`, `score`, `missCount`, `maxCombo`입니다. 조건 목록은 AND로 결합되며, 같은 목록 안에서 같은 type은 한 번만 쓸 수 있습니다.
+
+비교 방향:
+
+- `accuracy`, `score`, `maxCombo`, `courseAccuracy`, `totalScore`: 실제 값이 threshold 이상이어야 통과
+- `missCount`, `totalMissCount`: 실제 값이 threshold 이하여야 통과
+
+Threshold 검증:
+
+- `accuracy`: 0 이상 100 이하 number
+- `courseAccuracy`: 0 이상 `map 수 * 100` 이하 number
+- `score`, `totalScore`, `missCount`, `totalMissCount`, `maxCombo`: 0 이상의 정수
 
 지원하는 모드 토큰은 `EZ`, `NF`, `HT`, `DT`, `HD`, `HR`, `SD`, `NC`, `FL`, `SO`, `PF`, `K4`, `K5`, `K6`, `K7`, `K8`, `FI`, `K9`, `SV2`, `MR`입니다.
 
@@ -100,9 +109,9 @@ Beatmap field:
 `current`, `legacy`, `archived` system은 frozen 상태입니다. Frozen system에서는 아래 gameplay field를 바꿀 수 없습니다.
 
 - course 추가/삭제
-- course `id`, `slug`, name key, `ordinal`, `scoreModel`, `overallPassType`, `overallPassThreshold`
+- course `id`, `slug`, name key, `ordinal`, `scoreModel`, `overallPassConditions`
 - beatmap 추가/삭제
-- beatmap `id`, `beatmapId`, `mods`, `passConditionType`, `passConditionThreshold`, `ordinal`
+- beatmap `id`, `beatmapId`, `mods`, `passConditions`, `ordinal`
 
 허용되는 cosmetic edit은 system `description`, 같은 key를 유지하는 system `name`, course `description`, course `tags`, 같은 key를 유지하는 course `name`, beatmap metadata cache입니다.
 
@@ -134,7 +143,7 @@ course data를 바꾸기 전에 아래를 확인합니다.
 2. display name이 `^[A-Za-z0-9]+(?: [A-Za-z0-9]+)*$`와 맞는지 확인
 3. 플레이 가능한 course에 최소 하나의 beatmap이 있는지 확인
 4. 모든 `ordinal`이 정수인지 확인
-5. pass condition이 `acc` 또는 `score`만 쓰는지 확인
+5. condition list가 map에는 비어 있지 않고, 같은 list 안에서 type이 중복되지 않는지 확인
 6. score model이 `scorev1` 또는 `scorev2`만 쓰는지 확인
 7. frozen system의 gameplay field를 바꾸지 않았는지 확인
 8. `pnpm test` 실행

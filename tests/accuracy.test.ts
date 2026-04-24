@@ -1,7 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { calculateAccuracy } from "@/lib/accuracy";
-import { judgeCourseRun, judgeThreshold } from "@/lib/judging";
+import {
+  evaluateCourseConditions,
+  evaluateMapConditions,
+  judgeCourseRun,
+  judgeThreshold,
+} from "@/lib/judging";
+import type { CourseDefinition, JudgedMapResult } from "@/lib/domain";
 
 test("calculateAccuracy uses osu stable standard hit windows only", () => {
   const accuracy = calculateAccuracy({
@@ -47,271 +53,163 @@ test("calculateAccuracy returns 100 for a perfect all-300 score", () => {
   assert.equal(accuracy, 100);
 });
 
-test("judgeThreshold compares accuracy and score against the proper field", () => {
-  const acc = judgeThreshold("acc", 95, { accuracy: 96.25, score: 800000 });
-  const score = judgeThreshold("score", 900000, {
-    accuracy: 90,
-    score: 905432,
-  });
+test("judgeThreshold supports lower and upper bound comparisons", () => {
+  const accuracy = judgeThreshold("accuracy", 95, 96.25);
+  const misses = judgeThreshold("missCount", 3, 2, "<=");
 
-  assert.equal(acc.passed, true);
-  assert.equal(acc.value, 96.25);
-  assert.equal(score.passed, true);
-  assert.equal(score.value, 905432);
+  assert.equal(accuracy.passed, true);
+  assert.equal(accuracy.value, 96.25);
+  assert.equal(accuracy.comparison, ">=");
+  assert.equal(misses.passed, true);
+  assert.equal(misses.value, 2);
+  assert.equal(misses.comparison, "<=");
 });
 
-test("judgeCourseRun sums passed-map accuracy for course acc thresholds", () => {
-  const judged = judgeCourseRun(
-    {
-      id: "course-1",
-      danSystemId: "system-1",
-      danSystemName: "test",
-      danSystemSlug: "test",
-      danSystemDescription: "",
-      name: "test-1",
-      slug: "test-1dan",
-      description: "",
-      ordinal: 1,
-      scoreModel: "scorev2",
-      overallPassType: "acc",
-      overallPassThreshold: 190,
-      beatmaps: [],
-    },
+test("evaluateMapConditions handles all map condition types", () => {
+  const judged = evaluateMapConditions(
     [
-      {
-        id: "map-1",
-        runId: "result-1",
-        gameId: 1,
-        beatmapId: 1,
-        mods: "HDHRNF",
-        passConditionType: "acc",
-        passConditionThreshold: 95,
-        score: 900000,
-        accuracy: 96,
-        maxCombo: 1000,
-        count300: 1,
-        count100: 0,
-        count50: 0,
-        countMiss: 0,
-        passed: true,
-        ordinal: 1,
-        createdAt: 1,
-      },
-      {
-        id: "map-2",
-        runId: "result-1",
-        gameId: 2,
-        beatmapId: 2,
-        mods: "HDDTNF",
-        passConditionType: "acc",
-        passConditionThreshold: 95,
-        score: 900000,
-        accuracy: 94.5,
-        maxCombo: 900,
-        count300: 1,
-        count100: 0,
-        count50: 0,
-        countMiss: 0,
-        passed: true,
-        ordinal: 2,
-        createdAt: 2,
-      },
+      { type: "accuracy", threshold: 95 },
+      { type: "score", threshold: 900000 },
+      { type: "missCount", threshold: 2 },
+      { type: "maxCombo", threshold: 800 },
     ],
+    { accuracy: 96.25, score: 905432, countMiss: 2, maxCombo: 850 },
   );
 
-  assert.equal(judged.overall?.value, 190.5);
+  assert.equal(judged.passed, true);
+  assert.deepEqual(
+    judged.evaluations.map((evaluation) => evaluation.passed),
+    [true, true, true, true],
+  );
+});
+
+test("evaluateMapConditions fails when any AND condition fails", () => {
+  const judged = evaluateMapConditions(
+    [
+      { type: "accuracy", threshold: 95 },
+      { type: "missCount", threshold: 1 },
+    ],
+    { accuracy: 96.25, score: 905432, countMiss: 2, maxCombo: 850 },
+  );
+
+  assert.equal(judged.passed, false);
+  assert.deepEqual(
+    judged.evaluations.map((evaluation) => evaluation.passed),
+    [true, false],
+  );
+});
+
+test("evaluateCourseConditions handles aggregate course condition types", () => {
+  const judged = evaluateCourseConditions(
+    [
+      { type: "courseAccuracy", threshold: 190 },
+      { type: "totalScore", threshold: 1700000 },
+      { type: "totalMissCount", threshold: 3 },
+    ],
+    mapResults(),
+  );
+
+  assert.equal(judged.passed, true);
+  assert.deepEqual(
+    judged.evaluations.map((evaluation) => evaluation.value),
+    [190.5, 1815000, 1],
+  );
+});
+
+test("judgeCourseRun passes when maps pass and overall list is empty", () => {
+  const judged = judgeCourseRun(course([]), mapResults());
+
+  assert.equal(judged.overall.length, 0);
   assert.equal(judged.passed, true);
 });
 
-test("judgeCourseRun fails when maps pass but summed passed-map accuracy misses the overall threshold", () => {
+test("judgeCourseRun returns failed overall evaluations", () => {
   const judged = judgeCourseRun(
-    {
-      id: "course-1",
-      danSystemId: "system-1",
-      danSystemName: "test",
-      danSystemSlug: "test",
-      danSystemDescription: "",
-      name: "test-1",
-      slug: "test-1dan",
-      description: "",
-      ordinal: 1,
-      scoreModel: "scorev2",
-      overallPassType: "acc",
-      overallPassThreshold: 190,
-      beatmaps: [],
-    },
-    [
-      {
-        id: "map-1",
-        runId: "result-1",
-        gameId: 1,
-        beatmapId: 1,
-        mods: "HDHRNF",
-        passConditionType: "acc",
-        passConditionThreshold: 94,
-        score: 900000,
-        accuracy: 95,
-        maxCombo: 1000,
-        count300: 1,
-        count100: 0,
-        count50: 0,
-        countMiss: 0,
-        passed: true,
-        ordinal: 1,
-        createdAt: 1,
-      },
-      {
-        id: "map-2",
-        runId: "result-1",
-        gameId: 2,
-        beatmapId: 2,
-        mods: "HDDTNF",
-        passConditionType: "acc",
-        passConditionThreshold: 94,
-        score: 900000,
-        accuracy: 94.5,
-        maxCombo: 900,
-        count300: 1,
-        count100: 0,
-        count50: 0,
-        countMiss: 0,
-        passed: true,
-        ordinal: 2,
-        createdAt: 2,
-      },
-    ],
+    course([
+      { type: "courseAccuracy", threshold: 191 },
+      { type: "totalMissCount", threshold: 0 },
+    ]),
+    mapResults(),
   );
 
   assert.equal(judged.allMapsPassed, true);
-  assert.notEqual(judged.overall, null);
-  assert.equal(judged.overall?.value, 189.5);
-  assert.equal(judged.overall?.passed, false);
+  assert.equal(judged.overall.length, 2);
+  assert.deepEqual(
+    judged.overall.map((evaluation) => evaluation.passed),
+    [false, false],
+  );
   assert.equal(judged.passed, false);
 });
 
-test("judgeCourseRun excludes failed maps from course acc", () => {
+test("judgeCourseRun skips overall evaluation when any map failed", () => {
+  const [first, second] = mapResults();
   const judged = judgeCourseRun(
-    {
-      id: "course-1",
-      danSystemId: "system-1",
-      danSystemName: "test",
-      danSystemSlug: "test",
-      danSystemDescription: "",
-      name: "test-1",
-      slug: "test-1dan",
-      description: "",
-      ordinal: 1,
-      scoreModel: "scorev2",
-      overallPassType: "acc",
-      overallPassThreshold: 180,
-      beatmaps: [],
-    },
-    [
-      {
-        id: "map-1",
-        runId: "result-1",
-        gameId: 1,
-        beatmapId: 1,
-        mods: "HDHRNF",
-        passConditionType: "acc",
-        passConditionThreshold: 94,
-        score: 900000,
-        accuracy: 95,
-        maxCombo: 1000,
-        count300: 1,
-        count100: 0,
-        count50: 0,
-        countMiss: 0,
-        passed: true,
-        ordinal: 1,
-        createdAt: 1,
-      },
-      {
-        id: "map-2",
-        runId: "result-1",
-        gameId: 2,
-        beatmapId: 2,
-        mods: "HDDTNF",
-        passConditionType: "acc",
-        passConditionThreshold: 95,
-        score: 900000,
-        accuracy: 94.5,
-        maxCombo: 900,
-        count300: 1,
-        count100: 0,
-        count50: 0,
-        countMiss: 0,
-        passed: false,
-        ordinal: 2,
-        createdAt: 2,
-      },
-    ],
+    course([{ type: "courseAccuracy", threshold: 100 }]),
+    [first!, { ...second!, passed: false }],
   );
 
   assert.equal(judged.allMapsPassed, false);
-  assert.equal(judged.overall, null);
+  assert.equal(judged.overall.length, 0);
   assert.equal(judged.passed, false);
 });
 
-test("judgeCourseRun sums score for course score thresholds", () => {
-  const judged = judgeCourseRun(
-    {
-      id: "course-1",
-      danSystemId: "system-1",
-      danSystemName: "test",
-      danSystemSlug: "test",
-      danSystemDescription: "",
-      name: "test-1",
-      slug: "test-1dan",
-      description: "",
-      ordinal: 1,
-      scoreModel: "scorev2",
-      overallPassType: "score",
-      overallPassThreshold: 1700000,
-      beatmaps: [],
-    },
-    [
-      {
-        id: "map-1",
-        runId: "result-1",
-        gameId: 1,
-        beatmapId: 1,
-        mods: "NF",
-        passConditionType: "score",
-        passConditionThreshold: 800000,
-        score: 910000,
-        accuracy: 0,
-        maxCombo: 1000,
-        count300: 1,
-        count100: 0,
-        count50: 0,
-        countMiss: 0,
-        passed: true,
-        ordinal: 1,
-        createdAt: 1,
-      },
-      {
-        id: "map-2",
-        runId: "result-1",
-        gameId: 2,
-        beatmapId: 2,
-        mods: "NF",
-        passConditionType: "score",
-        passConditionThreshold: 800000,
-        score: 905000,
-        accuracy: 0,
-        maxCombo: 900,
-        count300: 1,
-        count100: 0,
-        count50: 0,
-        countMiss: 0,
-        passed: true,
-        ordinal: 2,
-        createdAt: 2,
-      },
-    ],
-  );
+function course(
+  overallPassConditions: CourseDefinition["overallPassConditions"],
+): CourseDefinition {
+  return {
+    id: "course-1",
+    danSystemId: "system-1",
+    danSystemName: "test",
+    danSystemSlug: "test",
+    danSystemDescription: "",
+    name: "test-1",
+    slug: "test-1dan",
+    description: "",
+    tags: [],
+    ordinal: 1,
+    scoreModel: "scorev2",
+    overallPassConditions,
+    beatmaps: [],
+  };
+}
 
-  assert.equal(judged.overall?.value, 1815000);
-  assert.equal(judged.passed, true);
-});
+function mapResults(): JudgedMapResult[] {
+  return [
+    {
+      id: "map-1",
+      runId: "result-1",
+      gameId: 1,
+      beatmapId: 1,
+      mods: "NF",
+      passConditions: [{ type: "accuracy", threshold: 95 }],
+      score: 910000,
+      accuracy: 96,
+      maxCombo: 1000,
+      count300: 1,
+      count100: 0,
+      count50: 0,
+      countMiss: 0,
+      passed: true,
+      ordinal: 1,
+      createdAt: 1,
+    },
+    {
+      id: "map-2",
+      runId: "result-1",
+      gameId: 2,
+      beatmapId: 2,
+      mods: "NF",
+      passConditions: [{ type: "score", threshold: 800000 }],
+      score: 905000,
+      accuracy: 94.5,
+      maxCombo: 900,
+      count300: 1,
+      count100: 0,
+      count50: 0,
+      countMiss: 1,
+      passed: true,
+      ordinal: 2,
+      createdAt: 2,
+    },
+  ];
+}

@@ -38,8 +38,7 @@ async function seedRankingCourses(databaseUrl: string) {
       slug: "ranking-acc",
       description: "Accuracy-ranked test course for the integrated leaderboard.",
       scoreModel: "scorev1",
-      overallPassType: "acc",
-      overallPassThreshold: 95,
+      overallPassConditions: [{ type: "courseAccuracy", threshold: 95 }],
     }),
     cloneCourse(baseCourse, {
       id: "course-ranking-sv2",
@@ -47,8 +46,7 @@ async function seedRankingCourses(databaseUrl: string) {
       slug: "ranking-sv2",
       description: "Score-ranked test course for the integrated leaderboard.",
       scoreModel: "scorev2",
-      overallPassType: "score",
-      overallPassThreshold: 1_800_000,
+      overallPassConditions: [{ type: "totalScore", threshold: 1_800_000 }],
     }),
     cloneCourse(baseCourse, {
       id: "course-ranking-empty",
@@ -56,8 +54,7 @@ async function seedRankingCourses(databaseUrl: string) {
       slug: "ranking-empty",
       description: "Empty test course for the integrated leaderboard.",
       scoreModel: "scorev2",
-      overallPassType: "acc",
-      overallPassThreshold: 90,
+      overallPassConditions: [{ type: "courseAccuracy", threshold: 90 }],
     }),
   );
 
@@ -96,8 +93,7 @@ function cloneCourse(
     | "slug"
     | "description"
     | "scoreModel"
-    | "overallPassType"
-    | "overallPassThreshold"
+    | "overallPassConditions"
   >,
 ): DanSystemSeed["courses"][number] {
   return {
@@ -170,8 +166,7 @@ function buildMapResult(
     gameId: stats.gameId ?? beatmap.ordinal,
     beatmapId: beatmap.beatmapId,
     mods: beatmap.mods,
-    passConditionType: beatmap.passConditionType,
-    passConditionThreshold: beatmap.passConditionThreshold,
+    passConditions: beatmap.passConditions,
     ordinal: beatmap.ordinal,
     score: stats.score,
     accuracy: stats.accuracy,
@@ -659,6 +654,53 @@ test("DanCoursePage renders the integrated leaderboard and empty state on the sy
     assert.doesNotMatch(courseHtml, /\b\d{1,2}:\d{2}\b/);
     assert.match(emptyHtml, /No runs saved yet/);
     assert.match(emptyHtml, /!dojo start test ranking-empty/);
+  } finally {
+    process.env.DATABASE_URL = previousDatabaseUrl;
+    globalThis.__osuDojoDatabaseBundle = previousBundle;
+    temp.cleanup();
+  }
+});
+
+test("DanCoursePage renders an empty state for systems with no courses", async () => {
+  const temp = createTempDatabaseUrl();
+  const previousDatabaseUrl = process.env.DATABASE_URL;
+  const previousBundle = globalThis.__osuDojoDatabaseBundle;
+
+  try {
+    const databaseBundle = await createTestDatabase(temp.url);
+    const { db } = databaseBundle;
+    const systems = cloneCourseSystems(
+      loadCoursesFromDir(path.join(process.cwd(), "data/courses")),
+    );
+
+    systems.push({
+      id: "system-empty",
+      name: "empty",
+      slug: "empty",
+      description: "A system shell with no courses yet.",
+      status: "current",
+      courses: [],
+    });
+
+    await clearAllData(db);
+    await seedDatabase(db, systems, { suppressMissingObjectCountWarnings: true });
+
+    process.env.DATABASE_URL = temp.url;
+    globalThis.__osuDojoDatabaseBundle = databaseBundle;
+
+    const html = renderToStaticMarkup(
+      await DanCoursePage({
+        params: Promise.resolve({
+          systemNameKey: "empty",
+        }),
+      }),
+    );
+
+    assert.match(html, /empty/);
+    assert.match(html, /No courses available/);
+    assert.match(html, /does not have any playable courses yet/);
+    assert.doesNotMatch(html, /Course sequence/);
+    assert.doesNotMatch(html, /Top runs/);
   } finally {
     process.env.DATABASE_URL = previousDatabaseUrl;
     globalThis.__osuDojoDatabaseBundle = previousBundle;

@@ -10,7 +10,7 @@
 - 봇이 `osu!dojo: <system_name> / <course_name>` 멀티방을 만들고 플레이어 초대
 - 코스에 맞는 beatmap과 mods 설정
 - 맵 종료 후 rest time 이후 다음 맵 자동 시작
-- 맵별 `accuracy` 또는 `score` 조건으로 pass/fail 판정
+- 맵별 `accuracy`, `score`, `missCount`, `maxCombo` 조건 목록으로 pass/fail 판정
 - 결과를 SQLite DB에 저장
 - 웹사이트에서 단 목록, pass condition, 최근 결과 확인
 
