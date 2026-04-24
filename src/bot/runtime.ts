@@ -1574,13 +1574,32 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
 }
 
 function formatEvaluation(evaluation: JudgedThreshold) {
-  return `${formatConditionValue(
+  return `${formatEvaluationLabel(evaluation.type)}: ${formatConditionValue(
     evaluation.type,
     evaluation.value,
   )} ${evaluation.comparison} ${formatConditionValue(
     evaluation.type,
     evaluation.threshold,
   )} required`;
+}
+
+function formatEvaluationLabel(type: JudgedThreshold["type"]) {
+  switch (type) {
+    case "accuracy":
+      return "accuracy";
+    case "score":
+      return "score";
+    case "missCount":
+      return "miss";
+    case "maxCombo":
+      return "combo";
+    case "courseAccuracy":
+      return "course accuracy";
+    case "totalScore":
+      return "total score";
+    case "totalMissCount":
+      return "total miss";
+  }
 }
 
 function getLobbyWinCondition(scoreModel: CourseDefinition["scoreModel"]) {

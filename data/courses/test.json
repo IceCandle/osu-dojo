@@ -23,7 +23,7 @@
           "mods": "",
           "passConditions": [
             { "type": "accuracy", "threshold": 0.1 },
-            { "type": "missCount", "threshold": 9999 }
+            { "type": "missCount", "threshold": 1 }
           ],
           "ordinal": 1,
           "annotations": ["aim"]

@@ -558,7 +558,7 @@ test("bot runs the seeded course, forces NF, switches to ScoreV2, and stores the
         count300: 1000,
         count100: 40,
         count50: 4,
-        countMiss: 2,
+        countMiss: 1,
         passed: true,
       },
       {
@@ -628,6 +628,13 @@ test("bot runs the seeded course, forces NF, switches to ScoreV2, and stores the
       BanchoLobbyWinConditions.ScoreV2,
     );
     assert.match(latestMeaningfulLobbyMessage(client.lobby), /1st: PASS/i);
+    assert.match(latestMeaningfulLobbyMessage(client.lobby), /course accuracy:/i);
+    assert.match(latestMeaningfulLobbyMessage(client.lobby), /total miss:/i);
+    assert.ok(
+      client.lobby.channelMessages.some((message) =>
+        /score: 905,000 >= 10,000 required/.test(message),
+      ),
+    );
     assert.equal(client.lobby.closeLobbyCalls, 1);
     assert.equal(endedEvents[0]?.result, "completed");
     assert.equal(endedEvents[0]?.reason, undefined);
@@ -818,7 +825,7 @@ test("bot uses the confirmed-finish score fetch policy and completes the run", a
             count300: 1000,
             count100: 40,
             count50: 4,
-            countMiss: 2,
+            countMiss: 1,
             passed: true,
           };
         }
@@ -1048,7 +1055,7 @@ test("bot does not supersede a run that is already finalizing", async () => {
         count300: 1000,
         count100: 40,
         count50: 4,
-        countMiss: 2,
+        countMiss: 1,
         passed: true,
       }),
     });
@@ -1121,7 +1128,7 @@ test("bot persists a superseded run after at least one resolved map", async () =
         count300: 1000,
         count100: 40,
         count50: 4,
-        countMiss: 2,
+        countMiss: 1,
         passed: true,
       }),
     });
@@ -1266,7 +1273,7 @@ test("bot lobby skip between maps advances to the next map immediately", async (
         count300: 1000,
         count100: 40,
         count50: 4,
-        countMiss: 2,
+        countMiss: 1,
         passed: true,
       }),
     });
@@ -1423,7 +1430,7 @@ test("bot aborts immediately when the target player leaves between maps", async 
         count300: 1000,
         count100: 40,
         count50: 4,
-        countMiss: 2,
+        countMiss: 1,
         passed: true,
       }),
     });
@@ -1521,7 +1528,12 @@ test("bot halts the course immediately when a map fails", async () => {
     assert.match(latestMeaningfulLobbyMessage(client.lobby), /1st: FAIL/i);
     assert.ok(
       client.lobby.channelMessages.some((message) =>
-        /30 <= 0 required/.test(message),
+        /accuracy: 100\.00% >= 99\.00% required/.test(message),
+      ),
+    );
+    assert.ok(
+      client.lobby.channelMessages.some((message) =>
+        /miss: 30 <= 0 required/.test(message),
       ),
     );
 
@@ -1564,10 +1576,10 @@ test("bot fails a partial NF play even when the score clears threshold", async (
         score: 950_000,
         accuracy: 98,
         maxCombo: 400,
-        count300: 360,
+        count300: 364,
         count100: 30,
         count50: 5,
-        countMiss: 5,
+        countMiss: 1,
         passed: true,
       }),
     });
@@ -1628,10 +1640,10 @@ test("bot preserves normal pass behavior when total object count is unknown", as
         score: 950_000,
         accuracy: 98,
         maxCombo: 400,
-        count300: 360,
+        count300: 364,
         count100: 30,
         count50: 5,
-        countMiss: 5,
+        countMiss: 1,
         passed: true,
       }),
     });
@@ -1678,10 +1690,10 @@ test("bot does not treat equal object counts as partial play", async () => {
         score: 950_000,
         accuracy: 98,
         maxCombo: 400,
-        count300: 360,
+        count300: 364,
         count100: 30,
         count50: 5,
-        countMiss: 5,
+        countMiss: 1,
         passed: true,
       }),
     });
@@ -1834,7 +1846,7 @@ test("bot logs when the released lobby closes", async () => {
         count300: 1000,
         count100: 40,
         count50: 4,
-        countMiss: 2,
+        countMiss: 1,
         passed: true,
       },
       {
@@ -1977,7 +1989,7 @@ test("bot cleanup does not block forever when closeLobby hangs", async () => {
         count300: 1000,
         count100: 40,
         count50: 4,
-        countMiss: 2,
+        countMiss: 1,
         passed: true,
       },
       {
