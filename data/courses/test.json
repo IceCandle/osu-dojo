@@ -26,7 +26,7 @@
             { "type": "missCount", "threshold": 1 }
           ],
           "ordinal": 1,
-          "annotations": ["aim"]
+          "annotations": ["old map", "consistency"]
         },
         {
           "id": "beatmap-test-2",
@@ -37,7 +37,7 @@
             { "type": "maxCombo", "threshold": 0 }
           ],
           "ordinal": 2,
-          "annotations": ["speed"]
+          "annotations": ["low ar"]
         }
       ]
     },

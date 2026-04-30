@@ -4,6 +4,7 @@ import { sleep as defaultSleep } from "@/lib/sleep";
 interface LegacyMultiScore {
   userId: number;
   score: number;
+  enabledMods: number;
   maxCombo: number;
   count300: number;
   count100: number;
@@ -15,6 +16,7 @@ interface LegacyMultiScore {
 interface LegacyMultiGame {
   id: number;
   beatmapId: number;
+  mods: number;
   scores: LegacyMultiScore[];
 }
 
@@ -35,6 +37,8 @@ export interface NormalizedPlayerMapScore {
   beatmapId: number;
   userId: number;
   score: number;
+  playerEnabledMods: number;
+  globalGameMods: number;
   accuracy: number;
   maxCombo: number;
   count300: number;
@@ -306,6 +310,7 @@ function parseGame(value: unknown): LegacyMultiGame {
   return {
     id: parseRequiredNonNegativeInteger(value.game_id, "game_id"),
     beatmapId: parseRequiredNonNegativeInteger(value.beatmap_id, "beatmap_id"),
+    mods: parseOptionalNonNegativeInteger(value.mods, "mods"),
     scores: value.scores.map(parseScore),
   };
 }
@@ -318,6 +323,7 @@ function parseScore(value: unknown): LegacyMultiScore {
   return {
     userId: parseRequiredNonNegativeInteger(value.user_id, "user_id"),
     score: parseRequiredNonNegativeInteger(value.score, "score"),
+    enabledMods: parseOptionalNonNegativeInteger(value.enabled_mods, "enabled_mods"),
     maxCombo: parseRequiredNonNegativeInteger(value.maxcombo, "maxcombo"),
     count300: parseRequiredNonNegativeInteger(value.count300, "count300"),
     count100: parseRequiredNonNegativeInteger(value.count100, "count100"),
@@ -344,6 +350,14 @@ function parseRequiredNonNegativeInteger(value: unknown, field: string): number 
   return parsed;
 }
 
+function parseOptionalNonNegativeInteger(value: unknown, field: string): number {
+  if (value === null || value === undefined) {
+    return 0;
+  }
+
+  return parseRequiredNonNegativeInteger(value, field);
+}
+
 function parsePass(value: unknown): boolean {
   if (value === "1" || value === 1) {
     return true;
@@ -365,6 +379,8 @@ function normalizePlayerMapScore(
     beatmapId: game.beatmapId,
     userId: score.userId,
     score: score.score,
+    playerEnabledMods: score.enabledMods,
+    globalGameMods: game.mods,
     accuracy: calculateAccuracy({
       count300: score.count300,
       count100: score.count100,

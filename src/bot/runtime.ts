@@ -32,7 +32,14 @@ import {
   judgeCourseRun,
   type JudgedThreshold,
 } from "@/lib/judging";
-import { parseCourseMods, validateCourseMods } from "@/lib/mods";
+import {
+  formatModsCanonical,
+  parseCourseMods,
+  parseModBitmask,
+  validateCourseMods,
+  validateFreemodPlayerSelection,
+} from "@/lib/mods";
+import { normalizeScoreSV2 } from "@/lib/score";
 import { formatConditionValue, kebabizeName } from "@/lib/format";
 import { systemCapabilities } from "@/lib/domain";
 import type { CourseDefinition, DanSystemDefinition, JudgedMapResult } from "@/lib/domain";
@@ -89,7 +96,7 @@ export interface LobbyLike extends EventEmitter {
   updateSettings: () => Promise<null>;
   lockSlots: () => Promise<null>;
   setMap: (mapId: number) => Promise<null>;
-  setMods: (mods: string | BanchoMod[]) => Promise<null>;
+  setMods: (mods: string | BanchoMod[], freemod?: boolean) => Promise<null>;
   setSettings: (
     teamMode?: number,
     winCondition?: number,
@@ -320,6 +327,25 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
       )}`,
       ...fields,
     };
+  }
+
+  function logUnknownModTokens(
+    run: ActiveRun,
+    beatmapId: number,
+    tokens: string[],
+  ) {
+    const unknown = tokens.filter((token) => token.startsWith("UNKNOWN:"));
+    if (unknown.length === 0) {
+      return;
+    }
+
+    logger.warn(
+      "dojo unknown mod bitmask token",
+      getRunLogFields(run, {
+        beatmapId,
+        unknownMods: unknown,
+      }),
+    );
   }
 
   function safeSendUserMessage(user: BotUserLike, message: string) {
@@ -983,10 +1009,20 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
     const playedObjects = totalHitObjects(fetchedScore);
     const isPartialPlay =
       beatmap.totalObjects !== null && playedObjects < beatmap.totalObjects;
+    const globalTokens = parseModBitmask(fetchedScore.globalGameMods);
+    const playerTokens = parseModBitmask(fetchedScore.playerEnabledMods);
+    const playedTokenList = uniqueTokens([...globalTokens, ...playerTokens]);
+    const playedMods = formatModsCanonical(playedTokenList);
+    logUnknownModTokens(run, beatmap.beatmapId, playedTokenList);
+    const score =
+      run.course.scoreModel === "scorev2"
+        ? normalizeScoreSV2(fetchedScore.score, playedTokenList)
+        : fetchedScore.score;
+    const freemodViolation = getFreemodViolation(beatmap, playerTokens);
 
     const judgedMap = evaluateMapConditions(beatmap.passConditions, {
       accuracy: fetchedScore.accuracy,
-      score: fetchedScore.score,
+      score,
       countMiss: fetchedScore.countMiss,
       maxCombo: fetchedScore.maxCombo,
     });
@@ -997,14 +1033,16 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
       mods: ensureNoFailMods(beatmap.mods),
       passConditions: beatmap.passConditions,
       ordinal: beatmap.ordinal,
-      score: fetchedScore.score,
+      score,
+      rawScore: fetchedScore.score,
+      playedMods,
       accuracy: fetchedScore.accuracy,
       maxCombo: fetchedScore.maxCombo,
       count300: fetchedScore.count300,
       count100: fetchedScore.count100,
       count50: fetchedScore.count50,
       countMiss: fetchedScore.countMiss,
-      passed: !isPartialPlay && judgedMap.passed,
+      passed: !isPartialPlay && !freemodViolation && judgedMap.passed,
       createdAt: Date.now(),
     } satisfies Omit<JudgedMapResult, "id" | "runId">;
 
@@ -1030,19 +1068,28 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
         "dojo map judged",
         getRunLogFields(run, {
           beatmapId: beatmap.beatmapId,
-          passed: judgedMap.passed,
-          score: fetchedScore.score,
+          passed: judgedMapResult.passed,
+          rawScore: fetchedScore.score,
+          score,
+          playedMods,
           accuracy: fetchedScore.accuracy,
           conditions: judgedMap.evaluations,
+          freemodViolation,
         }),
       );
 
       await safeSendLobbyMessage(
         run.lobby,
-        `Map ${beatmap.ordinal}: ${judgedMap.passed ? "PASS" : "FAIL"}`,
+        `Map ${beatmap.ordinal}: ${judgedMapResult.passed ? "PASS" : "FAIL"}`,
       );
       for (const evaluation of judgedMap.evaluations) {
         await safeSendLobbyMessage(run.lobby, `  ${formatEvaluation(evaluation)}`);
+      }
+      if (freemodViolation) {
+        await safeSendLobbyMessage(
+          run.lobby,
+          `  ${formatFreemodViolation(freemodViolation)}`,
+        );
       }
     }
 
@@ -1151,7 +1198,7 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
       transitionRunStatus(run, "between_maps");
     }
     await run.lobby.setMap(beatmap.beatmapId);
-    await run.lobby.setMods(normalizeLobbyMods(beatmap.mods));
+    await run.lobby.setMods(normalizeLobbyMods(beatmap.mods), beatmap.freemod);
     await run.lobby.setSettings(
       TEAM_MODE_HEAD_TO_HEAD,
       getLobbyWinCondition(run.course.scoreModel),
@@ -1583,6 +1630,10 @@ function formatEvaluation(evaluation: JudgedThreshold) {
   )} required`;
 }
 
+function formatFreemodViolation(violation: { rejected: string[] }) {
+  return `Disallowed mods: ${violation.rejected.join(", ")}`;
+}
+
 function formatEvaluationLabel(type: JudgedThreshold["type"]) {
   switch (type) {
     case "accuracy":
@@ -1612,6 +1663,27 @@ function normalizeLobbyMods(mods: string) {
   return BanchoMods.parseShortMods(
     ensureNoFailModTokens(parseCourseMods(validateCourseMods(mods))),
   );
+}
+
+function getFreemodViolation(
+  beatmap: CourseDefinition["beatmaps"][number],
+  playerTokens: string[],
+): { rejected: string[] } | null {
+  if (!beatmap.freemod) {
+    return null;
+  }
+
+  const courseTokens = new Set(parseCourseMods(validateCourseMods(beatmap.mods)));
+  const playerSelectedTokens = playerTokens.filter(
+    (token) => token !== "NF" && !courseTokens.has(token),
+  );
+  const validation = validateFreemodPlayerSelection(playerSelectedTokens);
+
+  return validation.ok ? null : { rejected: validation.rejected };
+}
+
+function uniqueTokens(tokens: string[]) {
+  return [...new Set(tokens)];
 }
 
 function ensureNoFailMods(mods: string) {

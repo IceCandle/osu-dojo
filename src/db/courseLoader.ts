@@ -23,6 +23,7 @@ interface CourseBeatmapSeed {
   id: string;
   beatmapId: number;
   mods: string;
+  freemod: boolean;
   passConditions: MapPassCondition[];
   ordinal: number;
   title?: string;
@@ -96,9 +97,18 @@ function parseDanSystem(value: unknown, source: string): DanSystemSeed {
 
 function parseCourse(value: unknown, source: string): CourseSeed {
   const record = expectRecord(value, "course", source);
+  const scoreModel = expectScoreModel(record.scoreModel, "scoreModel", source);
   const beatmaps = expectArray(record.beatmaps, "beatmaps", source).map(
     (beatmap, index) => parseCourseBeatmap(beatmap, `${source} beatmaps[${index}]`),
   );
+  const overallPassConditions = expectCourseConditionList(
+    record.overallPassConditions,
+    "overallPassConditions",
+    source,
+    beatmaps.length,
+  );
+
+  assertScorev1HasNoScoreConditions(scoreModel, beatmaps, overallPassConditions, source);
 
   return {
     id: expectString(record.id, "id", source),
@@ -107,13 +117,8 @@ function parseCourse(value: unknown, source: string): CourseSeed {
     description: expectString(record.description, "description", source),
     tags: optionalStringArray(record.tags, "tags", source, []),
     ordinal: expectInteger(record.ordinal, "ordinal", source),
-    scoreModel: expectScoreModel(record.scoreModel, "scoreModel", source),
-    overallPassConditions: expectCourseConditionList(
-      record.overallPassConditions,
-      "overallPassConditions",
-      source,
-      beatmaps.length,
-    ),
+    scoreModel,
+    overallPassConditions,
     beatmaps,
   };
 }
@@ -125,6 +130,7 @@ function parseCourseBeatmap(value: unknown, source: string): CourseBeatmapSeed {
     id: expectString(record.id, "id", source),
     beatmapId: expectInteger(record.beatmapId, "beatmapId", source),
     mods: validateCourseMods(expectString(record.mods, "mods", source)),
+    freemod: optionalBoolean(record.freemod, "freemod", source, false),
     passConditions: expectMapConditionList(
       record.passConditions,
       "passConditions",
@@ -191,6 +197,23 @@ function optionalString(
   }
 
   return expectString(value, field, source);
+}
+
+function optionalBoolean(
+  value: unknown,
+  field: string,
+  source: string,
+  fallback: boolean,
+): boolean {
+  if (value === undefined) {
+    return fallback;
+  }
+
+  if (typeof value !== "boolean") {
+    throw new Error(`${source} field "${field}" must be a boolean.`);
+  }
+
+  return value;
 }
 
 function expectStringArray(value: unknown, field: string, source: string): string[] {
@@ -394,6 +417,30 @@ function sortConditions<T extends { type: string }>(
   return [...conditions].sort(
     (left, right) => order.indexOf(left.type) - order.indexOf(right.type),
   );
+}
+
+function assertScorev1HasNoScoreConditions(
+  scoreModel: DanScoreModel,
+  beatmaps: CourseBeatmapSeed[],
+  overallPassConditions: CoursePassCondition[],
+  source: string,
+) {
+  if (scoreModel !== "scorev1") {
+    return;
+  }
+
+  const hasMapScoreCondition = beatmaps.some((beatmap) =>
+    beatmap.passConditions.some((condition) => condition.type === "score"),
+  );
+  const hasTotalScoreCondition = overallPassConditions.some(
+    (condition) => condition.type === "totalScore",
+  );
+
+  if (hasMapScoreCondition || hasTotalScoreCondition) {
+    throw new Error(
+      `${source} scorev1 courses cannot use score or totalScore pass conditions.`,
+    );
+  }
 }
 
 function expectDanSystemStatus(

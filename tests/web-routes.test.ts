@@ -152,6 +152,8 @@ function buildMapResult(
   stats: {
     gameId?: number;
     score: number;
+    rawScore?: number;
+    playedMods?: string;
     accuracy: number;
     maxCombo: number;
     count300: number;
@@ -169,6 +171,8 @@ function buildMapResult(
     passConditions: beatmap.passConditions,
     ordinal: beatmap.ordinal,
     score: stats.score,
+    rawScore: stats.rawScore ?? stats.score,
+    playedMods: stats.playedMods ?? beatmap.mods,
     accuracy: stats.accuracy,
     maxCombo: stats.maxCombo,
     count300: stats.count300,

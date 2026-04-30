@@ -222,6 +222,7 @@ async function hydrateCourseRows(
       id: beatmaps.id,
       beatmapId: beatmaps.beatmapId,
       mods: beatmaps.mods,
+      freemod: beatmaps.freemod,
       passConditions: beatmaps.passConditions,
       ordinal: beatmaps.ordinal,
       annotations: beatmaps.annotations,
@@ -429,6 +430,8 @@ export async function storeCourseRunResult(
         passConditions: JSON.stringify(map.passConditions),
         ordinal: map.ordinal,
         score: map.score,
+        rawScore: map.rawScore,
+        playedMods: map.playedMods,
         accuracy: map.accuracy,
         maxCombo: map.maxCombo,
         count300: map.count300,
@@ -474,6 +477,7 @@ function parseBeatmapRow(row: {
   id: string;
   beatmapId: number;
   mods: string;
+  freemod: boolean;
   passConditions: string;
   ordinal: number;
   title: string | null;
@@ -488,6 +492,7 @@ function parseBeatmapRow(row: {
     id: row.id,
     beatmapId: row.beatmapId,
     mods: row.mods,
+    freemod: row.freemod,
     passConditions: parseConditionList(row.passConditions, "map"),
     ordinal: row.ordinal,
     title: row.title ?? "",

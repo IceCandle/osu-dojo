@@ -111,6 +111,7 @@ test("seeded queries expose the sample course and runs", async () => {
     assert.equal(systems[0]?.courses[1]?.slug, SEEDED_SECOND_COURSE_SLUG);
     assert.equal(systems[0]?.courses[1]?.scoreModel, "scorev1");
     assert.equal(course?.beatmaps.length, 2);
+    assert.equal(course?.beatmaps[0]?.freemod, false);
     assert.equal(course?.scoreModel, "scorev2");
     assert.match(course?.danSystemDescription ?? "", /Sample dan system/i);
     assert.equal(results?.runs.length, 0);
@@ -354,10 +355,17 @@ test("createTestDatabase backfills legacy pass condition columns", async () => {
       .prepare("SELECT pass_conditions FROM beatmaps WHERE id = ?")
       .get("beatmap-old") as { pass_conditions: string };
     const mapResult = migratedSqlite
-      .prepare("SELECT pass_conditions FROM map_results WHERE id = ?")
-      .get("map-result-old") as { pass_conditions: string };
+      .prepare("SELECT pass_conditions, raw_score, played_mods FROM map_results WHERE id = ?")
+      .get("map-result-old") as {
+        pass_conditions: string;
+        raw_score: number;
+        played_mods: string;
+      };
     const beatmapColumns = (
       migratedSqlite.pragma("table_info(beatmaps)") as { name: string }[]
+    ).map((column) => column.name);
+    const mapResultColumns = (
+      migratedSqlite.pragma("table_info(map_results)") as { name: string }[]
     ).map((column) => column.name);
 
     assert.deepEqual(JSON.parse(course.overall_pass_conditions), [
@@ -369,6 +377,11 @@ test("createTestDatabase backfills legacy pass condition columns", async () => {
     assert.deepEqual(JSON.parse(mapResult.pass_conditions), [
       { type: "accuracy", threshold: 95 },
     ]);
+    assert.equal(mapResult.raw_score, 10000);
+    assert.equal(mapResult.played_mods, "");
+    assert.equal(beatmapColumns.includes("freemod"), true);
+    assert.equal(mapResultColumns.includes("raw_score"), true);
+    assert.equal(mapResultColumns.includes("played_mods"), true);
     assert.equal(beatmapColumns.includes("pass_condition_type"), false);
   } finally {
     temp.cleanup();
@@ -626,6 +639,8 @@ test("course run queries and page derive DNF for interrupted partial runs", asyn
             passConditions: course!.beatmaps[0]!.passConditions,
             ordinal: 1,
             score: 900_000,
+            rawScore: 900_000,
+            playedMods: course!.beatmaps[0]!.mods,
             accuracy: 96,
             maxCombo: 700,
             count300: 900,
@@ -704,6 +719,7 @@ test("seedDatabase synchronizes updated draft beatmaps on an existing SQLite fil
       id: "beatmap-test-3",
       beatmapId: newBeatmapId,
       mods: "DT",
+      freemod: false,
       passConditions: [{ type: "accuracy", threshold: 50 }],
       ordinal: 3,
       title: "test stage three",
