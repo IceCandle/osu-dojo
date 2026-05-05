@@ -111,7 +111,7 @@ test("seeded queries expose the sample course and runs", async () => {
     assert.equal(systems[0]?.courses[1]?.slug, SEEDED_SECOND_COURSE_SLUG);
     assert.equal(systems[0]?.courses[1]?.scoreModel, "scorev1");
     assert.equal(course?.beatmaps.length, 2);
-    assert.equal(course?.beatmaps[0]?.freemod, false);
+    assert.equal(course?.beatmaps[0]?.freemod, true);
     assert.equal(course?.scoreModel, "scorev2");
     assert.match(course?.danSystemDescription ?? "", /Sample dan system/i);
     assert.equal(results?.runs.length, 0);

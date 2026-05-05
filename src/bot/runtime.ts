@@ -39,7 +39,7 @@ import {
   validateCourseMods,
   validateFreemodPlayerSelection,
 } from "@/lib/mods";
-import { normalizeScoreSV2 } from "@/lib/score";
+import { buildPreMapGuidance } from "@/lib/preMapGuidance";
 import { formatConditionValue, kebabizeName } from "@/lib/format";
 import { systemCapabilities } from "@/lib/domain";
 import type { CourseDefinition, DanSystemDefinition, JudgedMapResult } from "@/lib/domain";
@@ -216,6 +216,7 @@ const STANDARD_SCORE_FETCH_RETRY_DELAY_MS = 1_000;
 const CONFIRMED_FINISH_SCORE_FETCH_TOTAL_BUDGET_MS = 45_000;
 const CONFIRMED_FINISH_SCORE_FETCH_CALL_TIMEOUT_MS = 4_000;
 const CONFIRMED_FINISH_SCORE_FETCH_RETRY_DELAY_MS = 2_500;
+const PARTIAL_PLAY_REFETCH_DELAY_MS = 2_500;
 const CLOSE_LOBBY_TIMEOUT_MS = 5_000;
 const START_CONFIRMATION_GRACE_MS = 2_000;
 const TEAM_MODE_HEAD_TO_HEAD = 0;
@@ -923,14 +924,16 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
         };
     let fetchedScore: NormalizedPlayerMapScore;
 
-    try {
-      fetchedScore = await fetchScore({
+    const scoreFetchRequest = {
         lobbyId: run.lobby.id,
         beatmapId: beatmap.beatmapId,
         userId: run.playerUserId,
         processedGameIds: run.processedGameIds,
         ...scoreFetchOptions,
-      });
+    };
+
+    try {
+      fetchedScore = await fetchScore(scoreFetchRequest);
     } catch (error) {
       if (!isActiveRun(run)) {
         return;
@@ -1004,6 +1007,17 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
       return;
     }
 
+    fetchedScore = await refetchSmallPartialPlayGap(
+      run,
+      beatmap,
+      fetchedScore,
+      scoreFetchRequest,
+    );
+
+    if (!isActiveRun(run)) {
+      return;
+    }
+
     run.processedGameIds.add(fetchedScore.gameId);
 
     const playedObjects = totalHitObjects(fetchedScore);
@@ -1014,10 +1028,7 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
     const playedTokenList = uniqueTokens([...globalTokens, ...playerTokens]);
     const playedMods = formatModsCanonical(playedTokenList);
     logUnknownModTokens(run, beatmap.beatmapId, playedTokenList);
-    const score =
-      run.course.scoreModel === "scorev2"
-        ? normalizeScoreSV2(fetchedScore.score, playedTokenList)
-        : fetchedScore.score;
+    const score = fetchedScore.score;
     const freemodViolation = getFreemodViolation(beatmap, playerTokens);
 
     const judgedMap = evaluateMapConditions(beatmap.passConditions, {
@@ -1091,6 +1102,12 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
           `  ${formatFreemodViolation(freemodViolation)}`,
         );
       }
+      if (beatmap.freemod && !playedTokenList.includes("NF")) {
+        await safeSendLobbyMessage(
+          run.lobby,
+          `${run.playerUsername}: played without NF - add NF on FreeMod maps so a fail still submits a score.`,
+        );
+      }
     }
 
     if (!isActiveRun(run)) {
@@ -1105,6 +1122,64 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
 
     run.currentBeatmapIndex += 1;
     await queueNextBeatmap(run);
+  }
+
+  async function refetchSmallPartialPlayGap(
+    run: ActiveRun,
+    beatmap: CourseDefinition["beatmaps"][number],
+    fetchedScore: NormalizedPlayerMapScore,
+    scoreFetchRequest: Parameters<FetchScore>[0],
+  ): Promise<NormalizedPlayerMapScore> {
+    const playedObjects = totalHitObjects(fetchedScore);
+
+    if (
+      beatmap.totalObjects === null ||
+      playedObjects >= beatmap.totalObjects ||
+      !isSmallPartialPlayGap(playedObjects, beatmap.totalObjects)
+    ) {
+      return fetchedScore;
+    }
+
+    logger.warn(
+      "dojo partial play refetch scheduled",
+      getRunLogFields(run, {
+        beatmapId: beatmap.beatmapId,
+        playedObjects,
+        expectedObjects: beatmap.totalObjects,
+        gap: beatmap.totalObjects - playedObjects,
+      }),
+    );
+
+    await sleep(PARTIAL_PLAY_REFETCH_DELAY_MS);
+
+    if (!isActiveRun(run)) {
+      return fetchedScore;
+    }
+
+    try {
+      const refetchedScore = await fetchScore(scoreFetchRequest);
+      logger.info(
+        "dojo partial play refetch completed",
+        getRunLogFields(run, {
+          beatmapId: beatmap.beatmapId,
+          firstPlayedObjects: playedObjects,
+          refetchedPlayedObjects: totalHitObjects(refetchedScore),
+          expectedObjects: beatmap.totalObjects,
+        }),
+      );
+      return refetchedScore;
+    } catch (error) {
+      logger.warn(
+        "dojo partial play refetch failed",
+        getRunLogFields(run, {
+          error,
+          beatmapId: beatmap.beatmapId,
+          playedObjects,
+          expectedObjects: beatmap.totalObjects,
+        }),
+      );
+      return fetchedScore;
+    }
   }
 
   async function abortUnconfirmedScoreResolution(
@@ -1149,7 +1224,7 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
     const countdownSeconds = Math.max(0, Math.round(restDurationMs / 1000));
     await configureCurrentBeatmap(run, "between_maps");
 
-    await safeSendLobbyMessage(run.lobby, `Next map in ${countdownSeconds}s.`);
+    await announceCurrentBeatmap(run, countdownSeconds);
     await sendLobbyTimer(run.lobby, countdownSeconds);
 
     touchRunProgress(run);
@@ -1164,21 +1239,37 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
       throw new Error("Missing lobby state for active run.");
     }
 
-    const beatmap = run.course.beatmaps[run.currentBeatmapIndex];
     await configureCurrentBeatmap(run, "countdown");
 
     if (optionsForMap.announceStart) {
-      await safeSendLobbyMessage(
-        run.lobby,
-        `Map ${beatmap.ordinal}/${run.course.beatmaps.length}: beatmap ${beatmap.beatmapId} with ${ensureNoFailMods(
-          beatmap.mods,
-        )}. Starting in ${optionsForMap.countdownSeconds}s.`,
-      );
+      await announceCurrentBeatmap(run, optionsForMap.countdownSeconds);
     }
     await sendLobbyTimer(run.lobby, optionsForMap.countdownSeconds);
 
     touchRunProgress(run);
     queuePureStart(run, Math.max(0, optionsForMap.countdownSeconds) * 1000);
+  }
+
+  async function announceCurrentBeatmap(run: ActiveRun, countdownSeconds: number) {
+    if (!run.lobby) {
+      throw new Error("Missing lobby state for active run.");
+    }
+
+    const beatmap = run.course.beatmaps[run.currentBeatmapIndex];
+    await safeSendLobbyMessage(
+      run.lobby,
+      `Map ${beatmap.ordinal}/${run.course.beatmaps.length}: beatmap ${beatmap.beatmapId} with ${formatAnnouncedMods(
+        beatmap.mods,
+      )}. Starting in ${countdownSeconds}s.`,
+    );
+    for (const line of buildPreMapGuidance({
+      course: run.course,
+      beatmap,
+      priorMapResults: run.mapResults,
+      isFinalMap: run.currentBeatmapIndex === run.course.beatmaps.length - 1,
+    })) {
+      await safeSendLobbyMessage(run.lobby, line);
+    }
   }
 
   async function configureCurrentBeatmap(
@@ -1686,9 +1777,24 @@ function uniqueTokens(tokens: string[]) {
   return [...new Set(tokens)];
 }
 
+function isSmallPartialPlayGap(playedObjects: number, totalObjects: number) {
+  const gap = totalObjects - playedObjects;
+
+  return gap <= 2 || playedObjects / totalObjects >= 0.99;
+}
+
 function ensureNoFailMods(mods: string) {
   const compact = mods.toUpperCase().replace(/\s+/g, "");
   return compact.includes("NF") ? compact : `${compact}NF`;
+}
+
+function formatAnnouncedMods(mods: string) {
+  const displayMods = parseCourseMods(validateCourseMods(mods)).filter(
+    (token) => token !== "NF",
+  );
+  const canonical = formatModsCanonical(displayMods);
+
+  return canonical === "" ? "NM" : canonical;
 }
 
 function ensureNoFailModTokens(mods: string[]) {

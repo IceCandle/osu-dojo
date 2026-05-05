@@ -13,17 +13,17 @@
       "ordinal": 1,
       "scoreModel": "scorev2",
       "overallPassConditions": [
-        { "type": "courseAccuracy", "threshold": 0 },
-        { "type": "totalMissCount", "threshold": 9999 }
+        { "type": "courseAccuracy", "threshold": 30 }
       ],
       "beatmaps": [
         {
           "id": "beatmap-test-1",
           "beatmapId": 315,
-          "mods": "",
+          "mods": "NF",
+          "freemod": true,
           "passConditions": [
-            { "type": "accuracy", "threshold": 0.1 },
-            { "type": "missCount", "threshold": 1 }
+            { "type": "score", "threshold": 10000 },
+            { "type": "maxCombo", "threshold": 10 }
           ],
           "ordinal": 1,
           "annotations": ["old map", "consistency"]
@@ -31,10 +31,11 @@
         {
           "id": "beatmap-test-2",
           "beatmapId": 259,
-          "mods": "",
+          "mods": "DT",
+          "freemod": false,
           "passConditions": [
-            { "type": "score", "threshold": 10000 },
-            { "type": "maxCombo", "threshold": 0 }
+            { "type": "accuracy", "threshold": 0.1 },
+            { "type": "missCount", "threshold": 999 }
           ],
           "ordinal": 2,
           "annotations": ["low ar"]

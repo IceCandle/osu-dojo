@@ -95,34 +95,13 @@ Threshold 검증:
 
 지원하는 모드 토큰은 `EZ`, `NF`, `HT`, `DT`, `HD`, `HR`, `SD`, `NC`, `FL`, `SO`, `PF`, `K4`, `K5`, `K6`, `K7`, `K8`, `FI`, `K9`, `SV2`, `MR`입니다.
 
-## FreeMod와 ScoreV2 정규화
+## FreeMod와 ScoreV2 score
 
-`freemod: true`인 beatmap은 로비에서 해당 map에만 FreeMod를 켭니다. 플레이어가 추가로 고를 수 있는 mod는 `HD`, `HR`, `HDHR`뿐입니다. `EZ`, `FL`, `DT`, `NC`, key mod 등 다른 선택이 match result에 있으면 해당 map은 실패로 저장되고, bot이 거부된 mod를 로비에 알립니다.
+`freemod: true`인 beatmap은 로비에서 해당 map에만 FreeMod를 켭니다. 플레이어가 추가로 고를 수 있는 mod는 `NM`, `HD`, `HR`, `HDHR`뿐입니다. `NF`는 사망 후 score 제출 안정성을 위한 선택 사항입니다. `EZ`, `FL`, `DT`, `NC`, key mod 등 다른 선택이 match result에 있으면 해당 map은 실패로 저장되고, bot이 거부된 mod를 로비에 알립니다.
 
-ScoreV2 course의 `score`와 `totalScore` threshold는 모두 no-mod-equivalent 점수로 작성합니다. Bot은 match result의 raw score에서 실제 적용된 모든 mod multiplier를 나눈 뒤 판정합니다. 플레이어가 고른 FreeMod뿐 아니라 course에 고정된 mod도 같은 방식으로 정규화합니다. `NF`는 ScoreV2에서 1.0배라서 결과를 바꾸지 않습니다.
+ScoreV2 course의 `score`와 `totalScore` threshold는 Bancho가 반환하는 raw ScoreV2 기준으로 작성합니다. Bot은 mod multiplier를 나누지 않습니다. Mod를 켜서 얻는 risk/reward는 그대로 유지되며, leaderboard도 raw total ScoreV2 기준으로 정렬합니다.
 
-현재 ScoreV2 multiplier:
-
-| Mod | Multiplier |
-| --- | --- |
-| `EZ` | 0.50 |
-| `NF` | 1.00 |
-| `HT` | 0.30 |
-| `HD` | 1.06 |
-| `HR` | 1.10 |
-| `DT` / `NC` | 1.20 |
-| `FL` | 1.12 |
-| `SO` | 0.90 |
-| `SD` / `PF` | 1.00 |
-
-예시:
-
-- NoMod 또는 `NF`: `score = raw_score`
-- FreeMod에서 플레이어가 `HD` 선택: `score = raw_score / 1.06`
-- Course가 `HT`를 강제: `score = raw_score / 0.30`
-- Course가 `HD`를 강제하고 플레이어가 `HR` 선택: `score = raw_score / (1.06 * 1.10)`
-
-`SV2` mod token은 stable에서 lazer ScoreV2 표시를 켜는 mod token입니다. Course의 `scoreModel: "scorev2"`와 같은 의미가 아니며, 정규화 table 선택도 바꾸지 않습니다.
+`SV2` mod token은 stable에서 lazer ScoreV2 표시를 켜는 mod token입니다. Course의 `scoreModel: "scorev2"`와 같은 의미가 아닙니다.
 
 ## System Status
 

@@ -93,20 +93,6 @@ const MOD_BITMASK_TOKENS = [
   [1073741824, "MR"],
 ] as const;
 
-export const MOD_MULTIPLIERS_SV2: Readonly<Record<string, number>> = {
-  EZ: 0.5,
-  NF: 1.0,
-  HT: 0.3,
-  HD: 1.06,
-  HR: 1.1,
-  DT: 1.2,
-  NC: 1.2,
-  FL: 1.12,
-  SO: 0.9,
-  SD: 1.0,
-  PF: 1.0,
-};
-
 export const FREEMOD_PLAYER_ALLOWED: ReadonlySet<string> = new Set(["HD", "HR"]);
 
 export function normalizeCourseMods(mods: string): string {
