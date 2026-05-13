@@ -99,7 +99,27 @@ Threshold 검증:
 
 `freemod: true`인 beatmap은 로비에서 해당 map에만 FreeMod를 켭니다. 플레이어가 추가로 고를 수 있는 mod는 `NM`, `HD`, `HR`, `HDHR`뿐입니다. `NF`는 사망 후 score 제출 안정성을 위한 선택 사항입니다. `EZ`, `FL`, `DT`, `NC`, key mod 등 다른 선택이 match result에 있으면 해당 map은 실패로 저장되고, bot이 거부된 mod를 로비에 알립니다.
 
-ScoreV2 course의 `score`와 `totalScore` threshold는 Bancho가 반환하는 raw ScoreV2 기준으로 작성합니다. Bot은 mod multiplier를 나누지 않습니다. Mod를 켜서 얻는 risk/reward는 그대로 유지되며, leaderboard도 raw total ScoreV2 기준으로 정렬합니다.
+ScoreV2 course의 `score`와 `totalScore` threshold는 adjusted(NM-equivalent) 기준으로 작성합니다. Bot은 Bancho raw ScoreV2를 플레이한 mod multiplier로 나눈 뒤 threshold와 비교합니다. 저장된 `MapResult.score`는 adjusted 판정 점수이고, `MapResult.rawScore`는 Bancho API raw score입니다. `rawScore`는 audit과 lobby의 raw 목표 안내에만 씁니다. Leaderboard는 adjusted `score` 합계 기준으로 정렬합니다.
+
+ScoreV2 multiplier는 다음 기준을 씁니다.
+
+| mod | multiplier |
+| --- | ---: |
+| `EZ` | 0.5 |
+| `NF` | 1.0 |
+| `HT` | 0.3 |
+| `HD` | 1.06 |
+| `HR` | 1.1 |
+| `DT` / `NC` | 1.2 |
+| `FL` | 1.12 |
+| `SO` | 0.9 |
+| `SD` / `PF` | 1.0 |
+
+예시:
+
+- FreeMod `score >= 1_000_000`: HDHR raw 1,166,000은 adjusted 1,000,000으로 통과하고, HR raw 1,099,999는 adjusted 999,999로 실패합니다.
+- Fixed `mods: "DT"`에서 `score >= 1_000_000`: raw 1,200,000 DT play는 adjusted 1,000,000으로 통과하고, raw 1,199,999는 실패합니다.
+- `totalScore >= 3_000_000`: 각 map의 adjusted `score` 합계가 3,000,000 이상이어야 합니다.
 
 `SV2` mod token은 stable에서 lazer ScoreV2 표시를 켜는 mod token입니다. Course의 `scoreModel: "scorev2"`와 같은 의미가 아닙니다.
 

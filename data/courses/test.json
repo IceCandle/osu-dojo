@@ -23,9 +23,9 @@
           "freemod": true,
           "passConditions": [
             { "type": "score", "threshold": 10000 },
-            { "type": "maxCombo", "threshold": 10 }
+            { "type": "maxCombo", "threshold": 5 }
           ],
-          "ordinal": 1,
+          "ordinal": 2,
           "annotations": ["old map", "consistency"]
         },
         {
@@ -35,9 +35,10 @@
           "freemod": false,
           "passConditions": [
             { "type": "accuracy", "threshold": 0.1 },
-            { "type": "missCount", "threshold": 999 }
+            { "type": "missCount", "threshold": 999 },
+            { "type": "score", "threshold": 23546 }
           ],
-          "ordinal": 2,
+          "ordinal": 1,
           "annotations": ["low ar"]
         }
       ]

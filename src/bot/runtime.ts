@@ -34,6 +34,7 @@ import {
 } from "@/lib/judging";
 import {
   formatModsCanonical,
+  formatVisibleCourseMods,
   parseCourseMods,
   parseModBitmask,
   validateCourseMods,
@@ -41,6 +42,7 @@ import {
 } from "@/lib/mods";
 import { buildPreMapGuidance } from "@/lib/preMapGuidance";
 import { formatConditionValue, kebabizeName } from "@/lib/format";
+import { computeAdjustedScore } from "@/lib/score";
 import { systemCapabilities } from "@/lib/domain";
 import type { CourseDefinition, DanSystemDefinition, JudgedMapResult } from "@/lib/domain";
 import { sleep as defaultSleep } from "@/lib/sleep";
@@ -206,8 +208,8 @@ export type RunEndedEvent =
       reason: RunEndedReason;
     };
 
-const DEFAULT_REST_DURATION_MS = 20_000;
-const DEFAULT_FIRST_MAP_COUNTDOWN_SECONDS = 10;
+const DEFAULT_REST_DURATION_MS = 60_000;
+const DEFAULT_FIRST_MAP_COUNTDOWN_SECONDS = 120;
 const DEFAULT_INACTIVITY_TIMEOUT_MS = 20 * 60 * 1000;
 const DEFAULT_FINAL_GRACE_PERIOD_MS = 60_000;
 const STANDARD_SCORE_FETCH_TOTAL_BUDGET_MS = 4_000;
@@ -1028,7 +1030,10 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
     const playedTokenList = uniqueTokens([...globalTokens, ...playerTokens]);
     const playedMods = formatModsCanonical(playedTokenList);
     logUnknownModTokens(run, beatmap.beatmapId, playedTokenList);
-    const score = fetchedScore.score;
+    const score =
+      run.course.scoreModel === "scorev2"
+        ? computeAdjustedScore(fetchedScore.score, playedTokenList)
+        : fetchedScore.score;
     const freemodViolation = getFreemodViolation(beatmap, playerTokens);
 
     const judgedMap = evaluateMapConditions(beatmap.passConditions, {
@@ -1406,9 +1411,10 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
 
     let abortReason: RunEndedReason =
       run.status === "between_maps" ? "next-map-start-failed" : "start-failed";
+    const restCountdownSeconds = Math.max(0, Math.round(timings.restDurationMs / 1000));
     let message =
       run.status === "between_maps"
-        ? "Run aborted: the next map did not start after the 20s countdown."
+        ? `Run aborted: the next map did not start after the ${restCountdownSeconds}s countdown.`
         : "Run aborted: the match failed to start.";
 
     const playerState = await refreshTargetPlayerState(
@@ -1788,14 +1794,7 @@ function ensureNoFailMods(mods: string) {
   return compact.includes("NF") ? compact : `${compact}NF`;
 }
 
-function formatAnnouncedMods(mods: string) {
-  const displayMods = parseCourseMods(validateCourseMods(mods)).filter(
-    (token) => token !== "NF",
-  );
-  const canonical = formatModsCanonical(displayMods);
-
-  return canonical === "" ? "NM" : canonical;
-}
+const formatAnnouncedMods = formatVisibleCourseMods;
 
 function ensureNoFailModTokens(mods: string[]) {
   return mods.includes("NF") ? mods : [...mods, "NF"];

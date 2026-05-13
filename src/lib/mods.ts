@@ -21,6 +21,20 @@ const SUPPORTED_COURSE_MODS = new Set([
   "MR",
 ]);
 
+export const MOD_MULTIPLIERS_SV2: Readonly<Record<string, number>> = {
+  EZ: 0.5,
+  NF: 1.0,
+  HT: 0.3,
+  HD: 1.06,
+  HR: 1.1,
+  DT: 1.2,
+  NC: 1.2,
+  FL: 1.12,
+  SO: 0.9,
+  SD: 1.0,
+  PF: 1.0,
+};
+
 const ORDERED_COURSE_MODS = [...SUPPORTED_COURSE_MODS].sort(
   (left, right) => right.length - left.length || left.localeCompare(right),
 );
@@ -148,6 +162,15 @@ export function formatModsCanonical(tokens: string[]): string {
   return [...seen]
     .sort((left, right) => canonicalModIndex(left) - canonicalModIndex(right))
     .join("");
+}
+
+export function formatVisibleCourseMods(mods: string): string {
+  const displayMods = parseCourseMods(validateCourseMods(mods)).filter(
+    (token) => token !== "NF",
+  );
+  const canonical = formatModsCanonical(displayMods);
+
+  return canonical === "" ? "NM" : canonical;
 }
 
 export function parseModBitmask(value: number | null | undefined): string[] {

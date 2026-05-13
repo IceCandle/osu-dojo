@@ -724,7 +724,7 @@ test("bot runs the seeded course, forces NF, switches to ScoreV2, and stores the
   }
 });
 
-test("bot enables freemod per map, judges raw score, and stores played mods audit data", async () => {
+test("bot enables freemod per map, judges adjusted score, and stores raw audit data", async () => {
   const temp = createTempDatabaseUrl();
 
   try {
@@ -734,6 +734,9 @@ test("bot enables freemod per map, judges raw score, and stores played mods audi
     const seededBeatmapIds = await getSeededBeatmapIds(db);
     setSeededBeatmapFreemod(db, 1, true);
     setSeededBeatmapPassConditions(db, 1, [{ type: "score", threshold: 999_999 }]);
+    setSeededCourseOverallPassConditions(db, [
+      { type: "totalScore", threshold: 1_900_000 },
+    ]);
     const fetchedScores = [
       {
         gameId: 1,
@@ -800,7 +803,7 @@ test("bot enables freemod per map, judges raw score, and stores played mods audi
     assert.equal(client.lobby.freemodHistory[1], false);
     assert.ok(
       client.lobby.channelMessages.some((message) =>
-        /score: 1,166,000 >= 999,999 required/.test(message),
+        /score: 1,000,000 >= 999,999 required/.test(message),
       ),
     );
     assert.ok(
@@ -828,6 +831,18 @@ test("bot enables freemod per map, judges raw score, and stores played mods audi
       ),
       client.lobby.channelMessages.join("\n"),
     );
+    assert.ok(
+      client.lobby.channelMessages.some((message) =>
+        /Raw target on this map: >= 1,080,000 \(with DT\)/.test(message),
+      ),
+      client.lobby.channelMessages.join("\n"),
+    );
+    assert.ok(
+      client.lobby.channelMessages.some((message) =>
+        /total score: 1,905,000 >= 1,900,000 required/.test(message),
+      ),
+      client.lobby.channelMessages.join("\n"),
+    );
 
     const results = await listCourseRunsByNameKey(
       SEEDED_SYSTEM_NAME_KEY,
@@ -836,7 +851,7 @@ test("bot enables freemod per map, judges raw score, and stores played mods audi
     );
     const firstMap = results?.runs[0]?.maps[0];
     assert.equal(firstMap?.rawScore, 1_166_000);
-    assert.equal(firstMap?.score, 1_166_000);
+    assert.equal(firstMap?.score, 1_000_000);
     assert.equal(firstMap?.playedMods, "HDHR");
     assert.equal(firstMap?.passed, true);
   } finally {
@@ -1064,7 +1079,7 @@ test("bot rejects disallowed freemod selections and persists a failed audit row"
     assert.equal(results?.runs[0]?.passed, false);
     assert.equal(firstMap?.passed, false);
     assert.equal(firstMap?.rawScore, 500_000);
-    assert.equal(firstMap?.score, 500_000);
+    assert.equal(firstMap?.score, 1_000_000);
     assert.equal(firstMap?.playedMods, "EZ");
   } finally {
     temp.cleanup();

@@ -117,6 +117,8 @@ async function storeCourseRun(
     maps: Array<{
       gameId?: number;
       score: number;
+      rawScore?: number;
+      playedMods?: string;
       accuracy: number;
       maxCombo: number;
       count300: number;
@@ -349,7 +351,9 @@ test("getRankingByNameKey sorts scorev2 courses by status then total score", asy
         completedAt: 1_800_001_000_000,
         maps: [
           {
-            score: 980_000,
+            score: 1_300_000,
+            rawScore: 1_300_000,
+            playedMods: "",
             accuracy: 97,
             maxCombo: 900,
             count300: 1_040,
@@ -359,7 +363,9 @@ test("getRankingByNameKey sorts scorev2 courses by status then total score", asy
             passed: true,
           },
           {
-            score: 970_000,
+            score: 600_000,
+            rawScore: 600_000,
+            playedMods: "",
             accuracy: 96,
             maxCombo: 880,
             count300: 1_010,
@@ -415,7 +421,9 @@ test("getRankingByNameKey sorts scorev2 courses by status then total score", asy
         completedAt: 1_800_001_200_000,
         maps: [
           {
-            score: 960_000,
+            score: 1_200_686,
+            rawScore: 1_400_000,
+            playedMods: "HDHR",
             accuracy: 98,
             maxCombo: 890,
             count300: 1_050,
@@ -425,7 +433,9 @@ test("getRankingByNameKey sorts scorev2 courses by status then total score", asy
             passed: true,
           },
           {
-            score: 950_000,
+            score: 600_000,
+            rawScore: 600_000,
+            playedMods: "",
             accuracy: 97,
             maxCombo: 860,
             count300: 1_000,
@@ -450,7 +460,8 @@ test("getRankingByNameKey sorts scorev2 courses by status then total score", asy
       ranking.results.map((result) => result.username),
       ["ScoreLead", "ScoreTwo", "FailedButHuge"],
     );
-    assert.equal(ranking.results[0]?.totalScore, 1_950_000);
+    assert.equal(ranking.results[0]?.totalScore, 1_900_000);
+    assert.equal(ranking.results[1]?.totalScore, 1_800_686);
     assert.equal(ranking.results[2]?.status, "fail");
     assert.equal(ranking.results[2]?.totalScore, 1_997_000);
   } finally {

@@ -61,7 +61,7 @@ function createPriorResult(
   };
 }
 
-test("buildPreMapGuidance emits fixed-mod ScoreV2 raw score and map targets", () => {
+test("buildPreMapGuidance emits fixed-mod ScoreV2 adjusted score and map targets", () => {
   const beatmap = createBeatmap({
     mods: "HR",
     passConditions: [
@@ -82,7 +82,7 @@ test("buildPreMapGuidance emits fixed-mod ScoreV2 raw score and map targets", ()
   );
 });
 
-test("buildPreMapGuidance leaves fixed DT ScoreV2 targets on raw score", () => {
+test("buildPreMapGuidance leaves fixed DT ScoreV2 targets in authored score units", () => {
   const beatmap = createBeatmap({
     mods: "DT",
     passConditions: [{ type: "score", threshold: 1_000_000 }],
@@ -160,7 +160,7 @@ test("buildPreMapGuidance emits stricter final-map miss budget course target", (
   );
 });
 
-test("buildPreMapGuidance omits totalScore course target when map score is stricter", () => {
+test("buildPreMapGuidance composes final-map totalScore and map score in adjusted units", () => {
   const beatmap = createBeatmap({
     passConditions: [{ type: "score", threshold: 500_000 }],
   });
@@ -176,7 +176,11 @@ test("buildPreMapGuidance omits totalScore course target when map score is stric
     isFinalMap: true,
   });
 
-  assert.deepEqual(lines, ["Targets: score >= 500,000"]);
+  assert.deepEqual(lines, [
+    "Targets: score >= 500,000",
+    "Course target: total score >= 300,000",
+    "Raw target on this map: >= 500,000 (with NM)",
+  ]);
 });
 
 test("buildPreMapGuidance announces course targets without matching map conditions", () => {
@@ -202,7 +206,8 @@ test("buildPreMapGuidance announces course targets without matching map conditio
     [
       "Targets: 100+ combo",
       "Course target: 90.00%+ acc",
-      "Course target: totalScore >= 1,000,000",
+      "Course target: total score >= 1,000,000",
+      "Raw target on this map: >= 1,000,000 (with NM)",
       "Course target: 3 miss",
     ],
   );
@@ -226,8 +231,80 @@ test("buildPreMapGuidance explains already satisfied score without a matching ma
     }),
     [
       "Targets: 100+ combo",
-      "Course target: totalScore already satisfied (600,000 / 500,000)",
+      "Course target: total score already satisfied (600,000 / 500,000)",
     ],
+  );
+});
+
+test("buildPreMapGuidance raw target uses stricter map score when totalScore remaining is lower", () => {
+  const beatmap = createBeatmap({
+    mods: "HR",
+    passConditions: [{ type: "score", threshold: 1_000_001 }],
+  });
+  const course = createCourse({
+    beatmaps: [beatmap],
+    overallPassConditions: [{ type: "totalScore", threshold: 900_000 }],
+  });
+
+  assert.deepEqual(
+    buildPreMapGuidance({
+      course,
+      beatmap,
+      priorMapResults: [createPriorResult({ score: 800_000 })],
+      isFinalMap: true,
+    }),
+    [
+      "Targets: score >= 1,000,001",
+      "Course target: total score >= 100,000",
+      "Raw target on this map: >= 1,100,001 (with HR)",
+    ],
+  );
+});
+
+test("buildPreMapGuidance emits FreeMod final score target with raw choices", () => {
+  const beatmap = createBeatmap({
+    freemod: true,
+    passConditions: [{ type: "score", threshold: 1_000_000 }],
+  });
+  const course = createCourse({
+    beatmaps: [beatmap],
+    overallPassConditions: [{ type: "totalScore", threshold: 1_000_000 }],
+  });
+
+  assert.deepEqual(
+    buildPreMapGuidance({
+      course,
+      beatmap,
+      priorMapResults: [createPriorResult({ score: 200_000 })],
+      isFinalMap: true,
+    }),
+    [
+      "FreeMod allowed: NF optional, NM, HD, HR, HDHR",
+      "FreeMod active: add NF if you want the bot to receive your score after HP reaches 0.",
+      "Course target: total score >= 800,000",
+      "Targets on this map: score >= 1,000,000",
+      "Raw target by choice: NM 1,000,000 / HD 1,060,000 / HR 1,100,000 / HDHR 1,166,000",
+    ],
+  );
+});
+
+test("buildPreMapGuidance omits raw target when final totalScore is already satisfied", () => {
+  const beatmap = createBeatmap({
+    passConditions: [],
+  });
+  const course = createCourse({
+    beatmaps: [beatmap],
+    overallPassConditions: [{ type: "totalScore", threshold: 500_000 }],
+  });
+
+  assert.deepEqual(
+    buildPreMapGuidance({
+      course,
+      beatmap,
+      priorMapResults: [createPriorResult({ score: 600_000 })],
+      isFinalMap: true,
+    }),
+    ["Course target: total score already satisfied (600,000 / 500,000)"],
   );
 });
 
