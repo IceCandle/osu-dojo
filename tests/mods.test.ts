@@ -2,6 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   formatModsCanonical,
+  formatVisibleCourseMods,
+  formatVisibleCourseModTokens,
   parseModBitmask,
   validateFreemodPlayerSelection,
 } from "@/lib/mods";
@@ -25,6 +27,20 @@ test("parseModBitmask surfaces future unknown bits", () => {
 
 test("formatModsCanonical sorts and dedupes atomic tokens", () => {
   assert.equal(formatModsCanonical(["HR", "HD", "HD"]), "HDHR");
+});
+
+test("formatVisibleCourseModTokens returns visible canonical tokens", () => {
+  assert.deepEqual(formatVisibleCourseModTokens(""), []);
+  assert.deepEqual(formatVisibleCourseModTokens("HD"), ["HD"]);
+  assert.deepEqual(formatVisibleCourseModTokens("HDHR"), ["HD", "HR"]);
+  assert.deepEqual(formatVisibleCourseModTokens("HDNF"), ["HD"]);
+});
+
+test("formatVisibleCourseMods keeps the existing joined display contract", () => {
+  assert.equal(formatVisibleCourseMods(""), "NM");
+  assert.equal(formatVisibleCourseMods("HD"), "HD");
+  assert.equal(formatVisibleCourseMods("HDHR"), "HDHR");
+  assert.equal(formatVisibleCourseMods("HDNF"), "HD");
 });
 
 test("validateFreemodPlayerSelection accepts HD and HR only", () => {

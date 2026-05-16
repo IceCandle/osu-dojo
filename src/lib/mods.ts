@@ -164,13 +164,20 @@ export function formatModsCanonical(tokens: string[]): string {
     .join("");
 }
 
-export function formatVisibleCourseMods(mods: string): string {
-  const displayMods = parseCourseMods(validateCourseMods(mods)).filter(
-    (token) => token !== "NF",
+export function formatVisibleCourseModTokens(mods: string): string[] {
+  const seen = new Set(
+    parseCourseMods(mods).filter((token) => token !== "NF"),
   );
-  const canonical = formatModsCanonical(displayMods);
 
-  return canonical === "" ? "NM" : canonical;
+  return [...seen].sort(
+    (left, right) => canonicalModIndex(left) - canonicalModIndex(right),
+  );
+}
+
+export function formatVisibleCourseMods(mods: string): string {
+  const tokens = formatVisibleCourseModTokens(mods);
+
+  return tokens.length === 0 ? "NM" : tokens.join("");
 }
 
 export function parseModBitmask(value: number | null | undefined): string[] {

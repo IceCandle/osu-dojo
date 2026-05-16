@@ -61,7 +61,7 @@ function createPriorResult(
   };
 }
 
-test("buildPreMapGuidance emits fixed-mod ScoreV2 adjusted score and map targets", () => {
+test("buildPreMapGuidance emits fixed-mod ScoreV2 raw score and map targets", () => {
   const beatmap = createBeatmap({
     mods: "HR",
     passConditions: [
@@ -78,11 +78,11 @@ test("buildPreMapGuidance emits fixed-mod ScoreV2 adjusted score and map targets
       priorMapResults: [],
       isFinalMap: false,
     }),
-    ["Targets: score >= 1,000,000, 95.50%+ acc"],
+    ["Targets: raw score >= 1,100,000, accuracy >= 95.50%"],
   );
 });
 
-test("buildPreMapGuidance leaves fixed DT ScoreV2 targets in authored score units", () => {
+test("buildPreMapGuidance converts fixed DT ScoreV2 targets to raw score units", () => {
   const beatmap = createBeatmap({
     mods: "DT",
     passConditions: [{ type: "score", threshold: 1_000_000 }],
@@ -96,11 +96,11 @@ test("buildPreMapGuidance leaves fixed DT ScoreV2 targets in authored score unit
       priorMapResults: [],
       isFinalMap: false,
     }),
-    ["Targets: score >= 1,000,000"],
+    ["Targets: raw score >= 1,200,000"],
   );
 });
 
-test("buildPreMapGuidance emits one raw FreeMod target and NF guidance", () => {
+test("buildPreMapGuidance emits adjusted FreeMod target and NF guidance", () => {
   const beatmap = createBeatmap({
     freemod: true,
     passConditions: [{ type: "score", threshold: 1_000_000 }],
@@ -115,7 +115,7 @@ test("buildPreMapGuidance emits one raw FreeMod target and NF guidance", () => {
       isFinalMap: false,
     }),
     [
-      "Targets: score >= 1,000,000",
+      "Targets: adjusted score >= 1,000,000",
       "FreeMod allowed: NF optional, NM, HD, HR, HDHR",
       "FreeMod active: add NF if you want the bot to receive your score after HP reaches 0.",
     ],
@@ -156,7 +156,7 @@ test("buildPreMapGuidance emits stricter final-map miss budget course target", (
       priorMapResults: [createPriorResult({ countMiss: 2 })],
       isFinalMap: true,
     }),
-    ["Targets: <=5 miss", "Course target: 1 miss"],
+    ["Targets: miss <= 5", "Course target: miss <= 1"],
   );
 });
 
@@ -176,11 +176,7 @@ test("buildPreMapGuidance composes final-map totalScore and map score in adjuste
     isFinalMap: true,
   });
 
-  assert.deepEqual(lines, [
-    "Targets: score >= 500,000",
-    "Course target: total score >= 300,000",
-    "Raw target on this map: >= 500,000 (with NM)",
-  ]);
+  assert.deepEqual(lines, ["Raw target: >= 500,000"]);
 });
 
 test("buildPreMapGuidance announces course targets without matching map conditions", () => {
@@ -204,11 +200,10 @@ test("buildPreMapGuidance announces course targets without matching map conditio
       isFinalMap: true,
     }),
     [
-      "Targets: 100+ combo",
-      "Course target: 90.00%+ acc",
-      "Course target: total score >= 1,000,000",
-      "Raw target on this map: >= 1,000,000 (with NM)",
-      "Course target: 3 miss",
+      "Targets: max combo >= 100",
+      "Course target: accuracy >= 90.00%",
+      "Course target: miss <= 3",
+      "Raw target: >= 1,000,000",
     ],
   );
 });
@@ -229,10 +224,7 @@ test("buildPreMapGuidance explains already satisfied score without a matching ma
       priorMapResults: [createPriorResult({ score: 600_000 })],
       isFinalMap: true,
     }),
-    [
-      "Targets: 100+ combo",
-      "Course target: total score already satisfied (600,000 / 500,000)",
-    ],
+    ["Targets: max combo >= 100"],
   );
 });
 
@@ -254,9 +246,7 @@ test("buildPreMapGuidance raw target uses stricter map score when totalScore rem
       isFinalMap: true,
     }),
     [
-      "Targets: score >= 1,000,001",
-      "Course target: total score >= 100,000",
-      "Raw target on this map: >= 1,100,001 (with HR)",
+      "Raw target: >= 1,100,001",
     ],
   );
 });
@@ -279,10 +269,9 @@ test("buildPreMapGuidance emits FreeMod final score target with raw choices", ()
       isFinalMap: true,
     }),
     [
+      "Targets: adjusted score >= 1,000,000",
       "FreeMod allowed: NF optional, NM, HD, HR, HDHR",
       "FreeMod active: add NF if you want the bot to receive your score after HP reaches 0.",
-      "Course target: total score >= 800,000",
-      "Targets on this map: score >= 1,000,000",
       "Raw target by choice: NM 1,000,000 / HD 1,060,000 / HR 1,100,000 / HDHR 1,166,000",
     ],
   );
@@ -304,7 +293,7 @@ test("buildPreMapGuidance omits raw target when final totalScore is already sati
       priorMapResults: [createPriorResult({ score: 600_000 })],
       isFinalMap: true,
     }),
-    ["Course target: total score already satisfied (600,000 / 500,000)"],
+    [],
   );
 });
 
@@ -328,7 +317,7 @@ test("buildPreMapGuidance explains already satisfied course accuracy with progre
       isFinalMap: true,
     }),
     [
-      "Targets: 100+ combo",
+      "Targets: max combo >= 100",
       "Course target: courseAccuracy already satisfied (191.00% / 190.00%)",
     ],
   );
@@ -349,7 +338,7 @@ test("buildPreMapGuidance renders exhausted and overrun miss budgets without neg
       beatmap,
       priorMapResults: [createPriorResult({ countMiss: 1 })],
       isFinalMap: true,
-    }).includes("Course target: 0 miss"),
+    }).includes("Course target: miss <= 0"),
   );
   assert.ok(
     buildPreMapGuidance({
@@ -376,6 +365,6 @@ test("buildPreMapGuidance still evaluates final course targets after a failed pr
       beatmap,
       priorMapResults: [createPriorResult({ accuracy: 99, passed: false })],
       isFinalMap: true,
-    }).includes("Course target: 190.00%+ acc"),
+    }).includes("Course target: accuracy >= 190.00%"),
   );
 });

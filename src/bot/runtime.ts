@@ -42,7 +42,7 @@ import {
 } from "@/lib/mods";
 import { buildPreMapGuidance } from "@/lib/preMapGuidance";
 import { formatConditionValue, kebabizeName } from "@/lib/format";
-import { computeAdjustedScore } from "@/lib/score";
+import { computeAdjustedScore, rawTargetForAdjustedRemaining } from "@/lib/score";
 import { systemCapabilities } from "@/lib/domain";
 import type { CourseDefinition, DanSystemDefinition, JudgedMapResult } from "@/lib/domain";
 import { sleep as defaultSleep } from "@/lib/sleep";
@@ -1063,6 +1063,16 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
     } satisfies Omit<JudgedMapResult, "id" | "runId">;
 
     run.mapResults.push(judgedMapResult);
+    const isFinalMap = run.currentBeatmapIndex === run.course.beatmaps.length - 1;
+    const mapEvaluationContext = {
+      scoreModel: run.course.scoreModel,
+      mapContext: {
+        rawValue: fetchedScore.score,
+        fixedMods: beatmap.mods,
+        playedTokens: playedTokenList,
+        freemod: beatmap.freemod,
+      },
+    } satisfies FormatEvaluationContext;
 
     if (isPartialPlay) {
       logger.warn(
@@ -1099,7 +1109,10 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
         `Map ${beatmap.ordinal}: ${judgedMapResult.passed ? "PASS" : "FAIL"}`,
       );
       for (const evaluation of judgedMap.evaluations) {
-        await safeSendLobbyMessage(run.lobby, `  ${formatEvaluation(evaluation)}`);
+        await safeSendLobbyMessage(
+          run.lobby,
+          `  ${formatEvaluation(evaluation, mapEvaluationContext)}`,
+        );
       }
       if (freemodViolation) {
         await safeSendLobbyMessage(
@@ -1113,13 +1126,16 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
           `${run.playerUsername}: played without NF - add NF on FreeMod maps so a fail still submits a score.`,
         );
       }
+      const courseStatusLine = buildCourseStatusLine(run, isFinalMap);
+      if (courseStatusLine) {
+        await safeSendLobbyMessage(run.lobby, courseStatusLine);
+      }
     }
 
     if (!isActiveRun(run)) {
       return;
     }
 
-    const isFinalMap = run.currentBeatmapIndex === run.course.beatmaps.length - 1;
     if (isFinalMap || !judgedMapResult.passed) {
       await finalizeRun(run);
       return;
@@ -1605,7 +1621,9 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
     const finalLine =
       judgedDan.overall.length > 0
         ? `${judgedDan.passed ? "PASS" : "FAIL"} (${judgedDan.overall
-            .map(formatEvaluation)
+            .map((evaluation) =>
+              formatEvaluation(evaluation, { scoreModel: run.course.scoreModel }),
+            )
             .join(", ")})`
         : judgedDan.passed
           ? "PASS"
@@ -1717,13 +1735,28 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
   };
 }
 
-function formatEvaluation(evaluation: JudgedThreshold) {
-  return `${formatEvaluationLabel(evaluation.type)}: ${formatConditionValue(
+interface FormatEvaluationContext {
+  scoreModel: CourseDefinition["scoreModel"];
+  mapContext?: {
+    rawValue: number;
+    fixedMods: string;
+    playedTokens: readonly string[];
+    freemod: boolean;
+  };
+}
+
+function formatEvaluation(
+  evaluation: JudgedThreshold,
+  context: FormatEvaluationContext,
+) {
+  const display = getEvaluationDisplay(evaluation, context);
+
+  return `${display.label}: ${formatConditionValue(
     evaluation.type,
-    evaluation.value,
+    display.value,
   )} ${evaluation.comparison} ${formatConditionValue(
     evaluation.type,
-    evaluation.threshold,
+    display.threshold,
   )} required`;
 }
 
@@ -1731,7 +1764,40 @@ function formatFreemodViolation(violation: { rejected: string[] }) {
   return `Disallowed mods: ${violation.rejected.join(", ")}`;
 }
 
-function formatEvaluationLabel(type: JudgedThreshold["type"]) {
+function getEvaluationDisplay(
+  evaluation: JudgedThreshold,
+  context: FormatEvaluationContext,
+) {
+  if (
+    evaluation.type === "score" &&
+    context.scoreModel === "scorev2" &&
+    context.mapContext
+  ) {
+    const rawThreshold = rawTargetForAdjustedRemaining(
+      evaluation.threshold,
+      context.mapContext.freemod
+        ? context.mapContext.playedTokens
+        : parseCourseMods(validateCourseMods(context.mapContext.fixedMods)),
+    );
+
+    return {
+      label: "raw score",
+      value: context.mapContext.rawValue,
+      threshold: rawThreshold,
+    };
+  }
+
+  return {
+    label: formatEvaluationLabel(evaluation.type, context),
+    value: evaluation.value,
+    threshold: evaluation.threshold,
+  };
+}
+
+function formatEvaluationLabel(
+  type: JudgedThreshold["type"],
+  context: FormatEvaluationContext,
+) {
   switch (type) {
     case "accuracy":
       return "accuracy";
@@ -1744,10 +1810,38 @@ function formatEvaluationLabel(type: JudgedThreshold["type"]) {
     case "courseAccuracy":
       return "course accuracy";
     case "totalScore":
-      return "total score";
+      return context.scoreModel === "scorev2" ? "adjusted total score" : "total score";
     case "totalMissCount":
       return "total miss";
   }
+}
+
+function buildCourseStatusLine(run: ActiveRun, isFinalMap: boolean): string | null {
+  if (isFinalMap || run.course.scoreModel !== "scorev2") {
+    return null;
+  }
+
+  const totalScoreCondition = run.course.overallPassConditions.find(
+    (condition) => condition.type === "totalScore",
+  );
+
+  if (!totalScoreCondition) {
+    return null;
+  }
+
+  const currentAdjustedTotal = run.mapResults.reduce(
+    (total, result) => total + result.score,
+    0,
+  );
+  const remaining = Math.max(totalScoreCondition.threshold - currentAdjustedTotal, 0);
+
+  return `Course status: ${formatConditionValue(
+    "totalScore",
+    currentAdjustedTotal,
+  )} / ${formatConditionValue(
+    "totalScore",
+    totalScoreCondition.threshold,
+  )} adjusted total, ${formatConditionValue("totalScore", remaining)} remaining`;
 }
 
 function getLobbyWinCondition(scoreModel: CourseDefinition["scoreModel"]) {

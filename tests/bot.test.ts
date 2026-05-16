@@ -697,8 +697,12 @@ test("bot runs the seeded course, forces NF, switches to ScoreV2, and stores the
     assert.match(latestMeaningfulLobbyMessage(client.lobby), /course accuracy:/i);
     assert.ok(
       client.lobby.channelMessages.some((message) =>
-        /score: 910,000 >= 10,000 required/.test(message),
+        /raw score: 910,000 >= 10,000 required/.test(message),
       ),
+    );
+    assert.equal(
+      client.lobby.channelMessages.some((message) => /Course status:/.test(message)),
+      false,
     );
     assert.equal(client.lobby.closeLobbyCalls, 1);
     assert.equal(endedEvents[0]?.result, "completed");
@@ -803,12 +807,12 @@ test("bot enables freemod per map, judges adjusted score, and stores raw audit d
     assert.equal(client.lobby.freemodHistory[1], false);
     assert.ok(
       client.lobby.channelMessages.some((message) =>
-        /score: 1,000,000 >= 999,999 required/.test(message),
+        /raw score: 1,166,000 >= 1,165,999 required/.test(message),
       ),
     );
     assert.ok(
       client.lobby.channelMessages.some((message) =>
-        /Targets: score >= 999,999/.test(message),
+        /Targets: adjusted score >= 999,999/.test(message),
       ),
     );
     assert.ok(
@@ -833,15 +837,28 @@ test("bot enables freemod per map, judges adjusted score, and stores raw audit d
     );
     assert.ok(
       client.lobby.channelMessages.some((message) =>
-        /Raw target on this map: >= 1,080,000 \(with DT\)/.test(message),
+        /Raw target: >= 1,080,000/.test(message),
       ),
       client.lobby.channelMessages.join("\n"),
     );
     assert.ok(
       client.lobby.channelMessages.some((message) =>
-        /total score: 1,905,000 >= 1,900,000 required/.test(message),
+        /Course status: 1,000,000 \/ 1,900,000 adjusted total, 900,000 remaining/.test(
+          message,
+        ),
       ),
       client.lobby.channelMessages.join("\n"),
+    );
+    assert.ok(
+      client.lobby.channelMessages.some((message) =>
+        /adjusted total score: 1,905,000 >= 1,900,000 required/.test(message),
+      ),
+      client.lobby.channelMessages.join("\n"),
+    );
+    assert.equal(
+      client.lobby.channelMessages.filter((message) => /Course status:/.test(message))
+        .length,
+      1,
     );
 
     const results = await listCourseRunsByNameKey(
@@ -931,7 +948,7 @@ test("bot announces exhausted final-map course miss budget", async () => {
 
     assert.ok(
       client.lobby.channelMessages.some((message) =>
-        /Course target: 0 miss/.test(message),
+        /Course target: miss <= 0/.test(message),
       ),
       client.lobby.channelMessages.join("\n"),
     );

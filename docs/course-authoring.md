@@ -93,13 +93,21 @@ Threshold 검증:
 - `courseAccuracy`: 0 이상 `map 수 * 100` 이하 number
 - `score`, `totalScore`, `missCount`, `totalMissCount`, `maxCombo`: 0 이상의 정수. `score`와 `totalScore`는 ScoreV2 course 전용
 
-지원하는 모드 토큰은 `EZ`, `NF`, `HT`, `DT`, `HD`, `HR`, `SD`, `NC`, `FL`, `SO`, `PF`, `K4`, `K5`, `K6`, `K7`, `K8`, `FI`, `K9`, `SV2`, `MR`입니다.
+지원하는 모드 토큰은 `EZ`, `NF`, `HT`, `DT`, `HD`, `HR`, `SD`, `NC`, `FL`, `SO`, `PF`, `K4`, `K5`, `K6`, `K7`, `K8`, `FI`, `K9`, `SV2`, `MR`입니다. `FM`은 mod 문자열에 쓰지 않고 beatmap의 `"freemod": true`로 설정합니다. 웹 catalog는 freemod beatmap을 `+FM`으로 표시하고 mod token은 색으로 구분합니다. 플레이어가 실제로 고른 mod는 runtime/audit 데이터이며 catalog page에는 표시하지 않습니다.
 
 ## FreeMod와 ScoreV2 score
 
 `freemod: true`인 beatmap은 로비에서 해당 map에만 FreeMod를 켭니다. 플레이어가 추가로 고를 수 있는 mod는 `NM`, `HD`, `HR`, `HDHR`뿐입니다. `NF`는 사망 후 score 제출 안정성을 위한 선택 사항입니다. `EZ`, `FL`, `DT`, `NC`, key mod 등 다른 선택이 match result에 있으면 해당 map은 실패로 저장되고, bot이 거부된 mod를 로비에 알립니다.
 
 ScoreV2 course의 `score`와 `totalScore` threshold는 adjusted(NM-equivalent) 기준으로 작성합니다. Bot은 Bancho raw ScoreV2를 플레이한 mod multiplier로 나눈 뒤 threshold와 비교합니다. 저장된 `MapResult.score`는 adjusted 판정 점수이고, `MapResult.rawScore`는 Bancho API raw score입니다. `rawScore`는 audit과 lobby의 raw 목표 안내에만 씁니다. Leaderboard는 adjusted `score` 합계 기준으로 정렬합니다.
+
+ScoreV2 course의 player-facing 표기는 비교 상황에 맞춰 scale을 명시합니다.
+
+- 고정 mod 맵의 pre-map target과 result line은 `raw score`입니다. osu!가 화면에 표시하는 값과 같은 scale입니다.
+- FreeMod 맵의 pre-map target은 `adjusted score`이며, 같은 화면의 `Raw target by choice`가 허용된 mod 조합별 raw 값을 나열합니다. Post-map result line은 player가 실제 선택한 mod 조합 기준의 `raw score`입니다.
+- 최종 맵은 map-level score threshold와 course-level `totalScore` remaining을 하나의 effective adjusted target으로 합칩니다. 고정 mod이면 `Raw target: >= N` 한 줄만, FreeMod이면 `Targets: adjusted score >= N, ...`와 `Raw target by choice: ...`로 표시합니다.
+- 비-최종 ScoreV2 맵의 result line 끝에는 course가 `totalScore` overall condition을 가진 경우 `Course status: X / Y adjusted total, Z remaining` 한 줄을 status로 표시합니다. Target은 다음 pre-map 안내가 담당합니다.
+- 누적 진행도는 run 종료 시 `adjusted total score:`, leaderboard에서는 `Adjusted Score Total`로 표시합니다.
 
 ScoreV2 multiplier는 다음 기준을 씁니다.
 

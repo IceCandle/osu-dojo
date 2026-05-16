@@ -89,9 +89,10 @@ CourseRun (id, userId, courseId, passed, timestamp, matchId?)
 - 첫 beatmap과 올바른 mods를 설정합니다.
 - 첫 map 시작 전 기본 대기 시간은 120초입니다.
 - Beatmap의 `freemod`가 true이면 해당 map에만 Bancho FreeMod를 켭니다. 플레이어 선택은 `NM`, `HD`, `HR`, `HDHR`만 허용하고, `NF`는 score 제출 안정성을 위한 선택 사항으로 안내합니다.
-- 각 map 시작 전 bot은 멀티플레이어 채팅에 해당 map의 통과 조건을 안내합니다. `accuracy`, `missCount`, `score`, `maxCombo`는 작성된 threshold를 한 줄에 표시합니다.
-- ScoreV2의 `score`와 `totalScore` threshold는 adjusted(NM-equivalent) 기준으로 작성합니다. Bot은 Bancho raw ScoreV2를 플레이한 mod multiplier(`MOD_MULTIPLIERS_SV2`)로 나눈 adjusted score로 판정합니다. Leaderboard도 adjusted `score` 합계 기준으로 정렬합니다.
-- 마지막 map에서 bot은 남은 course-level 조건(`totalScore`, `courseAccuracy`, `totalMissCount`)을 `Course target`으로 표시합니다. ScoreV2 `totalScore`가 남아 있으면 raw Bancho score 기준 보조 목표도 함께 표시합니다. `totalMissCount`의 남은 budget이 0이면 `0 miss` target으로 표시합니다.
+- 각 map 시작 전 bot은 멀티플레이어 채팅에 해당 map의 통과 조건을 안내합니다. 비교 표현은 `accuracy >= 95.00%`, `miss <= 5`, `max combo >= 300`처럼 표시합니다.
+- ScoreV2의 `score`와 `totalScore` threshold는 adjusted(NM-equivalent) 기준으로 작성합니다. Bot은 Bancho raw ScoreV2를 플레이한 mod multiplier(`MOD_MULTIPLIERS_SV2`)로 나눈 adjusted score로 판정합니다. Leaderboard도 adjusted `score` 합계 기준으로 정렬하고 `Adjusted Score Total`로 표시합니다.
+- ScoreV2 고정 mod map의 score target은 player가 osu!에서 보는 값과 비교할 수 있도록 `raw score >= Y`로 표시합니다. FreeMod map의 pre-map score target은 `adjusted score >= X`로 표시하고, `Raw target by choice`가 허용된 mod 조합별 raw 값을 나열합니다.
+- 마지막 ScoreV2 map에서 bot은 map-level `score` threshold와 course-level `totalScore` remaining을 하나의 effective adjusted target으로 합칩니다. 고정 mod이면 별도 `Course target` 없이 `Raw target: >= N`만 표시합니다. FreeMod이면 `Targets: adjusted score >= N, ...`와 `Raw target by choice: ...`를 표시합니다. 마지막 map의 `courseAccuracy`, `totalMissCount` budget 안내 logic은 유지하며, `totalMissCount`의 남은 budget이 0이면 `miss <= 0` target으로 표시합니다.
 - 각 map이 끝나면 휴식 시간 이후 다음 map으로 자동 진행합니다. 기본 휴식 시간은 60초입니다.
 - 마지막 map 이후 course가 완료됩니다.
 

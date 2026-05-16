@@ -32,11 +32,18 @@ export function buildPreMapGuidance({
   isFinalMap,
 }: BuildPreMapGuidanceOptions): string[] {
   const lines: string[] = [];
-  const useFreemodFinalScoreTarget =
-    isFinalMap && beatmap.freemod && hasScoreTarget(course, beatmap);
+  const finalAdjustedScoreTarget =
+    isFinalMap && course.scoreModel === "scorev2"
+      ? getEffectiveAdjustedScoreTarget(course, beatmap, priorMapResults)
+      : null;
+  const useFinalScoreTarget = finalAdjustedScoreTarget !== null;
   const targets = beatmap.passConditions
-    .filter((condition) => !(useFreemodFinalScoreTarget && condition.type === "score"))
-    .map(formatMapTarget);
+    .filter((condition) => !(useFinalScoreTarget && condition.type === "score"))
+    .map((condition) => formatMapTarget(condition, course.scoreModel, beatmap));
+
+  if (beatmap.freemod && finalAdjustedScoreTarget !== null && finalAdjustedScoreTarget > 0) {
+    targets.unshift(`adjusted score >= ${formatInteger(finalAdjustedScoreTarget)}`);
+  }
 
   if (targets.length > 0) {
     lines.push(`Targets: ${targets.join(", ")}`);
@@ -52,11 +59,11 @@ export function buildPreMapGuidance({
   if (isFinalMap) {
     lines.push(
       ...buildCourseTargetLines(course, beatmap, priorMapResults, {
-        skipTotalScore: useFreemodFinalScoreTarget,
+        skipTotalScore: useFinalScoreTarget,
       }),
     );
-    if (useFreemodFinalScoreTarget) {
-      lines.push(...buildFreemodScoreTargetLines(course, beatmap, priorMapResults));
+    if (finalAdjustedScoreTarget !== null && finalAdjustedScoreTarget > 0) {
+      lines.push(...buildFinalScoreTargetLines(beatmap, finalAdjustedScoreTarget));
     }
   }
 
@@ -111,7 +118,7 @@ function buildCourseAccuracyTargetLine(
   }
 
   return remaining > mapThreshold
-    ? [`Course target: ${formatPercentage(remaining)}+ acc`]
+    ? [`Course target: accuracy >= ${formatPercentage(remaining)}`]
     : [];
 }
 
@@ -149,48 +156,30 @@ function buildTotalScoreTargetLine(
   return lines;
 }
 
-function buildFreemodScoreTargetLines(
-  course: CourseDefinition,
+function buildFinalScoreTargetLines(
   beatmap: CourseBeatmapDefinition,
-  priorMapResults: readonly PriorMapResult[],
+  neededAdjusted: number,
 ): string[] {
-  const totalScoreCondition = findCourseCondition(course, "totalScore");
-  const current = sum(priorMapResults.map((result) => result.score));
-  const totalScoreRemaining = totalScoreCondition
-    ? totalScoreCondition.threshold - current
-    : 0;
-  const mapScoreThreshold = findMapCondition(beatmap, "score")?.threshold ?? 0;
-  const neededAdjusted = Math.max(mapScoreThreshold, totalScoreRemaining, 0);
-  const lines: string[] = [];
-
-  if (totalScoreCondition) {
-    lines.push(
-      totalScoreRemaining > 0
-        ? `Course target: total score >= ${formatInteger(totalScoreRemaining)}`
-        : `Course target: total score already satisfied (${formatInteger(
-            current,
-          )} / ${formatInteger(totalScoreCondition.threshold)})`,
-    );
-  }
-
-  if (neededAdjusted <= 0) {
-    return lines;
-  }
-
-  lines.push(`Targets on this map: score >= ${formatInteger(neededAdjusted)}`);
-  lines.push(
-    `Raw target by choice: NM ${formatInteger(
-      rawTargetForAdjustedRemaining(neededAdjusted, []),
-    )} / HD ${formatInteger(
-      rawTargetForAdjustedRemaining(neededAdjusted, ["HD"]),
-    )} / HR ${formatInteger(
-      rawTargetForAdjustedRemaining(neededAdjusted, ["HR"]),
-    )} / HDHR ${formatInteger(
-      rawTargetForAdjustedRemaining(neededAdjusted, ["HD", "HR"]),
-    )}`,
-  );
-
-  return lines;
+  return beatmap.freemod
+    ? [
+        `Raw target by choice: NM ${formatInteger(
+          rawTargetForAdjustedRemaining(neededAdjusted, []),
+        )} / HD ${formatInteger(
+          rawTargetForAdjustedRemaining(neededAdjusted, ["HD"]),
+        )} / HR ${formatInteger(
+          rawTargetForAdjustedRemaining(neededAdjusted, ["HR"]),
+        )} / HDHR ${formatInteger(
+          rawTargetForAdjustedRemaining(neededAdjusted, ["HD", "HR"]),
+        )}`,
+      ]
+    : [
+        `Raw target: >= ${formatInteger(
+          rawTargetForAdjustedRemaining(
+            neededAdjusted,
+            parseCourseMods(validateCourseMods(beatmap.mods)),
+          ),
+        )}`,
+      ];
 }
 
 function buildTotalMissTargetLine(
@@ -212,24 +201,41 @@ function buildTotalMissTargetLine(
   }
 
   return remainingBudget < mapThreshold
-    ? [`Course target: ${formatInteger(remainingBudget)} miss`]
+    ? [`Course target: miss <= ${formatInteger(remainingBudget)}`]
     : [];
 }
 
-function formatMapTarget(condition: MapPassCondition): string {
+function formatMapTarget(
+  condition: MapPassCondition,
+  scoreModel: CourseDefinition["scoreModel"],
+  beatmap: CourseBeatmapDefinition,
+): string {
   if (condition.type === "accuracy") {
-    return `${formatPercentage(condition.threshold)}+ acc`;
+    return `accuracy >= ${formatPercentage(condition.threshold)}`;
   }
 
   if (condition.type === "missCount") {
-    return `<=${formatInteger(condition.threshold)} miss`;
+    return `miss <= ${formatInteger(condition.threshold)}`;
   }
 
   if (condition.type === "score") {
-    return `score >= ${formatInteger(condition.threshold)}`;
+    if (scoreModel === "scorev1") {
+      return `score >= ${formatInteger(condition.threshold)}`;
+    }
+
+    if (beatmap.freemod) {
+      return `adjusted score >= ${formatInteger(condition.threshold)}`;
+    }
+
+    return `raw score >= ${formatInteger(
+      rawTargetForAdjustedRemaining(
+        condition.threshold,
+        parseCourseMods(validateCourseMods(beatmap.mods)),
+      ),
+    )}`;
   }
 
-  return `${formatInteger(condition.threshold)}+ combo`;
+  return `max combo >= ${formatInteger(condition.threshold)}`;
 }
 
 function findMapCondition(
@@ -248,6 +254,26 @@ function findCourseCondition(
 
 function hasScoreTarget(course: CourseDefinition, beatmap: CourseBeatmapDefinition) {
   return Boolean(findMapCondition(beatmap, "score") || findCourseCondition(course, "totalScore"));
+}
+
+function getEffectiveAdjustedScoreTarget(
+  course: CourseDefinition,
+  beatmap: CourseBeatmapDefinition,
+  priorMapResults: readonly PriorMapResult[],
+): number | null {
+  const mapScoreThreshold = findMapCondition(beatmap, "score")?.threshold;
+  const totalScoreCondition = findCourseCondition(course, "totalScore");
+
+  if (mapScoreThreshold === undefined && !totalScoreCondition) {
+    return null;
+  }
+
+  const current = sum(priorMapResults.map((result) => result.score));
+  const totalScoreRemaining = totalScoreCondition
+    ? totalScoreCondition.threshold - current
+    : 0;
+
+  return Math.max(mapScoreThreshold ?? 0, totalScoreRemaining, 0);
 }
 
 function sum(values: readonly number[]): number {
