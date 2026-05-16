@@ -106,6 +106,7 @@ export interface CourseBeatmapDefinition {
   id: string;
   beatmapId: number;
   mods: string;
+  freemod: boolean;
   passConditions: MapPassCondition[];
   ordinal: number;
   title: string;
@@ -148,6 +149,8 @@ export interface JudgedMapResult extends StableScoreStats {
   mods: string;
   passConditions: MapPassCondition[];
   score: number;
+  rawScore: number;
+  playedMods: string;
   accuracy: number;
   maxCombo: number;
   passed: boolean;

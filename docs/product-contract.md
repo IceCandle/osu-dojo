@@ -32,6 +32,7 @@ DanSystem (id, name, slug, description, status: "draft"|"current"|"legacy"|"arch
       courseId,
       beatmapId,
       mods,
+      freemod,
       passConditions: Array<{type: "accuracy"|"score"|"missCount"|"maxCombo", threshold: number}>,
       ordinal
     )
@@ -39,7 +40,7 @@ DanSystem (id, name, slug, description, status: "draft"|"current"|"legacy"|"arch
 BeatmapMetadata (beatmapId, title, artist, difficultyName, mapper, coverUrl, totalObjects)
 
 CourseRun (id, userId, courseId, passed, timestamp, matchId?)
-  has many MapResult (id, runId, gameId?, beatmapId, score, accuracy, passed)
+  has many MapResult (id, runId, gameId?, beatmapId, score, rawScore, playedMods, accuracy, passed)
 ```
 
 상태는 `DanSystem`에만 있습니다. Course는 system의 상태를 상속합니다.
@@ -86,22 +87,30 @@ CourseRun (id, userId, courseId, passed, timestamp, matchId?)
 
 - bot은 DB에서 course 정의를 불러옵니다.
 - 첫 beatmap과 올바른 mods를 설정합니다.
-- 각 map이 끝나면 휴식 시간 이후 다음 map으로 자동 진행합니다. 기본 휴식 시간은 20초입니다.
+- 첫 map 시작 전 기본 대기 시간은 120초입니다.
+- Beatmap의 `freemod`가 true이면 해당 map에만 Bancho FreeMod를 켭니다. 플레이어 선택은 `NM`, `HD`, `HR`, `HDHR`만 허용하고, `NF`는 score 제출 안정성을 위한 선택 사항으로 안내합니다.
+- 각 map 시작 전 bot은 멀티플레이어 채팅에 해당 map의 통과 조건을 안내합니다. 비교 표현은 `accuracy >= 95.00%`, `miss <= 5`, `max combo >= 300`처럼 표시합니다.
+- ScoreV2의 `score`와 `totalScore` threshold는 adjusted(NM-equivalent) 기준으로 작성합니다. Bot은 Bancho raw ScoreV2를 플레이한 mod multiplier(`MOD_MULTIPLIERS_SV2`)로 나눈 adjusted score로 판정합니다. Leaderboard도 adjusted `score` 합계 기준으로 정렬하고 `Adjusted Score Total`로 표시합니다.
+- ScoreV2 고정 mod map의 score target은 player가 osu!에서 보는 값과 비교할 수 있도록 `raw score >= Y`로 표시합니다. FreeMod map의 pre-map score target은 `adjusted score >= X`로 표시하고, `Raw target by choice`가 허용된 mod 조합별 raw 값을 나열합니다.
+- 마지막 ScoreV2 map에서 bot은 map-level `score` threshold와 course-level `totalScore` remaining을 하나의 effective adjusted target으로 합칩니다. 고정 mod이면 별도 `Course target` 없이 `Raw target: >= N`만 표시합니다. FreeMod이면 `Targets: adjusted score >= N, ...`와 `Raw target by choice: ...`를 표시합니다. 마지막 map의 `courseAccuracy`, `totalMissCount` budget 안내 logic은 유지하며, `totalMissCount`의 남은 budget이 0이면 `miss <= 0` target으로 표시합니다.
+- 각 map이 끝나면 휴식 시간 이후 다음 map으로 자동 진행합니다. 기본 휴식 시간은 60초입니다.
 - 마지막 map 이후 course가 완료됩니다.
 
 ### AC3: Result Ingestion
 
 - 각 map이 끝난 뒤 bot은 match result에서 플레이어 점수를 수집합니다.
-- 저장 대상 run이면 `{userId, courseId, beatmapId, score, accuracy, passed, timestamp}`를 저장합니다.
+- 저장 대상 run이면 `{userId, courseId, beatmapId, score, rawScore, playedMods, accuracy, passed, timestamp}`를 저장합니다. ScoreV2에서 `score`는 adjusted 판정 점수이고, `rawScore`는 Bancho API raw score입니다. `rawScore`는 audit과 lobby의 raw 목표 안내에만 씁니다.
+- Beatmap object count가 있는 map에서 제출 score의 hit object 합계가 총 object 수보다 작으면 partial play로 실패 처리합니다. API 제출 직후의 작은 집계 race를 흡수하기 위해 `delta <= 2` 또는 `played / total >= 0.99`인 경우 한 번 지연 후 재조회합니다.
+- FreeMod map에서 제출 score에 `NF`가 없으면 bot은 HP가 0이 된 뒤의 score 제출 안정성을 위해 다음부터 `NF`를 추가하라는 안내를 표시합니다. 이 안내만으로 play를 실패 처리하지 않습니다.
 
 ### AC4: Pass/Fail Judgment
 
 - 개별 map 판정은 course beatmap의 `passConditions` 목록을 AND로 평가합니다.
-- map 조건 type은 `accuracy`, `score`, `missCount`, `maxCombo`입니다. `accuracy`, `score`, `maxCombo`는 실제 값이 threshold 이상이어야 하고, `missCount`는 threshold 이하여야 합니다.
+- map 조건 type은 `accuracy`, `score`, `missCount`, `maxCombo`입니다. `accuracy`, `score`, `maxCombo`는 실제 값이 threshold 이상이어야 하고, `missCount`는 threshold 이하여야 합니다. `score` 조건은 `scoreModel: "scorev2"` course에서만 허용되며, ScoreV2 `score` threshold는 adjusted 기준입니다.
 - 전체 판정은 모든 map이 passed이고, course 단위 `overallPassConditions` 목록도 모두 통과해야 passed입니다.
-- course 조건 type은 `courseAccuracy`, `totalScore`, `totalMissCount`입니다. `courseAccuracy`와 `totalScore`는 실제 값이 threshold 이상이어야 하고, `totalMissCount`는 threshold 이하여야 합니다.
+- course 조건 type은 `courseAccuracy`, `totalScore`, `totalMissCount`입니다. `courseAccuracy`와 `totalScore`는 실제 값이 threshold 이상이어야 하고, `totalMissCount`는 threshold 이하여야 합니다. `totalScore` 조건은 `scoreModel: "scorev2"` course에서만 허용됩니다.
 - course 단위 `courseAccuracy` 기준은 통과한 map accuracy의 합계와 threshold를 비교합니다. 실패했거나 플레이하지 않은 map은 Course Acc에 더하지 않습니다.
-- course 단위 `totalScore` 기준은 플레이한 map score의 합계와 threshold를 비교합니다.
+- course 단위 `totalScore` 기준은 플레이한 map의 adjusted `score` 합계와 threshold를 비교합니다.
 - 같은 condition list 안에서 같은 type은 한 번만 쓸 수 있고, course loading은 중복 type을 즉시 실패시킵니다.
 - bot은 멀티플레이어 채팅에 개별 map 결과와 최종 결과를 알립니다.
 

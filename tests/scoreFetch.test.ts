@@ -100,7 +100,68 @@ test("score fetcher returns the target player's score from the latest matching g
   assert.equal(result.beatmapId, 259);
   assert.equal(result.userId, 42);
   assert.equal(result.score, 910000);
+  assert.equal(result.playerEnabledMods, 0);
+  assert.equal(result.globalGameMods, 0);
   assert.equal(result.passed, true);
+});
+
+test("score fetcher parses game and player mod bitmasks", async () => {
+  const clock = createClock();
+  const result = await fetchLatestPlayerMapScore(
+    createOptions(clock, async () =>
+      createMatchPayload([
+        createGame({
+          mods: "16",
+          scores: [createScore({ enabled_mods: "8" })],
+        }),
+      ]),
+    ),
+  );
+
+  assert.equal(result.globalGameMods, 16);
+  assert.equal(result.playerEnabledMods, 8);
+});
+
+test("score fetcher defaults missing, null, and zero mod bitmasks to zero", async () => {
+  const clock = createClock();
+  const missing = await fetchLatestPlayerMapScore(
+    createOptions(clock, async () =>
+      createMatchPayload([
+        createGame({
+          scores: [createScore()],
+        }),
+      ]),
+    ),
+  );
+  const nullMods = await fetchLatestPlayerMapScore(
+    createOptions(clock, async () =>
+      createMatchPayload([
+        createGame({
+          game_id: "3",
+          mods: null,
+          scores: [createScore({ enabled_mods: null })],
+        }),
+      ]),
+    ),
+  );
+  const zeroMods = await fetchLatestPlayerMapScore(
+    createOptions(clock, async () =>
+      createMatchPayload([
+        createGame({
+          game_id: "4",
+          mods: "0",
+          scores: [createScore({ enabled_mods: "0" })],
+        }),
+      ]),
+    ),
+  );
+
+  assert.equal(missing.globalGameMods, 0);
+  assert.equal(missing.playerEnabledMods, 0);
+  assert.equal(nullMods.globalGameMods, 0);
+  assert.equal(nullMods.playerEnabledMods, 0);
+  assert.equal(zeroMods.globalGameMods, 0);
+  assert.equal(zeroMods.playerEnabledMods, 0);
 });
 
 test("score fetcher can recover after one transient transport error", async () => {

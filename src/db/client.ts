@@ -50,6 +50,7 @@ CREATE TABLE IF NOT EXISTS beatmaps (
   course_id TEXT NOT NULL REFERENCES courses(id),
   beatmap_id INTEGER NOT NULL,
   mods TEXT NOT NULL,
+  freemod INTEGER NOT NULL DEFAULT 0,
   pass_conditions TEXT NOT NULL,
   ordinal INTEGER NOT NULL,
   annotations TEXT NOT NULL DEFAULT '[]'
@@ -86,6 +87,8 @@ CREATE TABLE IF NOT EXISTS map_results (
   pass_conditions TEXT NOT NULL,
   ordinal INTEGER NOT NULL,
   score INTEGER NOT NULL,
+  raw_score INTEGER NOT NULL DEFAULT 0,
+  played_mods TEXT NOT NULL DEFAULT '',
   accuracy REAL NOT NULL,
   max_combo INTEGER NOT NULL,
   count_300 INTEGER NOT NULL,
@@ -189,6 +192,7 @@ function migrateDatabase(sqlite: BetterSqliteConnection) {
 
   const beatmapColumns = (sqlite.pragma("table_info(beatmaps)") as Array<{ name: string }>)
     .map((col) => col.name);
+  addColumnIfMissing(sqlite, "beatmaps", beatmapColumns, "freemod INTEGER NOT NULL DEFAULT 0");
   addColumnIfMissing(sqlite, "beatmaps", beatmapColumns, "pass_conditions TEXT");
   backfillMapPassConditions(sqlite, "beatmaps", beatmapColumns);
   dropLegacyConditionColumns(sqlite, "beatmaps", [
@@ -256,6 +260,10 @@ function migrateDatabase(sqlite: BetterSqliteConnection) {
   const mapResultColumns = (
     sqlite.pragma("table_info(map_results)") as Array<{ name: string }>
   ).map((col) => col.name);
+  addColumnIfMissing(sqlite, "map_results", mapResultColumns, "raw_score INTEGER NOT NULL DEFAULT 0");
+  addColumnIfMissing(sqlite, "map_results", mapResultColumns, "played_mods TEXT NOT NULL DEFAULT ''");
+  sqlite.exec("UPDATE map_results SET raw_score = score WHERE raw_score = 0 AND score <> 0");
+  sqlite.exec("UPDATE map_results SET played_mods = mods WHERE played_mods = ''");
   addColumnIfMissing(sqlite, "map_results", mapResultColumns, "pass_conditions TEXT");
   backfillMapPassConditions(sqlite, "map_results", mapResultColumns);
   dropLegacyConditionColumns(sqlite, "map_results", [
@@ -437,6 +445,7 @@ function rebuildBeatmapsTable(sqlite: BetterSqliteConnection) {
       course_id TEXT NOT NULL REFERENCES courses(id),
       beatmap_id INTEGER NOT NULL,
       mods TEXT NOT NULL,
+      freemod INTEGER NOT NULL DEFAULT 0,
       pass_conditions TEXT NOT NULL,
       ordinal INTEGER NOT NULL,
       annotations TEXT NOT NULL DEFAULT '[]'
@@ -446,6 +455,7 @@ function rebuildBeatmapsTable(sqlite: BetterSqliteConnection) {
       course_id,
       beatmap_id,
       mods,
+      freemod,
       pass_conditions,
       ordinal,
       annotations
@@ -455,6 +465,7 @@ function rebuildBeatmapsTable(sqlite: BetterSqliteConnection) {
       course_id,
       beatmap_id,
       mods,
+      freemod,
       pass_conditions,
       ordinal,
       annotations
@@ -475,6 +486,8 @@ function rebuildMapResultsTable(sqlite: BetterSqliteConnection) {
       pass_conditions TEXT NOT NULL,
       ordinal INTEGER NOT NULL,
       score INTEGER NOT NULL,
+      raw_score INTEGER NOT NULL DEFAULT 0,
+      played_mods TEXT NOT NULL DEFAULT '',
       accuracy REAL NOT NULL,
       max_combo INTEGER NOT NULL,
       count_300 INTEGER NOT NULL,
@@ -493,6 +506,8 @@ function rebuildMapResultsTable(sqlite: BetterSqliteConnection) {
       pass_conditions,
       ordinal,
       score,
+      raw_score,
+      played_mods,
       accuracy,
       max_combo,
       count_300,
@@ -511,6 +526,8 @@ function rebuildMapResultsTable(sqlite: BetterSqliteConnection) {
       pass_conditions,
       ordinal,
       score,
+      raw_score,
+      played_mods,
       accuracy,
       max_combo,
       count_300,

@@ -47,6 +47,7 @@ async function seedRankingCourses(databaseUrl: string) {
       description: "Score-ranked test course for the integrated leaderboard.",
       scoreModel: "scorev2",
       overallPassConditions: [{ type: "totalScore", threshold: 1_800_000 }],
+      beatmaps: createRankingSv2Beatmaps(baseCourse),
     }),
     cloneCourse(baseCourse, {
       id: "course-ranking-empty",
@@ -94,16 +95,41 @@ function cloneCourse(
     | "description"
     | "scoreModel"
     | "overallPassConditions"
-  >,
+  > &
+    Partial<Pick<DanSystemSeed["courses"][number], "beatmaps">>,
 ): DanSystemSeed["courses"][number] {
   return {
     ...course,
     ...overrides,
-    beatmaps: course.beatmaps.map((beatmap) => ({
+    beatmaps: (overrides.beatmaps ?? course.beatmaps).map((beatmap) => ({
       ...beatmap,
       id: `${overrides.id}-beatmap-${beatmap.ordinal}`,
     })),
   };
+}
+
+function createRankingSv2Beatmaps(
+  baseCourse: DanSystemSeed["courses"][number],
+): DanSystemSeed["courses"][number]["beatmaps"] {
+  const [freemodBeatmap, fixedModBeatmap] = baseCourse.beatmaps;
+
+  assert.ok(freemodBeatmap);
+  assert.ok(fixedModBeatmap);
+
+  return [
+    {
+      ...freemodBeatmap,
+      mods: "",
+      freemod: true,
+      ordinal: 1,
+    },
+    {
+      ...fixedModBeatmap,
+      mods: "DT",
+      freemod: false,
+      ordinal: 2,
+    },
+  ];
 }
 
 async function storeCourseRun(
@@ -117,6 +143,8 @@ async function storeCourseRun(
     maps: Array<{
       gameId?: number;
       score: number;
+      rawScore?: number;
+      playedMods?: string;
       accuracy: number;
       maxCombo: number;
       count300: number;
@@ -152,6 +180,8 @@ function buildMapResult(
   stats: {
     gameId?: number;
     score: number;
+    rawScore?: number;
+    playedMods?: string;
     accuracy: number;
     maxCombo: number;
     count300: number;
@@ -169,6 +199,8 @@ function buildMapResult(
     passConditions: beatmap.passConditions,
     ordinal: beatmap.ordinal,
     score: stats.score,
+    rawScore: stats.rawScore ?? stats.score,
+    playedMods: stats.playedMods ?? beatmap.mods,
     accuracy: stats.accuracy,
     maxCombo: stats.maxCombo,
     count300: stats.count300,
@@ -345,7 +377,9 @@ test("getRankingByNameKey sorts scorev2 courses by status then total score", asy
         completedAt: 1_800_001_000_000,
         maps: [
           {
-            score: 980_000,
+            score: 1_300_000,
+            rawScore: 1_300_000,
+            playedMods: "",
             accuracy: 97,
             maxCombo: 900,
             count300: 1_040,
@@ -355,7 +389,9 @@ test("getRankingByNameKey sorts scorev2 courses by status then total score", asy
             passed: true,
           },
           {
-            score: 970_000,
+            score: 600_000,
+            rawScore: 600_000,
+            playedMods: "",
             accuracy: 96,
             maxCombo: 880,
             count300: 1_010,
@@ -411,7 +447,9 @@ test("getRankingByNameKey sorts scorev2 courses by status then total score", asy
         completedAt: 1_800_001_200_000,
         maps: [
           {
-            score: 960_000,
+            score: 1_200_686,
+            rawScore: 1_400_000,
+            playedMods: "HDHR",
             accuracy: 98,
             maxCombo: 890,
             count300: 1_050,
@@ -421,7 +459,9 @@ test("getRankingByNameKey sorts scorev2 courses by status then total score", asy
             passed: true,
           },
           {
-            score: 950_000,
+            score: 600_000,
+            rawScore: 600_000,
+            playedMods: "",
             accuracy: 97,
             maxCombo: 860,
             count300: 1_000,
@@ -446,7 +486,8 @@ test("getRankingByNameKey sorts scorev2 courses by status then total score", asy
       ranking.results.map((result) => result.username),
       ["ScoreLead", "ScoreTwo", "FailedButHuge"],
     );
-    assert.equal(ranking.results[0]?.totalScore, 1_950_000);
+    assert.equal(ranking.results[0]?.totalScore, 1_900_000);
+    assert.equal(ranking.results[1]?.totalScore, 1_800_686);
     assert.equal(ranking.results[2]?.status, "fail");
     assert.equal(ranking.results[2]?.totalScore, 1_997_000);
   } finally {
@@ -583,7 +624,8 @@ test("DanCoursePage renders the integrated leaderboard and empty state on the sy
   const previousBundle = globalThis.__osuDojoDatabaseBundle;
 
   try {
-    const { db, databaseBundle, accCourse, emptyCourse } = await seedRankingCourses(temp.url);
+    const { db, databaseBundle, accCourse, sv2Course, emptyCourse } =
+      await seedRankingCourses(temp.url);
 
     await storeCourseRun(
       accCourse,
@@ -618,6 +660,40 @@ test("DanCoursePage renders the integrated leaderboard and empty state on the sy
       },
       db,
     );
+    await storeCourseRun(
+      sv2Course,
+      {
+        userId: 22,
+        username: "ScoreRenderPlayer",
+        passed: true,
+        completedAt: 1_800_002_100_000,
+        maps: [
+          {
+            score: 1_200_000,
+            rawScore: 1_200_000,
+            accuracy: 98,
+            maxCombo: 900,
+            count300: 1_080,
+            count100: 20,
+            count50: 1,
+            countMiss: 0,
+            passed: true,
+          },
+          {
+            score: 650_000,
+            rawScore: 650_000,
+            accuracy: 97,
+            maxCombo: 870,
+            count300: 1_020,
+            count100: 30,
+            count50: 2,
+            countMiss: 1,
+            passed: true,
+          },
+        ],
+      },
+      db,
+    );
 
     process.env.DATABASE_URL = temp.url;
     globalThis.__osuDojoDatabaseBundle = databaseBundle;
@@ -629,6 +705,16 @@ test("DanCoursePage renders the integrated leaderboard and empty state on the sy
         }),
         searchParams: Promise.resolve({
           course: "ranking-acc",
+        }),
+      }),
+    );
+    const sv2Html = renderToStaticMarkup(
+      await DanCoursePage({
+        params: Promise.resolve({
+          systemNameKey: SEEDED_SYSTEM_NAME_KEY,
+        }),
+        searchParams: Promise.resolve({
+          course: "ranking-sv2",
         }),
       }),
     );
@@ -652,6 +738,11 @@ test("DanCoursePage renders the integrated leaderboard and empty state on the sy
     assert.doesNotMatch(courseHtml, /Stage 1/);
     assert.doesNotMatch(courseHtml, /Beatmap 1/);
     assert.doesNotMatch(courseHtml, /\b\d{1,2}:\d{2}\b/);
+    assert.match(sv2Html, /Adjusted Score Total/);
+    assert.match(sv2Html, /class="mod-label">\+/);
+    assert.match(sv2Html, /class="mod-token mod-token-fm">FM<\/span>/);
+    assert.match(sv2Html, /class="mod-token mod-token-dt">DT<\/span>/);
+    assert.doesNotMatch(sv2Html, /\+NF/);
     assert.match(emptyHtml, /No runs saved yet/);
     assert.match(emptyHtml, /!dojo start test ranking-empty/);
   } finally {

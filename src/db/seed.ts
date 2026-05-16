@@ -151,6 +151,7 @@ export async function seedDatabase(
           courseId: course.id,
           beatmapId: beatmap.beatmapId,
           mods: beatmap.mods,
+          freemod: beatmap.freemod,
           passConditions: JSON.stringify(beatmap.passConditions),
           ordinal: beatmap.ordinal,
           annotations: JSON.stringify(beatmap.annotations),
@@ -275,6 +276,7 @@ async function assertAllowedSystemChange(
         id: beatmaps.id,
         beatmapId: beatmaps.beatmapId,
         mods: beatmaps.mods,
+        freemod: beatmaps.freemod,
         passConditions: beatmaps.passConditions,
         ordinal: beatmaps.ordinal,
       })
@@ -325,6 +327,7 @@ function getGameplayChangedFields(
     id: string;
     beatmapId: number;
     mods: string;
+    freemod: boolean;
     passConditions: string;
     ordinal: number;
   }>,
@@ -355,6 +358,7 @@ function getGameplayChangedFields(
       id: beatmap.id,
       beatmapId: beatmap.beatmapId,
       mods: beatmap.mods,
+      freemod: beatmap.freemod,
       passConditions: beatmap.passConditions,
       ordinal: beatmap.ordinal,
     }))
@@ -364,6 +368,7 @@ function getGameplayChangedFields(
       id: beatmap.id,
       beatmapId: beatmap.beatmapId,
       mods: beatmap.mods,
+      freemod: beatmap.freemod,
       passConditions: JSON.stringify(beatmap.passConditions),
       ordinal: beatmap.ordinal,
     }))

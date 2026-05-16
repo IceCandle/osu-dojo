@@ -116,6 +116,36 @@ test("evaluateCourseConditions handles aggregate course condition types", () => 
   );
 });
 
+test("evaluateCourseConditions sums already-adjusted ScoreV2 map scores", () => {
+  const hdhr = evaluateCourseConditions(
+    [{ type: "totalScore", threshold: 1_100_000 }],
+    [
+      {
+        ...mapResults()[0]!,
+        score: 1_000_000,
+        rawScore: 1_166_000,
+        playedMods: "HDHR",
+      },
+    ],
+  );
+  const ez = evaluateCourseConditions(
+    [{ type: "totalScore", threshold: 900_000 }],
+    [
+      {
+        ...mapResults()[0]!,
+        score: 1_000_000,
+        rawScore: 500_000,
+        playedMods: "EZ",
+      },
+    ],
+  );
+
+  assert.equal(hdhr.passed, false);
+  assert.equal(hdhr.evaluations[0]?.value, 1_000_000);
+  assert.equal(ez.passed, true);
+  assert.equal(ez.evaluations[0]?.value, 1_000_000);
+});
+
 test("judgeCourseRun passes when maps pass and overall list is empty", () => {
   const judged = judgeCourseRun(course([]), mapResults());
 
@@ -183,6 +213,8 @@ function mapResults(): JudgedMapResult[] {
       mods: "NF",
       passConditions: [{ type: "accuracy", threshold: 95 }],
       score: 910000,
+      rawScore: 910000,
+      playedMods: "NF",
       accuracy: 96,
       maxCombo: 1000,
       count300: 1,
@@ -201,6 +233,8 @@ function mapResults(): JudgedMapResult[] {
       mods: "NF",
       passConditions: [{ type: "score", threshold: 800000 }],
       score: 905000,
+      rawScore: 905000,
+      playedMods: "NF",
       accuracy: 94.5,
       maxCombo: 900,
       count300: 1,

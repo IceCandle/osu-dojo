@@ -13,31 +13,33 @@
       "ordinal": 1,
       "scoreModel": "scorev2",
       "overallPassConditions": [
-        { "type": "courseAccuracy", "threshold": 0 },
-        { "type": "totalMissCount", "threshold": 9999 }
+        { "type": "totalScore", "threshold": 30000 }
       ],
       "beatmaps": [
         {
           "id": "beatmap-test-1",
           "beatmapId": 315,
           "mods": "",
+          "freemod": true,
           "passConditions": [
-            { "type": "accuracy", "threshold": 0.1 },
-            { "type": "missCount", "threshold": 1 }
+            { "type": "score", "threshold": 10000 },
+            { "type": "maxCombo", "threshold": 5 }
           ],
-          "ordinal": 1,
-          "annotations": ["aim"]
+          "ordinal": 2,
+          "annotations": ["old map", "consistency"]
         },
         {
           "id": "beatmap-test-2",
           "beatmapId": 259,
-          "mods": "",
+          "mods": "DT",
+          "freemod": false,
           "passConditions": [
-            { "type": "score", "threshold": 10000 },
-            { "type": "maxCombo", "threshold": 0 }
+            { "type": "accuracy", "threshold": 0.1 },
+            { "type": "missCount", "threshold": 999 },
+            { "type": "score", "threshold": 1 }
           ],
-          "ordinal": 2,
-          "annotations": ["speed"]
+          "ordinal": 1,
+          "annotations": ["low ar"]
         }
       ]
     },
@@ -51,7 +53,7 @@
       "overallPassConditions": [{ "type": "courseAccuracy", "threshold": 30 }],
       "beatmaps": [
         {
-          "id": "beatmap-test-2dan-1",
+          "id": "test-2dan-1",
           "beatmapId": 4923775,
           "mods": "",
           "passConditions": [{ "type": "accuracy", "threshold": 30 }],

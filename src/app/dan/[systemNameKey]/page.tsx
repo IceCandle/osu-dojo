@@ -4,12 +4,12 @@ import { notFound } from "next/navigation";
 import { getDanSystemDetailByNameKey, getRankingForCourse } from "@/db/queries";
 import {
   formatConditionCompact,
-  formatMods,
   formatPercentage,
   formatScoreModel,
   kebabizeName,
 } from "@/lib/format";
 import { systemCapabilities } from "@/lib/domain";
+import { formatVisibleCourseModTokens } from "@/lib/mods";
 
 export const dynamic = "force-dynamic";
 
@@ -174,7 +174,16 @@ export default async function DanSystemPage({
                         <a href={beatmapUrl} rel="noreferrer" target="_blank">
                           <h3 className="difficulty-label">[{beatmap.difficultyName}]</h3>
                         </a>
-                        <p className="mod-label">{formatMods(beatmap.mods)}</p>
+                        <p className="mod-label">
+                          +{formatBeatmapMods(beatmap).map((token) => (
+                            <span
+                              className={`mod-token mod-token-${token.toLowerCase()}`}
+                              key={token}
+                            >
+                              {token}
+                            </span>
+                          ))}
+                        </p>
                       </div>
 
                       <div className="course-beatmap-footer">
@@ -214,7 +223,7 @@ export default async function DanSystemPage({
                       <th>
                         {selectedCourse.scoreModel === "scorev1"
                           ? "Course Acc"
-                          : "Score Total"}
+                          : "Adjusted Score Total"}
                       </th>
                     </tr>
                   </thead>
@@ -282,6 +291,15 @@ export default async function DanSystemPage({
       </section>
     </main>
   );
+}
+
+function formatBeatmapMods(beatmap: { mods: string; freemod: boolean }): string[] {
+  if (beatmap.freemod) {
+    return ["FM"];
+  }
+
+  const tokens = formatVisibleCourseModTokens(beatmap.mods);
+  return tokens.length === 0 ? ["NM"] : tokens;
 }
 
 function getRunStatusClassName(status: "pass" | "fail" | "dnf") {

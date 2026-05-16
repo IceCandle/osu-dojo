@@ -53,7 +53,7 @@ Course field:
 - `overallPassConditions`: course 전체 통과 조건 배열. 비어 있으면 map별 조건만 사용
 - `beatmaps`: beatmap object 배열
 
-Course 전체 조건 type은 `courseAccuracy`, `totalScore`, `totalMissCount`입니다. 조건 목록은 AND로 결합되며, 같은 목록 안에서 같은 type은 한 번만 쓸 수 있습니다. `courseAccuracy`는 평균 accuracy가 아니라 Course Acc와 비교합니다. Course Acc는 통과한 map accuracy의 합계입니다.
+Course 전체 조건 type은 `courseAccuracy`, `totalScore`, `totalMissCount`입니다. 조건 목록은 AND로 결합되며, 같은 목록 안에서 같은 type은 한 번만 쓸 수 있습니다. `courseAccuracy`는 평균 accuracy가 아니라 Course Acc와 비교합니다. Course Acc는 통과한 map accuracy의 합계입니다. `totalScore`는 `scoreModel: "scorev2"` course에서만 사용할 수 있고, `scorev1` course에 쓰면 load 시점에 실패합니다.
 
 각 beatmap object는 아래 형식을 사용합니다.
 
@@ -62,6 +62,7 @@ Course 전체 조건 type은 `courseAccuracy`, `totalScore`, `totalMissCount`입
   "id": "beatmap-test-1",
   "beatmapId": 315,
   "mods": "HR",
+  "freemod": false,
   "passConditions": [{ "type": "accuracy", "threshold": 95 }],
   "ordinal": 1,
   "annotations": ["aim"]
@@ -73,12 +74,13 @@ Beatmap field:
 - `id`: DB에 저장되는 고정 문자열 식별자
 - `beatmapId`: osu! beatmap ID 정수
 - `mods`: 지원하는 고정 모드 토큰을 이어 붙인 문자열. `NM`은 빈 문자열로 정규화됨
+- `freemod`: 선택 field. `true`이면 해당 map에서만 Bancho FreeMod를 켜고, 플레이어가 `HD`, `HR`, `HDHR` 중 하나를 선택할 수 있음. 생략하면 `false`
 - `passConditions`: map 통과 조건 배열. 최소 하나 이상의 조건 필요
 - `ordinal`: course 안에서의 플레이 순서
 - `annotations`: 문자열 배열
 - `title`, `artist`, `difficultyName`, `mapper`, `coverUrl`: 선택적 메타데이터 문자열
 
-Map 조건 type은 `accuracy`, `score`, `missCount`, `maxCombo`입니다. 조건 목록은 AND로 결합되며, 같은 목록 안에서 같은 type은 한 번만 쓸 수 있습니다.
+Map 조건 type은 `accuracy`, `score`, `missCount`, `maxCombo`입니다. 조건 목록은 AND로 결합되며, 같은 목록 안에서 같은 type은 한 번만 쓸 수 있습니다. `score`는 `scoreModel: "scorev2"` course에서만 사용할 수 있고, `scorev1` course에 쓰면 load 시점에 실패합니다.
 
 비교 방향:
 
@@ -89,9 +91,45 @@ Threshold 검증:
 
 - `accuracy`: 0 이상 100 이하 number
 - `courseAccuracy`: 0 이상 `map 수 * 100` 이하 number
-- `score`, `totalScore`, `missCount`, `totalMissCount`, `maxCombo`: 0 이상의 정수
+- `score`, `totalScore`, `missCount`, `totalMissCount`, `maxCombo`: 0 이상의 정수. `score`와 `totalScore`는 ScoreV2 course 전용
 
-지원하는 모드 토큰은 `EZ`, `NF`, `HT`, `DT`, `HD`, `HR`, `SD`, `NC`, `FL`, `SO`, `PF`, `K4`, `K5`, `K6`, `K7`, `K8`, `FI`, `K9`, `SV2`, `MR`입니다.
+지원하는 모드 토큰은 `EZ`, `NF`, `HT`, `DT`, `HD`, `HR`, `SD`, `NC`, `FL`, `SO`, `PF`, `K4`, `K5`, `K6`, `K7`, `K8`, `FI`, `K9`, `SV2`, `MR`입니다. `FM`은 mod 문자열에 쓰지 않고 beatmap의 `"freemod": true`로 설정합니다. 웹 catalog는 freemod beatmap을 `+FM`으로 표시하고 mod token은 색으로 구분합니다. 플레이어가 실제로 고른 mod는 runtime/audit 데이터이며 catalog page에는 표시하지 않습니다.
+
+## FreeMod와 ScoreV2 score
+
+`freemod: true`인 beatmap은 로비에서 해당 map에만 FreeMod를 켭니다. 플레이어가 추가로 고를 수 있는 mod는 `NM`, `HD`, `HR`, `HDHR`뿐입니다. `NF`는 사망 후 score 제출 안정성을 위한 선택 사항입니다. `EZ`, `FL`, `DT`, `NC`, key mod 등 다른 선택이 match result에 있으면 해당 map은 실패로 저장되고, bot이 거부된 mod를 로비에 알립니다.
+
+ScoreV2 course의 `score`와 `totalScore` threshold는 adjusted(NM-equivalent) 기준으로 작성합니다. Bot은 Bancho raw ScoreV2를 플레이한 mod multiplier로 나눈 뒤 threshold와 비교합니다. 저장된 `MapResult.score`는 adjusted 판정 점수이고, `MapResult.rawScore`는 Bancho API raw score입니다. `rawScore`는 audit과 lobby의 raw 목표 안내에만 씁니다. Leaderboard는 adjusted `score` 합계 기준으로 정렬합니다.
+
+ScoreV2 course의 player-facing 표기는 비교 상황에 맞춰 scale을 명시합니다.
+
+- 고정 mod 맵의 pre-map target과 result line은 `raw score`입니다. osu!가 화면에 표시하는 값과 같은 scale입니다.
+- FreeMod 맵의 pre-map target은 `adjusted score`이며, 같은 화면의 `Raw target by choice`가 허용된 mod 조합별 raw 값을 나열합니다. Post-map result line은 player가 실제 선택한 mod 조합 기준의 `raw score`입니다.
+- 최종 맵은 map-level score threshold와 course-level `totalScore` remaining을 하나의 effective adjusted target으로 합칩니다. 고정 mod이면 `Raw target: >= N` 한 줄만, FreeMod이면 `Targets: adjusted score >= N, ...`와 `Raw target by choice: ...`로 표시합니다.
+- 비-최종 ScoreV2 맵의 result line 끝에는 course가 `totalScore` overall condition을 가진 경우 `Course status: X / Y adjusted total, Z remaining` 한 줄을 status로 표시합니다. Target은 다음 pre-map 안내가 담당합니다.
+- 누적 진행도는 run 종료 시 `adjusted total score:`, leaderboard에서는 `Adjusted Score Total`로 표시합니다.
+
+ScoreV2 multiplier는 다음 기준을 씁니다.
+
+| mod | multiplier |
+| --- | ---: |
+| `EZ` | 0.5 |
+| `NF` | 1.0 |
+| `HT` | 0.3 |
+| `HD` | 1.06 |
+| `HR` | 1.1 |
+| `DT` / `NC` | 1.2 |
+| `FL` | 1.12 |
+| `SO` | 0.9 |
+| `SD` / `PF` | 1.0 |
+
+예시:
+
+- FreeMod `score >= 1_000_000`: HDHR raw 1,166,000은 adjusted 1,000,000으로 통과하고, HR raw 1,099,999는 adjusted 999,999로 실패합니다.
+- Fixed `mods: "DT"`에서 `score >= 1_000_000`: raw 1,200,000 DT play는 adjusted 1,000,000으로 통과하고, raw 1,199,999는 실패합니다.
+- `totalScore >= 3_000_000`: 각 map의 adjusted `score` 합계가 3,000,000 이상이어야 합니다.
+
+`SV2` mod token은 stable에서 lazer ScoreV2 표시를 켜는 mod token입니다. Course의 `scoreModel: "scorev2"`와 같은 의미가 아닙니다.
 
 ## System Status
 
@@ -111,7 +149,7 @@ Threshold 검증:
 - course 추가/삭제
 - course `id`, `slug`, name key, `ordinal`, `scoreModel`, `overallPassConditions`
 - beatmap 추가/삭제
-- beatmap `id`, `beatmapId`, `mods`, `passConditions`, `ordinal`
+- beatmap `id`, `beatmapId`, `mods`, `freemod`, `passConditions`, `ordinal`
 
 허용되는 cosmetic edit은 system `description`, 같은 key를 유지하는 system `name`, course `description`, course `tags`, 같은 key를 유지하는 course `name`, beatmap metadata cache입니다.
 
@@ -145,9 +183,10 @@ course data를 바꾸기 전에 아래를 확인합니다.
 4. 모든 `ordinal`이 정수인지 확인
 5. condition list가 map에는 비어 있지 않고, 같은 list 안에서 type이 중복되지 않는지 확인
 6. score model이 `scorev1` 또는 `scorev2`만 쓰는지 확인
-7. frozen system의 gameplay field를 바꾸지 않았는지 확인
-8. `pnpm test` 실행
-9. `pnpm build` 실행
-10. `pnpm dev`를 켜고 `/dan`, `/dan/<system-name-key>?course=<course-name-key>` 확인
+7. `scorev1` course에 `score` 또는 `totalScore` 조건이 없는지 확인
+8. frozen system의 gameplay field를 바꾸지 않았는지 확인
+9. `pnpm test` 실행
+10. `pnpm build` 실행
+11. `pnpm dev`를 켜고 `/dan`, `/dan/<system-name-key>?course=<course-name-key>` 확인
 
 실제 Bancho 동작 확인이 필요하면 `pnpm bot:dev <system-name-key> <course-name-key>`를 실행합니다.

@@ -32,8 +32,17 @@ import {
   judgeCourseRun,
   type JudgedThreshold,
 } from "@/lib/judging";
-import { parseCourseMods, validateCourseMods } from "@/lib/mods";
+import {
+  formatModsCanonical,
+  formatVisibleCourseMods,
+  parseCourseMods,
+  parseModBitmask,
+  validateCourseMods,
+  validateFreemodPlayerSelection,
+} from "@/lib/mods";
+import { buildPreMapGuidance } from "@/lib/preMapGuidance";
 import { formatConditionValue, kebabizeName } from "@/lib/format";
+import { computeAdjustedScore, rawTargetForAdjustedRemaining } from "@/lib/score";
 import { systemCapabilities } from "@/lib/domain";
 import type { CourseDefinition, DanSystemDefinition, JudgedMapResult } from "@/lib/domain";
 import { sleep as defaultSleep } from "@/lib/sleep";
@@ -89,7 +98,7 @@ export interface LobbyLike extends EventEmitter {
   updateSettings: () => Promise<null>;
   lockSlots: () => Promise<null>;
   setMap: (mapId: number) => Promise<null>;
-  setMods: (mods: string | BanchoMod[]) => Promise<null>;
+  setMods: (mods: string | BanchoMod[], freemod?: boolean) => Promise<null>;
   setSettings: (
     teamMode?: number,
     winCondition?: number,
@@ -199,8 +208,8 @@ export type RunEndedEvent =
       reason: RunEndedReason;
     };
 
-const DEFAULT_REST_DURATION_MS = 20_000;
-const DEFAULT_FIRST_MAP_COUNTDOWN_SECONDS = 10;
+const DEFAULT_REST_DURATION_MS = 60_000;
+const DEFAULT_FIRST_MAP_COUNTDOWN_SECONDS = 120;
 const DEFAULT_INACTIVITY_TIMEOUT_MS = 20 * 60 * 1000;
 const DEFAULT_FINAL_GRACE_PERIOD_MS = 60_000;
 const STANDARD_SCORE_FETCH_TOTAL_BUDGET_MS = 4_000;
@@ -209,6 +218,7 @@ const STANDARD_SCORE_FETCH_RETRY_DELAY_MS = 1_000;
 const CONFIRMED_FINISH_SCORE_FETCH_TOTAL_BUDGET_MS = 45_000;
 const CONFIRMED_FINISH_SCORE_FETCH_CALL_TIMEOUT_MS = 4_000;
 const CONFIRMED_FINISH_SCORE_FETCH_RETRY_DELAY_MS = 2_500;
+const PARTIAL_PLAY_REFETCH_DELAY_MS = 2_500;
 const CLOSE_LOBBY_TIMEOUT_MS = 5_000;
 const START_CONFIRMATION_GRACE_MS = 2_000;
 const TEAM_MODE_HEAD_TO_HEAD = 0;
@@ -320,6 +330,25 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
       )}`,
       ...fields,
     };
+  }
+
+  function logUnknownModTokens(
+    run: ActiveRun,
+    beatmapId: number,
+    tokens: string[],
+  ) {
+    const unknown = tokens.filter((token) => token.startsWith("UNKNOWN:"));
+    if (unknown.length === 0) {
+      return;
+    }
+
+    logger.warn(
+      "dojo unknown mod bitmask token",
+      getRunLogFields(run, {
+        beatmapId,
+        unknownMods: unknown,
+      }),
+    );
   }
 
   function safeSendUserMessage(user: BotUserLike, message: string) {
@@ -897,14 +926,16 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
         };
     let fetchedScore: NormalizedPlayerMapScore;
 
-    try {
-      fetchedScore = await fetchScore({
+    const scoreFetchRequest = {
         lobbyId: run.lobby.id,
         beatmapId: beatmap.beatmapId,
         userId: run.playerUserId,
         processedGameIds: run.processedGameIds,
         ...scoreFetchOptions,
-      });
+    };
+
+    try {
+      fetchedScore = await fetchScore(scoreFetchRequest);
     } catch (error) {
       if (!isActiveRun(run)) {
         return;
@@ -978,15 +1009,36 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
       return;
     }
 
+    fetchedScore = await refetchSmallPartialPlayGap(
+      run,
+      beatmap,
+      fetchedScore,
+      scoreFetchRequest,
+    );
+
+    if (!isActiveRun(run)) {
+      return;
+    }
+
     run.processedGameIds.add(fetchedScore.gameId);
 
     const playedObjects = totalHitObjects(fetchedScore);
     const isPartialPlay =
       beatmap.totalObjects !== null && playedObjects < beatmap.totalObjects;
+    const globalTokens = parseModBitmask(fetchedScore.globalGameMods);
+    const playerTokens = parseModBitmask(fetchedScore.playerEnabledMods);
+    const playedTokenList = uniqueTokens([...globalTokens, ...playerTokens]);
+    const playedMods = formatModsCanonical(playedTokenList);
+    logUnknownModTokens(run, beatmap.beatmapId, playedTokenList);
+    const score =
+      run.course.scoreModel === "scorev2"
+        ? computeAdjustedScore(fetchedScore.score, playedTokenList)
+        : fetchedScore.score;
+    const freemodViolation = getFreemodViolation(beatmap, playerTokens);
 
     const judgedMap = evaluateMapConditions(beatmap.passConditions, {
       accuracy: fetchedScore.accuracy,
-      score: fetchedScore.score,
+      score,
       countMiss: fetchedScore.countMiss,
       maxCombo: fetchedScore.maxCombo,
     });
@@ -997,18 +1049,30 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
       mods: ensureNoFailMods(beatmap.mods),
       passConditions: beatmap.passConditions,
       ordinal: beatmap.ordinal,
-      score: fetchedScore.score,
+      score,
+      rawScore: fetchedScore.score,
+      playedMods,
       accuracy: fetchedScore.accuracy,
       maxCombo: fetchedScore.maxCombo,
       count300: fetchedScore.count300,
       count100: fetchedScore.count100,
       count50: fetchedScore.count50,
       countMiss: fetchedScore.countMiss,
-      passed: !isPartialPlay && judgedMap.passed,
+      passed: !isPartialPlay && !freemodViolation && judgedMap.passed,
       createdAt: Date.now(),
     } satisfies Omit<JudgedMapResult, "id" | "runId">;
 
     run.mapResults.push(judgedMapResult);
+    const isFinalMap = run.currentBeatmapIndex === run.course.beatmaps.length - 1;
+    const mapEvaluationContext = {
+      scoreModel: run.course.scoreModel,
+      mapContext: {
+        rawValue: fetchedScore.score,
+        fixedMods: beatmap.mods,
+        playedTokens: playedTokenList,
+        freemod: beatmap.freemod,
+      },
+    } satisfies FormatEvaluationContext;
 
     if (isPartialPlay) {
       logger.warn(
@@ -1030,19 +1094,41 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
         "dojo map judged",
         getRunLogFields(run, {
           beatmapId: beatmap.beatmapId,
-          passed: judgedMap.passed,
-          score: fetchedScore.score,
+          passed: judgedMapResult.passed,
+          rawScore: fetchedScore.score,
+          score,
+          playedMods,
           accuracy: fetchedScore.accuracy,
           conditions: judgedMap.evaluations,
+          freemodViolation,
         }),
       );
 
       await safeSendLobbyMessage(
         run.lobby,
-        `Map ${beatmap.ordinal}: ${judgedMap.passed ? "PASS" : "FAIL"}`,
+        `Map ${beatmap.ordinal}: ${judgedMapResult.passed ? "PASS" : "FAIL"}`,
       );
       for (const evaluation of judgedMap.evaluations) {
-        await safeSendLobbyMessage(run.lobby, `  ${formatEvaluation(evaluation)}`);
+        await safeSendLobbyMessage(
+          run.lobby,
+          `  ${formatEvaluation(evaluation, mapEvaluationContext)}`,
+        );
+      }
+      if (freemodViolation) {
+        await safeSendLobbyMessage(
+          run.lobby,
+          `  ${formatFreemodViolation(freemodViolation)}`,
+        );
+      }
+      if (beatmap.freemod && !playedTokenList.includes("NF")) {
+        await safeSendLobbyMessage(
+          run.lobby,
+          `${run.playerUsername}: played without NF - add NF on FreeMod maps so a fail still submits a score.`,
+        );
+      }
+      const courseStatusLine = buildCourseStatusLine(run, isFinalMap);
+      if (courseStatusLine) {
+        await safeSendLobbyMessage(run.lobby, courseStatusLine);
       }
     }
 
@@ -1050,7 +1136,6 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
       return;
     }
 
-    const isFinalMap = run.currentBeatmapIndex === run.course.beatmaps.length - 1;
     if (isFinalMap || !judgedMapResult.passed) {
       await finalizeRun(run);
       return;
@@ -1058,6 +1143,64 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
 
     run.currentBeatmapIndex += 1;
     await queueNextBeatmap(run);
+  }
+
+  async function refetchSmallPartialPlayGap(
+    run: ActiveRun,
+    beatmap: CourseDefinition["beatmaps"][number],
+    fetchedScore: NormalizedPlayerMapScore,
+    scoreFetchRequest: Parameters<FetchScore>[0],
+  ): Promise<NormalizedPlayerMapScore> {
+    const playedObjects = totalHitObjects(fetchedScore);
+
+    if (
+      beatmap.totalObjects === null ||
+      playedObjects >= beatmap.totalObjects ||
+      !isSmallPartialPlayGap(playedObjects, beatmap.totalObjects)
+    ) {
+      return fetchedScore;
+    }
+
+    logger.warn(
+      "dojo partial play refetch scheduled",
+      getRunLogFields(run, {
+        beatmapId: beatmap.beatmapId,
+        playedObjects,
+        expectedObjects: beatmap.totalObjects,
+        gap: beatmap.totalObjects - playedObjects,
+      }),
+    );
+
+    await sleep(PARTIAL_PLAY_REFETCH_DELAY_MS);
+
+    if (!isActiveRun(run)) {
+      return fetchedScore;
+    }
+
+    try {
+      const refetchedScore = await fetchScore(scoreFetchRequest);
+      logger.info(
+        "dojo partial play refetch completed",
+        getRunLogFields(run, {
+          beatmapId: beatmap.beatmapId,
+          firstPlayedObjects: playedObjects,
+          refetchedPlayedObjects: totalHitObjects(refetchedScore),
+          expectedObjects: beatmap.totalObjects,
+        }),
+      );
+      return refetchedScore;
+    } catch (error) {
+      logger.warn(
+        "dojo partial play refetch failed",
+        getRunLogFields(run, {
+          error,
+          beatmapId: beatmap.beatmapId,
+          playedObjects,
+          expectedObjects: beatmap.totalObjects,
+        }),
+      );
+      return fetchedScore;
+    }
   }
 
   async function abortUnconfirmedScoreResolution(
@@ -1102,7 +1245,7 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
     const countdownSeconds = Math.max(0, Math.round(restDurationMs / 1000));
     await configureCurrentBeatmap(run, "between_maps");
 
-    await safeSendLobbyMessage(run.lobby, `Next map in ${countdownSeconds}s.`);
+    await announceCurrentBeatmap(run, countdownSeconds);
     await sendLobbyTimer(run.lobby, countdownSeconds);
 
     touchRunProgress(run);
@@ -1117,21 +1260,37 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
       throw new Error("Missing lobby state for active run.");
     }
 
-    const beatmap = run.course.beatmaps[run.currentBeatmapIndex];
     await configureCurrentBeatmap(run, "countdown");
 
     if (optionsForMap.announceStart) {
-      await safeSendLobbyMessage(
-        run.lobby,
-        `Map ${beatmap.ordinal}/${run.course.beatmaps.length}: beatmap ${beatmap.beatmapId} with ${ensureNoFailMods(
-          beatmap.mods,
-        )}. Starting in ${optionsForMap.countdownSeconds}s.`,
-      );
+      await announceCurrentBeatmap(run, optionsForMap.countdownSeconds);
     }
     await sendLobbyTimer(run.lobby, optionsForMap.countdownSeconds);
 
     touchRunProgress(run);
     queuePureStart(run, Math.max(0, optionsForMap.countdownSeconds) * 1000);
+  }
+
+  async function announceCurrentBeatmap(run: ActiveRun, countdownSeconds: number) {
+    if (!run.lobby) {
+      throw new Error("Missing lobby state for active run.");
+    }
+
+    const beatmap = run.course.beatmaps[run.currentBeatmapIndex];
+    await safeSendLobbyMessage(
+      run.lobby,
+      `Map ${beatmap.ordinal}/${run.course.beatmaps.length}: beatmap ${beatmap.beatmapId} with ${formatAnnouncedMods(
+        beatmap.mods,
+      )}. Starting in ${countdownSeconds}s.`,
+    );
+    for (const line of buildPreMapGuidance({
+      course: run.course,
+      beatmap,
+      priorMapResults: run.mapResults,
+      isFinalMap: run.currentBeatmapIndex === run.course.beatmaps.length - 1,
+    })) {
+      await safeSendLobbyMessage(run.lobby, line);
+    }
   }
 
   async function configureCurrentBeatmap(
@@ -1151,7 +1310,7 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
       transitionRunStatus(run, "between_maps");
     }
     await run.lobby.setMap(beatmap.beatmapId);
-    await run.lobby.setMods(normalizeLobbyMods(beatmap.mods));
+    await run.lobby.setMods(normalizeLobbyMods(beatmap.mods), beatmap.freemod);
     await run.lobby.setSettings(
       TEAM_MODE_HEAD_TO_HEAD,
       getLobbyWinCondition(run.course.scoreModel),
@@ -1268,9 +1427,10 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
 
     let abortReason: RunEndedReason =
       run.status === "between_maps" ? "next-map-start-failed" : "start-failed";
+    const restCountdownSeconds = Math.max(0, Math.round(timings.restDurationMs / 1000));
     let message =
       run.status === "between_maps"
-        ? "Run aborted: the next map did not start after the 20s countdown."
+        ? `Run aborted: the next map did not start after the ${restCountdownSeconds}s countdown.`
         : "Run aborted: the match failed to start.";
 
     const playerState = await refreshTargetPlayerState(
@@ -1461,7 +1621,9 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
     const finalLine =
       judgedDan.overall.length > 0
         ? `${judgedDan.passed ? "PASS" : "FAIL"} (${judgedDan.overall
-            .map(formatEvaluation)
+            .map((evaluation) =>
+              formatEvaluation(evaluation, { scoreModel: run.course.scoreModel }),
+            )
             .join(", ")})`
         : judgedDan.passed
           ? "PASS"
@@ -1573,17 +1735,69 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
   };
 }
 
-function formatEvaluation(evaluation: JudgedThreshold) {
-  return `${formatEvaluationLabel(evaluation.type)}: ${formatConditionValue(
+interface FormatEvaluationContext {
+  scoreModel: CourseDefinition["scoreModel"];
+  mapContext?: {
+    rawValue: number;
+    fixedMods: string;
+    playedTokens: readonly string[];
+    freemod: boolean;
+  };
+}
+
+function formatEvaluation(
+  evaluation: JudgedThreshold,
+  context: FormatEvaluationContext,
+) {
+  const display = getEvaluationDisplay(evaluation, context);
+
+  return `${display.label}: ${formatConditionValue(
     evaluation.type,
-    evaluation.value,
+    display.value,
   )} ${evaluation.comparison} ${formatConditionValue(
     evaluation.type,
-    evaluation.threshold,
+    display.threshold,
   )} required`;
 }
 
-function formatEvaluationLabel(type: JudgedThreshold["type"]) {
+function formatFreemodViolation(violation: { rejected: string[] }) {
+  return `Disallowed mods: ${violation.rejected.join(", ")}`;
+}
+
+function getEvaluationDisplay(
+  evaluation: JudgedThreshold,
+  context: FormatEvaluationContext,
+) {
+  if (
+    evaluation.type === "score" &&
+    context.scoreModel === "scorev2" &&
+    context.mapContext
+  ) {
+    const rawThreshold = rawTargetForAdjustedRemaining(
+      evaluation.threshold,
+      context.mapContext.freemod
+        ? context.mapContext.playedTokens
+        : parseCourseMods(validateCourseMods(context.mapContext.fixedMods)),
+    );
+
+    return {
+      label: "raw score",
+      value: context.mapContext.rawValue,
+      threshold: rawThreshold,
+    };
+  }
+
+  return {
+    label: formatEvaluationLabel(evaluation.type, context),
+    value: evaluation.value,
+    threshold: evaluation.threshold,
+  };
+}
+
+function formatEvaluationLabel(
+  type: JudgedThreshold["type"],
+  context: FormatEvaluationContext,
+) {
   switch (type) {
     case "accuracy":
       return "accuracy";
@@ -1596,10 +1810,38 @@ function formatEvaluationLabel(type: JudgedThreshold["type"]) {
     case "courseAccuracy":
       return "course accuracy";
     case "totalScore":
-      return "total score";
+      return context.scoreModel === "scorev2" ? "adjusted total score" : "total score";
     case "totalMissCount":
       return "total miss";
   }
+}
+
+function buildCourseStatusLine(run: ActiveRun, isFinalMap: boolean): string | null {
+  if (isFinalMap || run.course.scoreModel !== "scorev2") {
+    return null;
+  }
+
+  const totalScoreCondition = run.course.overallPassConditions.find(
+    (condition) => condition.type === "totalScore",
+  );
+
+  if (!totalScoreCondition) {
+    return null;
+  }
+
+  const currentAdjustedTotal = run.mapResults.reduce(
+    (total, result) => total + result.score,
+    0,
+  );
+  const remaining = Math.max(totalScoreCondition.threshold - currentAdjustedTotal, 0);
+
+  return `Course status: ${formatConditionValue(
+    "totalScore",
+    currentAdjustedTotal,
+  )} / ${formatConditionValue(
+    "totalScore",
+    totalScoreCondition.threshold,
+  )} adjusted total, ${formatConditionValue("totalScore", remaining)} remaining`;
 }
 
 function getLobbyWinCondition(scoreModel: CourseDefinition["scoreModel"]) {
@@ -1614,10 +1856,39 @@ function normalizeLobbyMods(mods: string) {
   );
 }
 
+function getFreemodViolation(
+  beatmap: CourseDefinition["beatmaps"][number],
+  playerTokens: string[],
+): { rejected: string[] } | null {
+  if (!beatmap.freemod) {
+    return null;
+  }
+
+  const courseTokens = new Set(parseCourseMods(validateCourseMods(beatmap.mods)));
+  const playerSelectedTokens = playerTokens.filter(
+    (token) => token !== "NF" && !courseTokens.has(token),
+  );
+  const validation = validateFreemodPlayerSelection(playerSelectedTokens);
+
+  return validation.ok ? null : { rejected: validation.rejected };
+}
+
+function uniqueTokens(tokens: string[]) {
+  return [...new Set(tokens)];
+}
+
+function isSmallPartialPlayGap(playedObjects: number, totalObjects: number) {
+  const gap = totalObjects - playedObjects;
+
+  return gap <= 2 || playedObjects / totalObjects >= 0.99;
+}
+
 function ensureNoFailMods(mods: string) {
   const compact = mods.toUpperCase().replace(/\s+/g, "");
   return compact.includes("NF") ? compact : `${compact}NF`;
 }
+
+const formatAnnouncedMods = formatVisibleCourseMods;
 
 function ensureNoFailModTokens(mods: string[]) {
   return mods.includes("NF") ? mods : [...mods, "NF"];

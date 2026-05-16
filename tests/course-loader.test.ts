@@ -33,6 +33,7 @@ test("course loader reads the seeded test course json", () => {
       assert.equal(typeof beatmap.beatmapId, "number");
       assert.equal(Number.isInteger(beatmap.beatmapId), true);
       assert.equal(typeof beatmap.mods, "string");
+      assert.equal(typeof beatmap.freemod, "boolean");
       assert.ok(beatmap.passConditions.length > 0);
       for (const condition of beatmap.passConditions) {
         assert.match(condition.type, /^(accuracy|score|missCount|maxCombo)$/);
@@ -144,8 +145,120 @@ test("course loader allows beatmap metadata to be omitted", () => {
     assert.equal(beatmap?.mapper, "");
     assert.equal(beatmap?.coverUrl, "");
     assert.deepEqual(beatmap?.annotations, ["metadata resolved at seed time"]);
+    assert.equal(beatmap?.freemod, false);
   } finally {
     temp.cleanup();
+  }
+});
+
+test("course loader parses optional beatmap freemod flags", () => {
+  const temp = createTempDirectory();
+
+  try {
+    writeFileSync(
+      path.join(temp.directory, "freemod.json"),
+      JSON.stringify({
+        id: "system-freemod",
+        name: "freemod",
+        slug: "freemod",
+        description: "freemod",
+        courses: [
+          {
+            id: "course-freemod",
+            name: "freemod",
+            slug: "freemod-1",
+            description: "freemod",
+            ordinal: 1,
+            scoreModel: "scorev2",
+            overallPassConditions: [{ type: "courseAccuracy", threshold: 95 }],
+            beatmaps: [
+              {
+                id: "beatmap-freemod-true",
+                beatmapId: 1,
+                mods: "",
+                freemod: true,
+                passConditions: [{ type: "accuracy", threshold: 95 }],
+                ordinal: 1,
+                annotations: ["x"],
+              },
+              {
+                id: "beatmap-freemod-false",
+                beatmapId: 2,
+                mods: "",
+                freemod: false,
+                passConditions: [{ type: "accuracy", threshold: 95 }],
+                ordinal: 2,
+                annotations: ["x"],
+              },
+              {
+                id: "beatmap-freemod-omitted",
+                beatmapId: 3,
+                mods: "",
+                passConditions: [{ type: "accuracy", threshold: 95 }],
+                ordinal: 3,
+                annotations: ["x"],
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    const beatmaps = loadCoursesFromDir(temp.directory)[0]?.courses[0]?.beatmaps;
+
+    assert.deepEqual(
+      beatmaps?.map((beatmap) => beatmap.freemod),
+      [true, false, false],
+    );
+  } finally {
+    temp.cleanup();
+  }
+});
+
+test("course loader rejects non-boolean beatmap freemod flags", () => {
+  for (const value of ["true", 1, null]) {
+    const temp = createTempDirectory();
+
+    try {
+      writeFileSync(
+        path.join(temp.directory, "invalid-freemod.json"),
+        JSON.stringify({
+          id: "system-invalid-freemod",
+          name: "invalid freemod",
+          slug: "invalid-freemod",
+          description: "invalid-freemod",
+          courses: [
+            {
+              id: "course-invalid-freemod",
+              name: "invalid freemod",
+              slug: "invalid-freemod-1",
+              description: "invalid-freemod",
+              ordinal: 1,
+              scoreModel: "scorev2",
+              overallPassConditions: [{ type: "courseAccuracy", threshold: 95 }],
+              beatmaps: [
+                {
+                  id: "beatmap-invalid-freemod",
+                  beatmapId: 1,
+                  mods: "",
+                  freemod: value,
+                  passConditions: [{ type: "accuracy", threshold: 95 }],
+                  ordinal: 1,
+                  annotations: ["x"],
+                },
+              ],
+            },
+          ],
+        }),
+      );
+
+      assert.throws(
+        () => loadCoursesFromDir(temp.directory),
+        /field "freemod" must be a boolean/,
+      );
+    } finally {
+      temp.cleanup();
+    }
   }
 });
 
@@ -263,6 +376,67 @@ test("course loader rejects unsupported score models", () => {
     );
   } finally {
     temp.cleanup();
+  }
+});
+
+test("course loader rejects score conditions on scorev1 courses", () => {
+  const cases = [
+    {
+      name: "map-score",
+      displayName: "map score",
+      overallPassConditions: [{ type: "courseAccuracy", threshold: 95 }],
+      passConditions: [{ type: "score", threshold: 95 }],
+    },
+    {
+      name: "total-score",
+      displayName: "total score",
+      overallPassConditions: [{ type: "totalScore", threshold: 95 }],
+      passConditions: [{ type: "accuracy", threshold: 95 }],
+    },
+  ];
+
+  for (const entry of cases) {
+    const temp = createTempDirectory();
+
+    try {
+      writeFileSync(
+        path.join(temp.directory, `${entry.name}.json`),
+        JSON.stringify({
+          id: `system-${entry.name}`,
+          name: entry.displayName,
+          slug: entry.name,
+          description: entry.displayName,
+          courses: [
+            {
+              id: `course-${entry.name}`,
+              name: entry.displayName,
+              slug: `${entry.name}-1`,
+              description: entry.displayName,
+              ordinal: 1,
+              scoreModel: "scorev1",
+              overallPassConditions: entry.overallPassConditions,
+              beatmaps: [
+                {
+                  id: `beatmap-${entry.name}`,
+                  beatmapId: 1,
+                  mods: "",
+                  passConditions: entry.passConditions,
+                  ordinal: 1,
+                  annotations: ["x"],
+                },
+              ],
+            },
+          ],
+        }),
+      );
+
+      assert.throws(
+        () => loadCoursesFromDir(temp.directory),
+        /scorev1 courses cannot use score or totalScore pass conditions/,
+      );
+    } finally {
+      temp.cleanup();
+    }
   }
 });
 

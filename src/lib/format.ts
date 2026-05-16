@@ -51,10 +51,6 @@ export function formatConditionCompactAscii(condition: {
   return formatConditionCompact(condition);
 }
 
-export function formatMods(mods: string): string {
-  return mods.trim() === "" ? "+NM" : `+${mods}`;
-}
-
 export function formatScoreModel(scoreModel: DanScoreModel): string {
   return scoreModel === "scorev1" ? "ScoreV1" : "ScoreV2";
 }
