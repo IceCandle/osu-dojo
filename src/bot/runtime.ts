@@ -28,8 +28,10 @@ import {
 } from "@/bot/osuApi";
 import { totalHitObjects } from "@/lib/accuracy";
 import {
+  assessCoursePassability,
   evaluateMapConditions,
   judgeCourseRun,
+  type CourseImpossibilityReason,
   type JudgedThreshold,
 } from "@/lib/judging";
 import {
@@ -153,6 +155,7 @@ interface ActiveRun {
   } | null;
   cleanupPromise?: Promise<void>;
   endEventEmitted?: boolean;
+  impossibilityAnnounced?: boolean;
 }
 
 interface PreviousStartCommand {
@@ -362,17 +365,20 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
     });
   }
 
-  function safeSendLobbyMessage(lobby: LobbyLike, message: string) {
-    return lobby.channel.sendMessage(message).catch((error) => {
-      const run = activeRunsByLobbyId.get(lobby.id);
-      logger.error(
-        "dojo lobby message failed",
-        run
-          ? getRunLogFields(run, { error, lobbyId: lobby.id })
-          : { error, lobbyId: lobby.id },
-      );
-      return null;
-    });
+  function safeSendLobbyMessage(lobby: LobbyLike, message: string): Promise<boolean> {
+    return lobby.channel.sendMessage(message).then(
+      () => true,
+      (error) => {
+        const run = activeRunsByLobbyId.get(lobby.id);
+        logger.error(
+          "dojo lobby message failed",
+          run
+            ? getRunLogFields(run, { error, lobbyId: lobby.id })
+            : { error, lobbyId: lobby.id },
+        );
+        return false;
+      },
+    );
   }
 
   type ManagedRunTimer = "countdownTimer" | "inactivityTimer" | "lobbyCloseTimer";
@@ -1136,7 +1142,32 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
       return;
     }
 
-    if (isFinalMap || !judgedMapResult.passed) {
+    if (!isFinalMap && !run.impossibilityAnnounced) {
+      const passability = assessCoursePassability(run.course, run.mapResults);
+      if (!passability.passable) {
+        const sent = await safeSendLobbyMessage(
+          run.lobby,
+          formatCourseImpossibilityMessage(passability.reasons),
+        );
+        run.impossibilityAnnounced = true;
+        logger.info(
+          "dojo course impossibility announced",
+          getRunLogFields(run, { reasons: passability.reasons }),
+        );
+        if (!sent) {
+          logger.warn(
+            "dojo course impossibility announcement send failed",
+            getRunLogFields(run, { reasons: passability.reasons }),
+          );
+        }
+      }
+    }
+
+    if (!isActiveRun(run)) {
+      return;
+    }
+
+    if (isFinalMap) {
       await finalizeRun(run);
       return;
     }
@@ -1320,7 +1351,7 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
 
   function sendLobbyTimer(lobby: LobbyLike, countdownSeconds: number) {
     if (countdownSeconds <= 0) {
-      return Promise.resolve(null);
+      return Promise.resolve(false);
     }
 
     return safeSendLobbyMessage(lobby, `!mp timer ${countdownSeconds}`);
@@ -1842,6 +1873,26 @@ function buildCourseStatusLine(run: ActiveRun, isFinalMap: boolean): string | nu
     "totalScore",
     totalScoreCondition.threshold,
   )} adjusted total, ${formatConditionValue("totalScore", remaining)} remaining`;
+}
+
+function formatCourseImpossibilityMessage(reasons: CourseImpossibilityReason[]) {
+  return `Course cannot pass: ${reasons
+    .map(formatCourseImpossibilityReason)
+    .join("; ")}. Continuing remaining maps.`;
+}
+
+function formatCourseImpossibilityReason(reason: CourseImpossibilityReason) {
+  switch (reason.type) {
+    case "mapFailed":
+      return `map ${reason.mapOrdinal} failed`;
+    case "totalMissCountExceeded":
+      return `totalMissCount already exceeded (${formatConditionValue(
+        "totalMissCount",
+        reason.value,
+      )} / ${formatConditionValue("totalMissCount", reason.threshold)})`;
+    case "courseAccuracyUnreachable":
+      return "courseAccuracy unreachable even with 100.00% on remaining maps";
+  }
 }
 
 function getLobbyWinCondition(scoreModel: CourseDefinition["scoreModel"]) {

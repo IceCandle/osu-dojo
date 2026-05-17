@@ -670,7 +670,7 @@ test("bot runs the seeded course, forces NF, switches to ScoreV2, and stores the
     assert.ok(client.lobby.modHistory[0]?.includes("NF"));
     assert.ok(
       client.lobby.channelMessages.some((message) =>
-        /Map 1\/2: beatmap .* with NM\. Starting in 0s\./.test(message),
+        /Map 1\/2: beatmap .* with DT\. Starting in 0s\./.test(message),
       ),
     );
     assert.equal(
@@ -694,14 +694,20 @@ test("bot runs the seeded course, forces NF, switches to ScoreV2, and stores the
       BanchoLobbyWinConditions.ScoreV2,
     );
     assert.match(latestMeaningfulLobbyMessage(client.lobby), /1st: PASS/i);
-    assert.match(latestMeaningfulLobbyMessage(client.lobby), /course accuracy:/i);
+    assert.match(latestMeaningfulLobbyMessage(client.lobby), /adjusted total score:/i);
     assert.ok(
       client.lobby.channelMessages.some((message) =>
-        /raw score: 910,000 >= 10,000 required/.test(message),
+        /raw score: 910,000 >= \d+ required/.test(message),
       ),
     );
     assert.equal(
       client.lobby.channelMessages.some((message) => /Course status:/.test(message)),
+      true,
+    );
+    assert.equal(
+      client.lobby.channelMessages.some((message) =>
+        message.startsWith("Course cannot pass:"),
+      ),
       false,
     );
     assert.equal(client.lobby.closeLobbyCalls, 1);
@@ -737,6 +743,7 @@ test("bot enables freemod per map, judges adjusted score, and stores raw audit d
     const user = new FakeUser(42, "PlayerOne");
     const seededBeatmapIds = await getSeededBeatmapIds(db);
     setSeededBeatmapFreemod(db, 1, true);
+    setSeededBeatmapFreemod(db, 2, false);
     setSeededBeatmapPassConditions(db, 1, [{ type: "score", threshold: 999_999 }]);
     setSeededCourseOverallPassConditions(db, [
       { type: "totalScore", threshold: 1_900_000 },
@@ -837,7 +844,7 @@ test("bot enables freemod per map, judges adjusted score, and stores raw audit d
     );
     assert.ok(
       client.lobby.channelMessages.some((message) =>
-        /Raw target: >= 1,080,000/.test(message),
+        /Raw target: >= 900,000/.test(message),
       ),
       client.lobby.channelMessages.join("\n"),
     );
@@ -1038,6 +1045,207 @@ test("bot still announces final course guidance after the course is already over
   }
 });
 
+test("bot announces totalMissCount impossibility mid-course and only once", async () => {
+  const temp = createTempDatabaseUrl();
+
+  try {
+    const { db } = await createTestDatabase(temp.url);
+    const client = new FakeClient();
+    const user = new FakeUser(42, "PlayerOne");
+    const seededBeatmapIds = await getSeededBeatmapIds(db);
+    setSeededBeatmapPassConditions(db, 1, []);
+    setSeededBeatmapPassConditions(db, 2, []);
+    setSeededCourseOverallPassConditions(db, [
+      { type: "totalMissCount", threshold: 1 },
+    ]);
+    const fetchedScores = [
+      {
+        gameId: 1,
+        beatmapId: seededBeatmapIds[0] ?? 0,
+        userId: 42,
+        score: 910000,
+        playerEnabledMods: 0,
+        globalGameMods: 0,
+        accuracy: 96.3,
+        maxCombo: 800,
+        count300: 1000,
+        count100: 40,
+        count50: 4,
+        countMiss: 2,
+        passed: true,
+      },
+      {
+        gameId: 2,
+        beatmapId: seededBeatmapIds[1] ?? 0,
+        userId: 42,
+        score: 905000,
+        playerEnabledMods: 0,
+        globalGameMods: 0,
+        accuracy: 95.2,
+        maxCombo: 780,
+        count300: 980,
+        count100: 50,
+        count50: 5,
+        countMiss: 2,
+        passed: true,
+      },
+    ];
+    const bot = createDojoBot({
+      client,
+      db,
+      connectOnStart: false,
+      restDurationMs: 0,
+      finalGracePeriodMs: 0,
+      firstMapCountdownSeconds: 0,
+      sleep: async () => {},
+      fetchScore: async () => {
+        const next = fetchedScores.shift();
+        if (!next) {
+          throw new Error("No fake score left.");
+        }
+        return next;
+      },
+    });
+
+    await bot.handlePrivateMessage(createSeededStartMessage(user));
+    client.lobby.emit("playerJoined", {
+      player: client.lobby.registerPlayer(user),
+    });
+    await flushAsyncWork();
+    client.lobby.emit("matchStarted");
+    client.lobby.emit("matchFinished");
+    await flushAsyncWork(8);
+
+    assert.ok(
+      client.lobby.channelMessages.some(
+        (message) =>
+          message ===
+          "Course cannot pass: totalMissCount already exceeded (2 / 1). Continuing remaining maps.",
+      ),
+      client.lobby.channelMessages.join("\n"),
+    );
+
+    client.lobby.emit("matchStarted");
+    client.lobby.emit("matchFinished");
+    await flushAsyncWork(8);
+    await waitForTimer(20);
+
+    assert.equal(
+      client.lobby.channelMessages.filter((message) =>
+        message.startsWith("Course cannot pass:"),
+      ).length,
+      1,
+    );
+
+    const results = await listCourseRunsByNameKey(
+      SEEDED_SYSTEM_NAME_KEY,
+      SEEDED_COURSE_NAME_KEY,
+      db,
+    );
+    assert.equal(results?.runs[0]?.status, "fail");
+    assert.equal(results?.runs[0]?.maps.length, 2);
+  } finally {
+    temp.cleanup();
+  }
+});
+
+test("bot announces unreachable courseAccuracy mid-course", async () => {
+  const temp = createTempDatabaseUrl();
+
+  try {
+    const { db } = await createTestDatabase(temp.url);
+    const client = new FakeClient();
+    const user = new FakeUser(42, "PlayerOne");
+    const seededBeatmapIds = await getSeededBeatmapIds(db);
+    setSeededBeatmapPassConditions(db, 1, []);
+    setSeededBeatmapPassConditions(db, 2, []);
+    setSeededCourseOverallPassConditions(db, [
+      { type: "courseAccuracy", threshold: 190 },
+    ]);
+    const fetchedScores = [
+      {
+        gameId: 1,
+        beatmapId: seededBeatmapIds[0] ?? 0,
+        userId: 42,
+        score: 910000,
+        playerEnabledMods: 0,
+        globalGameMods: 0,
+        accuracy: 80,
+        maxCombo: 800,
+        count300: 1000,
+        count100: 40,
+        count50: 4,
+        countMiss: 1,
+        passed: true,
+      },
+      {
+        gameId: 2,
+        beatmapId: seededBeatmapIds[1] ?? 0,
+        userId: 42,
+        score: 905000,
+        playerEnabledMods: 0,
+        globalGameMods: 0,
+        accuracy: 100,
+        maxCombo: 780,
+        count300: 980,
+        count100: 50,
+        count50: 5,
+        countMiss: 0,
+        passed: true,
+      },
+    ];
+    const bot = createDojoBot({
+      client,
+      db,
+      connectOnStart: false,
+      restDurationMs: 0,
+      finalGracePeriodMs: 0,
+      firstMapCountdownSeconds: 0,
+      sleep: async () => {},
+      fetchScore: async () => {
+        const next = fetchedScores.shift();
+        if (!next) {
+          throw new Error("No fake score left.");
+        }
+        return next;
+      },
+    });
+
+    await bot.handlePrivateMessage(createSeededStartMessage(user));
+    client.lobby.emit("playerJoined", {
+      player: client.lobby.registerPlayer(user),
+    });
+    await flushAsyncWork();
+    client.lobby.emit("matchStarted");
+    client.lobby.emit("matchFinished");
+    await flushAsyncWork(8);
+
+    assert.ok(
+      client.lobby.channelMessages.some(
+        (message) =>
+          message ===
+          "Course cannot pass: courseAccuracy unreachable even with 100.00% on remaining maps. Continuing remaining maps.",
+      ),
+      client.lobby.channelMessages.join("\n"),
+    );
+
+    client.lobby.emit("matchStarted");
+    client.lobby.emit("matchFinished");
+    await flushAsyncWork(8);
+    await waitForTimer(20);
+
+    const results = await listCourseRunsByNameKey(
+      SEEDED_SYSTEM_NAME_KEY,
+      SEEDED_COURSE_NAME_KEY,
+      db,
+    );
+    assert.equal(results?.runs[0]?.status, "fail");
+    assert.equal(results?.runs[0]?.maps.length, 2);
+  } finally {
+    temp.cleanup();
+  }
+});
+
 test("bot rejects disallowed freemod selections and persists a failed audit row", async () => {
   const temp = createTempDatabaseUrl();
 
@@ -1048,15 +1256,8 @@ test("bot rejects disallowed freemod selections and persists a failed audit row"
     const seededBeatmapIds = await getSeededBeatmapIds(db);
     setSeededBeatmapFreemod(db, 1, true);
     setSeededBeatmapPassConditions(db, 1, [{ type: "score", threshold: 999_999 }]);
-    const bot = createDojoBot({
-      client,
-      db,
-      connectOnStart: false,
-      restDurationMs: 0,
-      finalGracePeriodMs: 0,
-      firstMapCountdownSeconds: 0,
-      sleep: async () => {},
-      fetchScore: async () => ({
+    const fetchedScores = [
+      {
         gameId: 1,
         beatmapId: seededBeatmapIds[0] ?? 0,
         userId: 42,
@@ -1070,7 +1271,38 @@ test("bot rejects disallowed freemod selections and persists a failed audit row"
         count50: 4,
         countMiss: 1,
         passed: true,
-      }),
+      },
+      {
+        gameId: 2,
+        beatmapId: seededBeatmapIds[1] ?? 0,
+        userId: 42,
+        score: 905000,
+        playerEnabledMods: 0,
+        globalGameMods: 0,
+        accuracy: 95.2,
+        maxCombo: 780,
+        count300: 980,
+        count100: 50,
+        count50: 5,
+        countMiss: 2,
+        passed: true,
+      },
+    ];
+    const bot = createDojoBot({
+      client,
+      db,
+      connectOnStart: false,
+      restDurationMs: 0,
+      finalGracePeriodMs: 0,
+      firstMapCountdownSeconds: 0,
+      sleep: async () => {},
+      fetchScore: async () => {
+        const next = fetchedScores.shift();
+        if (!next) {
+          throw new Error("No fake score left.");
+        }
+        return next;
+      },
     });
 
     await bot.handlePrivateMessage(createSeededStartMessage(user));
@@ -1080,11 +1312,21 @@ test("bot rejects disallowed freemod selections and persists a failed audit row"
     await flushAsyncWork();
     client.lobby.emit("matchStarted");
     client.lobby.emit("matchFinished");
+    await flushAsyncWork();
+    client.lobby.emit("matchStarted");
+    client.lobby.emit("matchFinished");
     await flushAsyncWork(8);
     await waitForTimer(20);
 
     assert.ok(
       client.lobby.channelMessages.some((message) => /Disallowed mods: EZ/.test(message)),
+    );
+    assert.ok(
+      client.lobby.channelMessages.some(
+        (message) =>
+          message === "Course cannot pass: map 1 failed. Continuing remaining maps.",
+      ),
+      client.lobby.channelMessages.join("\n"),
     );
 
     const results = await listCourseRunsByNameKey(
@@ -1094,6 +1336,7 @@ test("bot rejects disallowed freemod selections and persists a failed audit row"
     );
     const firstMap = results?.runs[0]?.maps[0];
     assert.equal(results?.runs[0]?.passed, false);
+    assert.equal(results?.runs[0]?.maps.length, 2);
     assert.equal(firstMap?.passed, false);
     assert.equal(firstMap?.rawScore, 500_000);
     assert.equal(firstMap?.score, 1_000_000);
@@ -1925,7 +2168,283 @@ test("bot aborts immediately when the target player leaves between maps", async 
   }
 });
 
-test("bot halts the course immediately when a map fails", async () => {
+test("bot does not announce course impossibility after a final-map failure", async () => {
+  const temp = createTempDatabaseUrl();
+
+  try {
+    const { db } = await createTestDatabase(temp.url);
+    const client = new FakeClient();
+    const user = new FakeUser(42, "PlayerOne");
+    const endedEvents: Array<{ result: string; reason?: string }> = [];
+    const seededBeatmapIds = await getSeededBeatmapIds(db);
+    setSeededBeatmapPassConditions(db, 1, []);
+    setSeededBeatmapPassConditions(db, 2, [{ type: "accuracy", threshold: 99 }]);
+    const fetchedScores = [
+      {
+        gameId: 1,
+        beatmapId: seededBeatmapIds[0] ?? 0,
+        userId: 42,
+        score: 910000,
+        playerEnabledMods: 0,
+        globalGameMods: 0,
+        accuracy: 96.3,
+        maxCombo: 800,
+        count300: 1000,
+        count100: 40,
+        count50: 4,
+        countMiss: 1,
+        passed: true,
+      },
+      {
+        gameId: 2,
+        beatmapId: seededBeatmapIds[1] ?? 0,
+        userId: 42,
+        score: 905000,
+        playerEnabledMods: 0,
+        globalGameMods: 0,
+        accuracy: 95.2,
+        maxCombo: 780,
+        count300: 980,
+        count100: 50,
+        count50: 5,
+        countMiss: 2,
+        passed: true,
+      },
+    ];
+    const bot = createDojoBot({
+      client,
+      db,
+      connectOnStart: false,
+      restDurationMs: 0,
+      firstMapCountdownSeconds: 0,
+      finalGracePeriodMs: 0,
+      fetchScore: async () => {
+        const next = fetchedScores.shift();
+        if (!next) {
+          throw new Error("No fake score left.");
+        }
+        return next;
+      },
+    });
+    bot.events.on("runEnded", (event) => {
+      endedEvents.push(event);
+    });
+
+    await bot.handlePrivateMessage(createSeededStartMessage(user));
+    client.lobby.emit("playerJoined", {
+      player: client.lobby.registerPlayer(user),
+    });
+    await flushAsyncWork();
+
+    client.lobby.emit("matchStarted");
+    client.lobby.emit("matchFinished");
+    await flushAsyncWork();
+    client.lobby.emit("matchStarted");
+    client.lobby.emit("matchFinished");
+    await flushAsyncWork(8);
+    await waitForTimer(20);
+
+    assert.equal(
+      client.lobby.channelMessages.some((message) =>
+        message.startsWith("Course cannot pass:"),
+      ),
+      false,
+      client.lobby.channelMessages.join("\n"),
+    );
+    assert.equal(endedEvents[0]?.result, "completed");
+
+    const results = await listCourseRunsByNameKey(
+      SEEDED_SYSTEM_NAME_KEY,
+      SEEDED_COURSE_NAME_KEY,
+      db,
+    );
+    assert.equal(results?.runs[0]?.status, "fail");
+    assert.equal(results?.runs[0]?.maps.length, 2);
+    assert.equal(results?.runs[0]?.maps[1]?.passed, false);
+  } finally {
+    temp.cleanup();
+  }
+});
+
+test("bot aborts after a failed map when the target player leaves between maps", async () => {
+  const temp = createTempDatabaseUrl();
+
+  try {
+    const { db } = await createTestDatabase(temp.url);
+    const client = new FakeClient();
+    const user = new FakeUser(42, "PlayerOne");
+    const endedEvents: Array<{ result: string; reason?: string }> = [];
+    const seededBeatmapIds = await getSeededBeatmapIds(db);
+    setSeededBeatmapPassConditions(db, 1, [{ type: "accuracy", threshold: 99 }]);
+    const bot = createDojoBot({
+      client,
+      db,
+      connectOnStart: false,
+      restDurationMs: 20_000,
+      firstMapCountdownSeconds: 0,
+      fetchScore: async () => ({
+        gameId: 1,
+        beatmapId: seededBeatmapIds[0] ?? 0,
+        userId: 42,
+        score: 910000,
+        playerEnabledMods: 0,
+        globalGameMods: 0,
+        accuracy: 95,
+        maxCombo: 800,
+        count300: 1000,
+        count100: 40,
+        count50: 4,
+        countMiss: 1,
+        passed: true,
+      }),
+    });
+    bot.events.on("runEnded", (event) => {
+      endedEvents.push(event);
+    });
+
+    await bot.handlePrivateMessage(createSeededStartMessage(user));
+
+    const player = client.lobby.registerPlayer(user);
+    client.lobby.emit("playerJoined", { player });
+    await flushAsyncWork();
+
+    client.lobby.emit("matchStarted");
+    client.lobby.emit("matchFinished");
+    await flushAsyncWork(8);
+
+    assert.ok(
+      client.lobby.channelMessages.some(
+        (message) =>
+          message === "Course cannot pass: map 1 failed. Continuing remaining maps.",
+      ),
+      client.lobby.channelMessages.join("\n"),
+    );
+
+    client.lobby.emit("playerLeft", player);
+    await flushAsyncWork(8);
+
+    assert.equal(endedEvents[0]?.result, "aborted");
+    assert.equal(endedEvents[0]?.reason, "player-left");
+
+    const results = await listCourseRunsByNameKey(
+      SEEDED_SYSTEM_NAME_KEY,
+      SEEDED_COURSE_NAME_KEY,
+      db,
+    );
+    assert.equal(results?.runs[0]?.status, "fail");
+    assert.equal(results?.runs[0]?.maps.length, 1);
+  } finally {
+    temp.cleanup();
+  }
+});
+
+test("bot logs when the course impossibility announcement send fails", async () => {
+  const temp = createTempDatabaseUrl();
+
+  try {
+    const { db } = await createTestDatabase(temp.url);
+    const client = new FakeClient();
+    const user = new FakeUser(42, "PlayerOne");
+    const { entries, logger } = createCapturingLogger();
+    const seededBeatmapIds = await getSeededBeatmapIds(db);
+    setSeededBeatmapPassConditions(db, 1, [{ type: "accuracy", threshold: 99 }]);
+    client.lobby.channelMessageHandler = async (message) => {
+      if (message.startsWith("Course cannot pass:")) {
+        throw new Error("IRC send failed");
+      }
+
+      return null;
+    };
+    const fetchedScores = [
+      {
+        gameId: 1,
+        beatmapId: seededBeatmapIds[0] ?? 0,
+        userId: 42,
+        score: 910000,
+        playerEnabledMods: 0,
+        globalGameMods: 0,
+        accuracy: 95,
+        maxCombo: 800,
+        count300: 1000,
+        count100: 40,
+        count50: 4,
+        countMiss: 1,
+        passed: true,
+      },
+      {
+        gameId: 2,
+        beatmapId: seededBeatmapIds[1] ?? 0,
+        userId: 42,
+        score: 905000,
+        playerEnabledMods: 0,
+        globalGameMods: 0,
+        accuracy: 95.2,
+        maxCombo: 780,
+        count300: 980,
+        count100: 50,
+        count50: 5,
+        countMiss: 2,
+        passed: true,
+      },
+    ];
+    const bot = createDojoBot({
+      client,
+      db,
+      logger,
+      connectOnStart: false,
+      restDurationMs: 0,
+      firstMapCountdownSeconds: 0,
+      finalGracePeriodMs: 0,
+      sleep: async () => {},
+      fetchScore: async () => {
+        const next = fetchedScores.shift();
+        if (!next) {
+          throw new Error("No fake score left.");
+        }
+        return next;
+      },
+    });
+
+    await bot.handlePrivateMessage(createSeededStartMessage(user));
+    client.lobby.emit("playerJoined", {
+      player: client.lobby.registerPlayer(user),
+    });
+    await flushAsyncWork();
+
+    client.lobby.emit("matchStarted");
+    client.lobby.emit("matchFinished");
+    await flushAsyncWork(8);
+    client.lobby.emit("matchStarted");
+    client.lobby.emit("matchFinished");
+    await flushAsyncWork(8);
+    await waitForTimer(20);
+
+    assert.ok(
+      entries.some(
+        (entry) => entry.level === "error" && entry.message === "dojo lobby message failed",
+      ),
+    );
+    assert.ok(
+      entries.some(
+        (entry) =>
+          entry.level === "warn" &&
+          entry.message === "dojo course impossibility announcement send failed",
+      ),
+    );
+    assert.equal(
+      entries.filter(
+        (entry) =>
+          entry.level === "info" &&
+          entry.message === "dojo course impossibility announced",
+      ).length,
+      1,
+    );
+  } finally {
+    temp.cleanup();
+  }
+});
+
+test("bot continues the course and announces once when a map fails", async () => {
   const temp = createTempDatabaseUrl();
 
   try {
@@ -1950,15 +2469,15 @@ test("bot halts the course immediately when a map fails", async () => {
 
     const client = new FakeClient();
     const user = new FakeUser(42, "PlayerOne");
+    const endedEvents: Array<{
+      runId: string;
+      playerUserId: number;
+      result: string;
+      reason?: string;
+    }> = [];
     const seededBeatmapIds = await getSeededBeatmapIds(db);
-    const bot = createDojoBot({
-      client,
-      db,
-      connectOnStart: false,
-      restDurationMs: 0,
-      firstMapCountdownSeconds: 0,
-      finalGracePeriodMs: 0,
-      fetchScore: async () => ({
+    const fetchedScores = [
+      {
         gameId: 1,
         beatmapId: seededBeatmapIds[0] ?? 0,
         userId: 42,
@@ -1972,7 +2491,41 @@ test("bot halts the course immediately when a map fails", async () => {
         count50: 0,
         countMiss: 30,
         passed: false,
-      }),
+      },
+      {
+        gameId: 2,
+        beatmapId: seededBeatmapIds[1] ?? 0,
+        userId: 42,
+        score: 905000,
+        playerEnabledMods: 0,
+        globalGameMods: 0,
+        accuracy: 95.2,
+        maxCombo: 780,
+        count300: 980,
+        count100: 50,
+        count50: 5,
+        countMiss: 2,
+        passed: true,
+      },
+    ];
+    const bot = createDojoBot({
+      client,
+      db,
+      connectOnStart: false,
+      restDurationMs: 0,
+      firstMapCountdownSeconds: 0,
+      finalGracePeriodMs: 0,
+      sleep: async () => {},
+      fetchScore: async () => {
+        const next = fetchedScores.shift();
+        if (!next) {
+          throw new Error("No fake score left.");
+        }
+        return next;
+      },
+    });
+    bot.events.on("runEnded", (event) => {
+      endedEvents.push(event);
     });
 
     await bot.handlePrivateMessage(createSeededStartMessage(user));
@@ -1986,8 +2539,17 @@ test("bot halts the course immediately when a map fails", async () => {
     client.lobby.emit("matchFinished");
     await flushAsyncWork(8);
 
-    assert.equal(client.lobby.startHistory.length, 1);
-    assert.match(latestMeaningfulLobbyMessage(client.lobby), /1st: FAIL/i);
+    assert.equal(client.lobby.startHistory.length, 2);
+    assert.equal(client.lobby.mapHistory.at(-1), seededBeatmapIds[1]);
+    assert.equal(bot.activeRunsByUserId.has(42), true);
+    assert.equal(endedEvents.length, 0);
+    assert.ok(
+      client.lobby.channelMessages.some(
+        (message) =>
+          message === "Course cannot pass: map 1 failed. Continuing remaining maps.",
+      ),
+      client.lobby.channelMessages.join("\n"),
+    );
     assert.ok(
       client.lobby.channelMessages.some((message) =>
         /accuracy: 100\.00% >= 99\.00% required/.test(message),
@@ -1998,21 +2560,37 @@ test("bot halts the course immediately when a map fails", async () => {
         /miss: 30 <= 0 required/.test(message),
       ),
     );
+    assert.equal(
+      (await listCourseRunsByNameKey(
+        SEEDED_SYSTEM_NAME_KEY,
+        SEEDED_COURSE_NAME_KEY,
+        db,
+      ))?.runs.length,
+      0,
+    );
+
+    client.lobby.emit("matchStarted");
+    client.lobby.emit("matchFinished");
+    await flushAsyncWork(8);
+    await waitForTimer(20);
 
     const results = await listCourseRunsByNameKey(
       SEEDED_SYSTEM_NAME_KEY,
       SEEDED_COURSE_NAME_KEY,
       db,
     );
+    assert.match(latestMeaningfulLobbyMessage(client.lobby), /1st: FAIL/i);
+    assert.equal(endedEvents[0]?.result, "completed");
     assert.equal(results?.runs[0]?.status, "fail");
-    assert.equal(results?.runs[0]?.maps.length, 1);
+    assert.equal(results?.runs[0]?.maps.length, 2);
     assert.equal(results?.runs[0]?.maps[0]?.passed, false);
+    assert.equal(results?.runs[0]?.maps[1]?.passed, true);
   } finally {
     temp.cleanup();
   }
 });
 
-test("bot fails a partial NF play even when the score clears threshold", async () => {
+test("bot continues after a partial NF play and stores the failed map", async () => {
   const temp = createTempDatabaseUrl();
 
   try {
@@ -2024,6 +2602,38 @@ test("bot fails a partial NF play even when the score clears threshold", async (
     const { entries, logger } = createCapturingLogger();
     const seededBeatmapIds = await getSeededBeatmapIds(db);
     let fetchCalls = 0;
+    const fetchedScores = [
+      {
+        gameId: 1,
+        beatmapId: seededBeatmapIds[0] ?? 0,
+        userId: 42,
+        score: 950_000,
+        playerEnabledMods: 0,
+        globalGameMods: 0,
+        accuracy: 98,
+        maxCombo: 400,
+        count300: 364,
+        count100: 30,
+        count50: 5,
+        countMiss: 1,
+        passed: true,
+      },
+      {
+        gameId: 2,
+        beatmapId: seededBeatmapIds[1] ?? 0,
+        userId: 42,
+        score: 905000,
+        playerEnabledMods: 0,
+        globalGameMods: 0,
+        accuracy: 95.2,
+        maxCombo: 780,
+        count300: 980,
+        count100: 50,
+        count50: 5,
+        countMiss: 2,
+        passed: true,
+      },
+    ];
     const bot = createDojoBot({
       client,
       db,
@@ -2032,23 +2642,14 @@ test("bot fails a partial NF play even when the score clears threshold", async (
       restDurationMs: 0,
       firstMapCountdownSeconds: 0,
       finalGracePeriodMs: 0,
+      sleep: async () => {},
       fetchScore: async () => {
         fetchCalls += 1;
-        return {
-          gameId: 1,
-          beatmapId: seededBeatmapIds[0] ?? 0,
-          userId: 42,
-          score: 950_000,
-          playerEnabledMods: 0,
-          globalGameMods: 0,
-          accuracy: 98,
-          maxCombo: 400,
-          count300: 364,
-          count100: 30,
-          count50: 5,
-          countMiss: 1,
-          passed: true,
-        };
+        const next = fetchedScores.shift();
+        if (!next) {
+          throw new Error("No fake score left.");
+        }
+        return next;
       },
     });
 
@@ -2063,11 +2664,18 @@ test("bot fails a partial NF play even when the score clears threshold", async (
     client.lobby.emit("matchFinished");
     await flushAsyncWork(8);
 
-    assert.equal(client.lobby.startHistory.length, 1);
+    assert.equal(client.lobby.startHistory.length, 2);
     assert.equal(fetchCalls, 1);
-    assert.deepEqual(client.lobby.mapHistory, [seededBeatmapIds[0]]);
+    assert.deepEqual(client.lobby.mapHistory, [seededBeatmapIds[0], seededBeatmapIds[1]]);
     assert.ok(
       client.lobby.channelMessages.some((message) => /partial play/i.test(message)),
+    );
+    assert.ok(
+      client.lobby.channelMessages.some(
+        (message) =>
+          message === "Course cannot pass: map 1 failed. Continuing remaining maps.",
+      ),
+      client.lobby.channelMessages.join("\n"),
     );
     assert.ok(
       entries.some(
@@ -2075,13 +2683,19 @@ test("bot fails a partial NF play even when the score clears threshold", async (
       ),
     );
 
+    client.lobby.emit("matchStarted");
+    client.lobby.emit("matchFinished");
+    await flushAsyncWork(8);
+    await waitForTimer(20);
+
     const results = await listCourseRunsByNameKey(
       SEEDED_SYSTEM_NAME_KEY,
       SEEDED_COURSE_NAME_KEY,
       db,
     );
+    assert.equal(fetchCalls, 2);
     assert.equal(results?.runs[0]?.status, "fail");
-    assert.equal(results?.runs[0]?.maps.length, 1);
+    assert.equal(results?.runs[0]?.maps.length, 2);
     assert.equal(results?.runs[0]?.maps[0]?.passed, false);
   } finally {
     temp.cleanup();
@@ -2193,6 +2807,53 @@ test("bot still fails when a small partial object-count gap remains after refetc
     const user = new FakeUser(42, "PlayerOne");
     const seededBeatmapIds = await getSeededBeatmapIds(db);
     let fetchCalls = 0;
+    const fetchedScores = [
+      {
+        gameId: 1,
+        beatmapId: seededBeatmapIds[0] ?? 0,
+        userId: 42,
+        score: 950_000,
+        playerEnabledMods: 1,
+        globalGameMods: 0,
+        accuracy: 98,
+        maxCombo: 400,
+        count300: 364,
+        count100: 30,
+        count50: 5,
+        countMiss: 0,
+        passed: true,
+      },
+      {
+        gameId: 1,
+        beatmapId: seededBeatmapIds[0] ?? 0,
+        userId: 42,
+        score: 950_000,
+        playerEnabledMods: 1,
+        globalGameMods: 0,
+        accuracy: 98,
+        maxCombo: 400,
+        count300: 364,
+        count100: 30,
+        count50: 5,
+        countMiss: 0,
+        passed: true,
+      },
+      {
+        gameId: 2,
+        beatmapId: seededBeatmapIds[1] ?? 0,
+        userId: 42,
+        score: 905000,
+        playerEnabledMods: 0,
+        globalGameMods: 0,
+        accuracy: 95.2,
+        maxCombo: 780,
+        count300: 980,
+        count100: 50,
+        count50: 5,
+        countMiss: 2,
+        passed: true,
+      },
+    ];
     const bot = createDojoBot({
       client,
       db,
@@ -2203,21 +2864,11 @@ test("bot still fails when a small partial object-count gap remains after refetc
       sleep: async () => {},
       fetchScore: async () => {
         fetchCalls += 1;
-        return {
-          gameId: 1,
-          beatmapId: seededBeatmapIds[0] ?? 0,
-          userId: 42,
-          score: 950_000,
-          playerEnabledMods: 1,
-          globalGameMods: 0,
-          accuracy: 98,
-          maxCombo: 400,
-          count300: 364,
-          count100: 30,
-          count50: 5,
-          countMiss: 0,
-          passed: true,
-        };
+        const next = fetchedScores.shift();
+        if (!next) {
+          throw new Error("No fake score left.");
+        }
+        return next;
       },
     });
 
@@ -2233,15 +2884,30 @@ test("bot still fails when a small partial object-count gap remains after refetc
     await flushAsyncWork(8);
 
     assert.equal(fetchCalls, 2);
+    assert.equal(client.lobby.startHistory.length, 2);
     assert.ok(
       client.lobby.channelMessages.some((message) => /partial play - 399\/400/i.test(message)),
     );
+    assert.equal(
+      (await listCourseRunsByNameKey(
+        SEEDED_SYSTEM_NAME_KEY,
+        SEEDED_COURSE_NAME_KEY,
+        db,
+      ))?.runs.length,
+      0,
+    );
+
+    client.lobby.emit("matchStarted");
+    client.lobby.emit("matchFinished");
+    await flushAsyncWork(8);
+    await waitForTimer(20);
 
     const results = await listCourseRunsByNameKey(
       SEEDED_SYSTEM_NAME_KEY,
       SEEDED_COURSE_NAME_KEY,
       db,
     );
+    assert.equal(fetchCalls, 3);
     assert.equal(results?.runs[0]?.status, "fail");
     assert.equal(results?.runs[0]?.maps[0]?.passed, false);
   } finally {
@@ -2534,6 +3200,7 @@ test("bot logs when the released lobby closes", async () => {
     client.lobby.emit("matchFinished");
     await flushAsyncWork(8);
     await waitForTimer(20);
+    await flushAsyncWork(12);
 
     assert.equal(client.lobby.closeLobbyCalls, 1);
     assert.equal(
@@ -2558,15 +3225,8 @@ test("bot does not log lobby closed when closeLobby fails", async () => {
     client.lobby.closeLobbyHandler = async () => {
       throw new Error("Bancho close failed");
     };
-    const bot = createDojoBot({
-      client,
-      db,
-      logger,
-      connectOnStart: false,
-      restDurationMs: 0,
-      finalGracePeriodMs: 0,
-      firstMapCountdownSeconds: 0,
-      fetchScore: async () => ({
+    const fetchedScores = [
+      {
         gameId: 1,
         beatmapId: seededBeatmapIds[0] ?? 0,
         userId: 42,
@@ -2580,7 +3240,38 @@ test("bot does not log lobby closed when closeLobby fails", async () => {
         count50: 0,
         countMiss: 30,
         passed: false,
-      }),
+      },
+      {
+        gameId: 2,
+        beatmapId: seededBeatmapIds[1] ?? 0,
+        userId: 42,
+        score: 905000,
+        playerEnabledMods: 0,
+        globalGameMods: 0,
+        accuracy: 95.2,
+        maxCombo: 780,
+        count300: 980,
+        count100: 50,
+        count50: 5,
+        countMiss: 2,
+        passed: true,
+      },
+    ];
+    const bot = createDojoBot({
+      client,
+      db,
+      logger,
+      connectOnStart: false,
+      restDurationMs: 0,
+      finalGracePeriodMs: 0,
+      firstMapCountdownSeconds: 0,
+      fetchScore: async () => {
+        const next = fetchedScores.shift();
+        if (!next) {
+          throw new Error("No fake score left.");
+        }
+        return next;
+      },
     });
 
     await bot.handlePrivateMessage(createSeededStartMessage(user));
@@ -2592,8 +3283,12 @@ test("bot does not log lobby closed when closeLobby fails", async () => {
 
     client.lobby.emit("matchStarted");
     client.lobby.emit("matchFinished");
+    await flushAsyncWork();
+    client.lobby.emit("matchStarted");
+    client.lobby.emit("matchFinished");
     await flushAsyncWork(8);
     await waitForTimer(20);
+    await flushAsyncWork(12);
 
     assert.equal(client.lobby.closeLobbyCalls, 1);
     assert.ok(

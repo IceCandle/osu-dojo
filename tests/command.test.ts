@@ -35,6 +35,7 @@ test("parseDojoCommand marks malformed dojo commands invalid", () => {
   assert.deepEqual(parseDojoCommand(`!dojo ${"draft"} test 1st`), { type: "invalid" });
   assert.deepEqual(parseDojoCommand("!dojo abort"), { type: "invalid" });
   assert.deepEqual(parseDojoCommand("!dojo abort now"), { type: "invalid" });
+  assert.deepEqual(parseDojoCommand("!dojo practice test 1st"), { type: "invalid" });
   assert.deepEqual(parseDojoCommand("!dojo skip map"), { type: "invalid" });
   assert.deepEqual(parseDojoCommand("!dojo stop"), { type: "invalid" });
 });

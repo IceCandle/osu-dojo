@@ -93,7 +93,8 @@ CourseRun (id, userId, courseId, passed, timestamp, matchId?)
 - ScoreV2의 `score`와 `totalScore` threshold는 adjusted(NM-equivalent) 기준으로 작성합니다. Bot은 Bancho raw ScoreV2를 플레이한 mod multiplier(`MOD_MULTIPLIERS_SV2`)로 나눈 adjusted score로 판정합니다. Leaderboard도 adjusted `score` 합계 기준으로 정렬하고 `Adjusted Score Total`로 표시합니다.
 - ScoreV2 고정 mod map의 score target은 player가 osu!에서 보는 값과 비교할 수 있도록 `raw score >= Y`로 표시합니다. FreeMod map의 pre-map score target은 `adjusted score >= X`로 표시하고, `Raw target by choice`가 허용된 mod 조합별 raw 값을 나열합니다.
 - 마지막 ScoreV2 map에서 bot은 map-level `score` threshold와 course-level `totalScore` remaining을 하나의 effective adjusted target으로 합칩니다. 고정 mod이면 별도 `Course target` 없이 `Raw target: >= N`만 표시합니다. FreeMod이면 `Targets: adjusted score >= N, ...`와 `Raw target by choice: ...`를 표시합니다. 마지막 map의 `courseAccuracy`, `totalMissCount` budget 안내 logic은 유지하며, `totalMissCount`의 남은 budget이 0이면 `miss <= 0` target으로 표시합니다.
-- 각 map이 끝나면 휴식 시간 이후 다음 map으로 자동 진행합니다. 기본 휴식 시간은 60초입니다.
+- 각 map이 끝나면 pass/fail과 관계없이 휴식 시간 이후 다음 map으로 자동 진행합니다. 기본 휴식 시간은 60초입니다.
+- run이 더 이상 course를 통과할 수 없음이 확인되면 bot은 `Course cannot pass:` 안내를 한 번만 표시하고 남은 map을 계속 진행합니다. 확인 대상은 map 실패, `totalMissCount` 초과, 남은 map을 모두 100.00%로 통과해도 도달할 수 없는 `courseAccuracy`입니다. `totalScore`는 증명된 상한 규칙이 없어 위 트리거 목록에서 제외합니다.
 - 마지막 map 이후 course가 완료됩니다.
 
 ### AC3: Result Ingestion
@@ -112,7 +113,7 @@ CourseRun (id, userId, courseId, passed, timestamp, matchId?)
 - course 단위 `courseAccuracy` 기준은 통과한 map accuracy의 합계와 threshold를 비교합니다. 실패했거나 플레이하지 않은 map은 Course Acc에 더하지 않습니다.
 - course 단위 `totalScore` 기준은 플레이한 map의 adjusted `score` 합계와 threshold를 비교합니다.
 - 같은 condition list 안에서 같은 type은 한 번만 쓸 수 있고, course loading은 중복 type을 즉시 실패시킵니다.
-- bot은 멀티플레이어 채팅에 개별 map 결과와 최종 결과를 알립니다.
+- bot은 멀티플레이어 채팅에 개별 map 결과와 최종 결과를 알립니다. 진행 중 course 통과가 불가능해진 첫 시점에는 이를 한 번 알리고, 최종 map까지 진행한 뒤 최종 결과를 알립니다. `totalScore`는 증명된 상한 규칙이 없어 위 트리거 목록에서 제외합니다.
 
 ### AC5: Website
 
