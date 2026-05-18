@@ -4,7 +4,7 @@ import path from "node:path";
 import Database from "better-sqlite3";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createTestDatabase } from "@/db/client";
-import { loadCoursesFromDir } from "@/db/courseLoader";
+import { loadCoursesFromDir, type DanSystemSeed } from "@/db/courseLoader";
 import {
   formatConditionCompact,
   formatScoreModel,
@@ -28,6 +28,10 @@ const SEEDED_SYSTEM_NAME_KEY = "test";
 const SEEDED_COURSE_NAME_KEY = "1st";
 const SEEDED_COURSE_SLUG = "test-1dan";
 const SEEDED_SECOND_COURSE_SLUG = "test-2dan";
+
+type SeedCourse = DanSystemSeed["courses"][number];
+type SeedBeatmap = SeedCourse["beatmaps"][number];
+type HydratedCourse = NonNullable<Awaited<ReturnType<typeof getCourseByNameKey>>>;
 
 function addSampleBeatmapMetadata(systems: ReturnType<typeof cloneCourseSystems>) {
   const seededCourse = systems[0]?.courses.find((entry) => entry.slug === SEEDED_COURSE_SLUG);
@@ -83,6 +87,28 @@ function markSeededCourseDraft(
   return seededCourse;
 }
 
+function replaceSeedBeatmap(
+  course: SeedCourse,
+  beatmapId: string,
+  replace: (beatmap: SeedBeatmap) => SeedBeatmap,
+) {
+  const index = course.beatmaps.findIndex((beatmap) => beatmap.id === beatmapId);
+  if (index === -1) {
+    throw new Error(`Missing seeded beatmap ${beatmapId}.`);
+  }
+
+  course.beatmaps[index] = replace(course.beatmaps[index]!);
+}
+
+function requireCourseBeatmap(course: HydratedCourse, beatmapId: string) {
+  const beatmap = course.beatmaps.find((entry) => entry.id === beatmapId);
+  if (!beatmap) {
+    throw new Error(`Missing course beatmap ${beatmapId}.`);
+  }
+
+  return beatmap;
+}
+
 test("seeded queries expose the sample course and runs", async () => {
   const temp = createTempDatabaseUrl();
 
@@ -110,10 +136,11 @@ test("seeded queries expose the sample course and runs", async () => {
     assert.equal(systems[0]?.courses[0]?.scoreModel, "scorev2");
     assert.equal(systems[0]?.courses[1]?.slug, SEEDED_SECOND_COURSE_SLUG);
     assert.equal(systems[0]?.courses[1]?.scoreModel, "scorev1");
-    assert.equal(course?.beatmaps.length, 2);
-    assert.equal(course?.beatmaps[0]?.freemod, true);
-    assert.equal(course?.scoreModel, "scorev2");
-    assert.match(course?.danSystemDescription ?? "", /Sample dan system/i);
+    assert.ok(course);
+    assert.equal(course.beatmaps.length, 2);
+    assert.equal(requireCourseBeatmap(course, "beatmap-test-1").freemod, true);
+    assert.equal(course.scoreModel, "scorev2");
+    assert.match(course.danSystemDescription, /Sample dan system/i);
     assert.equal(results?.runs.length, 0);
   } finally {
     temp.cleanup();
@@ -704,17 +731,18 @@ test("seedDatabase synchronizes updated draft beatmaps on an existing SQLite fil
     assert.ok(originalCourse);
     assert.ok(seededCourse);
 
-    const updatedBeatmapId = (originalCourse?.beatmaps[0]?.beatmapId ?? 0) + 1000;
+    const updatedBeatmapId =
+      requireCourseBeatmap(originalCourse, "beatmap-test-1").beatmapId + 1000;
     const newBeatmapId = updatedBeatmapId + 1;
 
     if (!seededCourse) {
       throw new Error("Missing seeded test course.");
     }
 
-    seededCourse.beatmaps[0] = {
-      ...seededCourse.beatmaps[0],
+    replaceSeedBeatmap(seededCourse, "beatmap-test-1", (beatmap) => ({
+      ...beatmap,
       beatmapId: updatedBeatmapId,
-    };
+    }));
     seededCourse.beatmaps.push({
       id: "beatmap-test-3",
       beatmapId: newBeatmapId,
@@ -743,13 +771,18 @@ test("seedDatabase synchronizes updated draft beatmaps on an existing SQLite fil
       db,
     );
 
-    assert.deepEqual(
-      updatedCourse?.beatmaps.map((beatmap) => beatmap.beatmapId),
-      [
-        updatedBeatmapId,
-        originalCourse?.beatmaps[1]?.beatmapId,
-        newBeatmapId,
-      ],
+    assert.ok(updatedCourse);
+    assert.equal(
+      requireCourseBeatmap(updatedCourse, "beatmap-test-1").beatmapId,
+      updatedBeatmapId,
+    );
+    assert.equal(
+      requireCourseBeatmap(updatedCourse, "beatmap-test-2").beatmapId,
+      requireCourseBeatmap(originalCourse, "beatmap-test-2").beatmapId,
+    );
+    assert.equal(
+      requireCourseBeatmap(updatedCourse, "beatmap-test-3").beatmapId,
+      newBeatmapId,
     );
     assert.equal(updatedResults?.runs.length, 0);
   } finally {
@@ -877,10 +910,10 @@ test("seedDatabase allows draft to publish with simultaneous gameplay edits", as
     assert.ok(seededCourse);
 
     systems[0]!.status = "current";
-    seededCourse!.beatmaps[0] = {
-      ...seededCourse!.beatmaps[0]!,
-      beatmapId: (originalCourse!.beatmaps[0]?.beatmapId ?? 0) + 10_000,
-    };
+    replaceSeedBeatmap(seededCourse!, "beatmap-test-1", (beatmap) => ({
+      ...beatmap,
+      beatmapId: requireCourseBeatmap(originalCourse!, "beatmap-test-1").beatmapId + 10_000,
+    }));
 
     await seedDatabase(db, systems, { suppressMissingObjectCountWarnings: true });
 
@@ -894,9 +927,10 @@ test("seedDatabase allows draft to publish with simultaneous gameplay edits", as
       .get(SEEDED_SYSTEM_NAME_KEY) as { status: string };
 
     assert.equal(systemRow.status, "current");
+    assert.ok(updatedCourse);
     assert.equal(
-      updatedCourse?.beatmaps[0]?.beatmapId,
-      seededCourse!.beatmaps[0]!.beatmapId,
+      requireCourseBeatmap(updatedCourse, "beatmap-test-1").beatmapId,
+      seededCourse!.beatmaps.find((beatmap) => beatmap.id === "beatmap-test-1")!.beatmapId,
     );
   } finally {
     temp.cleanup();
@@ -952,8 +986,9 @@ test("seedDatabase reuses existing resolved metadata when course JSON omits it",
     );
 
     assert.equal(resolverCalls, 3);
-    assert.equal(updatedCourse?.beatmaps[0]?.title, "test stage one");
-    assert.equal(updatedCourse?.beatmaps[1]?.title, "test stage two");
+    assert.ok(updatedCourse);
+    assert.equal(requireCourseBeatmap(updatedCourse, "beatmap-test-1").title, "test stage one");
+    assert.equal(requireCourseBeatmap(updatedCourse, "beatmap-test-2").title, "test stage two");
   } finally {
     temp.cleanup();
   }
@@ -986,8 +1021,9 @@ test("seedDatabase preserves seeded metadata while resolving total object counts
       db,
     );
 
-    assert.equal(course?.beatmaps[0]?.title, "test stage one");
-    assert.equal(course?.beatmaps[0]?.totalObjects, 500);
+    assert.ok(course);
+    assert.equal(requireCourseBeatmap(course, "beatmap-test-1").title, "test stage one");
+    assert.equal(requireCourseBeatmap(course, "beatmap-test-1").totalObjects, 500);
   } finally {
     temp.cleanup();
   }
@@ -1032,8 +1068,9 @@ test("seedDatabase reuses existing total object counts without clobbering JSON m
       db,
     );
 
-    assert.equal(course?.beatmaps[0]?.title, "test stage one");
-    assert.equal(course?.beatmaps[0]?.totalObjects, 500);
+    assert.ok(course);
+    assert.equal(requireCourseBeatmap(course, "beatmap-test-1").title, "test stage one");
+    assert.equal(requireCourseBeatmap(course, "beatmap-test-1").totalObjects, 500);
   } finally {
     temp.cleanup();
   }
@@ -1070,10 +1107,10 @@ test("seedDatabase does not reuse total object counts after beatmap id changes",
     const seededCourse = markSeededCourseDraft(db, updatedSystems);
 
     assert.ok(seededCourse);
-    seededCourse!.beatmaps[0] = {
-      ...seededCourse!.beatmaps[0]!,
+    replaceSeedBeatmap(seededCourse!, "beatmap-test-1", (beatmap) => ({
+      ...beatmap,
       beatmapId: 123_456,
-    };
+    }));
 
     await seedDatabase(db, updatedSystems, { suppressMissingObjectCountWarnings: true });
 
@@ -1083,8 +1120,9 @@ test("seedDatabase does not reuse total object counts after beatmap id changes",
       db,
     );
 
-    assert.equal(course?.beatmaps[0]?.beatmapId, 123_456);
-    assert.equal(course?.beatmaps[0]?.totalObjects, null);
+    assert.ok(course);
+    assert.equal(requireCourseBeatmap(course, "beatmap-test-1").beatmapId, 123_456);
+    assert.equal(requireCourseBeatmap(course, "beatmap-test-1").totalObjects, null);
   } finally {
     temp.cleanup();
   }
@@ -1148,8 +1186,9 @@ test("seedDatabase keeps existing total object counts when resolver returns null
       db,
     );
 
-    assert.equal(course?.beatmaps[0]?.title, "Resolved title");
-    assert.equal(course?.beatmaps[0]?.totalObjects, 500);
+    assert.ok(course);
+    assert.equal(requireCourseBeatmap(course, "beatmap-test-1").title, "Resolved title");
+    assert.equal(requireCourseBeatmap(course, "beatmap-test-1").totalObjects, 500);
   } finally {
     temp.cleanup();
   }
@@ -1171,15 +1210,15 @@ test("seedDatabase stores defaults for missing metadata when no resolver is conf
       throw new Error("Missing seeded test course.");
     }
 
-    seededCourse.beatmaps[0] = {
-      ...seededCourse.beatmaps[0],
+    replaceSeedBeatmap(seededCourse, "beatmap-test-1", (beatmap) => ({
+      ...beatmap,
       beatmapId: 8_888,
       title: "",
       artist: "",
       difficultyName: "",
       mapper: "",
       coverUrl: "",
-    };
+    }));
 
     await seedDatabase(db, systems, { suppressMissingObjectCountWarnings: true });
 
@@ -1189,11 +1228,13 @@ test("seedDatabase stores defaults for missing metadata when no resolver is conf
       db,
     );
 
-    assert.equal(updatedCourse?.beatmaps[0]?.title, "");
-    assert.equal(updatedCourse?.beatmaps[0]?.artist, "");
-    assert.equal(updatedCourse?.beatmaps[0]?.difficultyName, "");
-    assert.equal(updatedCourse?.beatmaps[0]?.mapper, "");
-    assert.equal(updatedCourse?.beatmaps[0]?.coverUrl, "");
+    assert.ok(updatedCourse);
+    const updatedBeatmap = requireCourseBeatmap(updatedCourse, "beatmap-test-1");
+    assert.equal(updatedBeatmap.title, "");
+    assert.equal(updatedBeatmap.artist, "");
+    assert.equal(updatedBeatmap.difficultyName, "");
+    assert.equal(updatedBeatmap.mapper, "");
+    assert.equal(updatedBeatmap.coverUrl, "");
   } finally {
     temp.cleanup();
   }
@@ -1218,24 +1259,24 @@ test("seedDatabase resolves missing metadata and stores defaults on resolver fai
       throw new Error("Missing seeded test course.");
     }
 
-    seededCourse.beatmaps[0] = {
-      ...seededCourse.beatmaps[0],
+    replaceSeedBeatmap(seededCourse, "beatmap-test-1", (beatmap) => ({
+      ...beatmap,
       beatmapId: 9_999,
       title: "",
       artist: "",
       difficultyName: "",
       mapper: "",
       coverUrl: "",
-    };
-    seededCourse.beatmaps[1] = {
-      ...seededCourse.beatmaps[1],
+    }));
+    replaceSeedBeatmap(seededCourse, "beatmap-test-2", (beatmap) => ({
+      ...beatmap,
       beatmapId: 10_000,
       title: "",
       artist: "",
       difficultyName: "",
       mapper: "",
       coverUrl: "",
-    };
+    }));
 
     console.warn = (message?: unknown) => {
       warnings.push(String(message));
@@ -1272,10 +1313,11 @@ test("seedDatabase resolves missing metadata and stores defaults on resolver fai
     );
 
     assert.deepEqual(resolverBeatmapIds, [9_999, 10_000, 4_923_775]);
-    assert.equal(updatedCourse?.beatmaps[0]?.title, "Resolved title");
-    assert.equal(updatedCourse?.beatmaps[0]?.artist, "Resolved artist");
-    assert.equal(updatedCourse?.beatmaps[1]?.title, "");
-    assert.equal(updatedCourse?.beatmaps[1]?.artist, "");
+    assert.ok(updatedCourse);
+    assert.equal(requireCourseBeatmap(updatedCourse, "beatmap-test-1").title, "Resolved title");
+    assert.equal(requireCourseBeatmap(updatedCourse, "beatmap-test-1").artist, "Resolved artist");
+    assert.equal(requireCourseBeatmap(updatedCourse, "beatmap-test-2").title, "");
+    assert.equal(requireCourseBeatmap(updatedCourse, "beatmap-test-2").artist, "");
     assert.ok(warnings.some((warning) => /10,000|10000/.test(warning)));
   } finally {
     console.warn = originalWarn;

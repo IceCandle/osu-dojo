@@ -104,10 +104,12 @@ ScoreV2 course의 `score`와 `totalScore` threshold는 adjusted(NM-equivalent) �
 ScoreV2 course의 player-facing 표기는 비교 상황에 맞춰 scale을 명시합니다.
 
 - 고정 mod 맵의 pre-map target과 result line은 `raw score`입니다. osu!가 화면에 표시하는 값과 같은 scale입니다.
-- FreeMod 맵의 pre-map target은 `adjusted score`이며, 같은 화면의 `Raw target by choice`가 허용된 mod 조합별 raw 값을 나열합니다. Post-map result line은 player가 실제 선택한 mod 조합 기준의 `raw score`입니다.
-- 최종 맵은 map-level score threshold와 course-level `totalScore` remaining을 하나의 effective adjusted target으로 합칩니다. 고정 mod이면 `Raw target: >= N` 한 줄만, FreeMod이면 `Targets: adjusted score >= N, ...`와 `Raw target by choice: ...`로 표시합니다.
-- 비-최종 ScoreV2 맵의 result line 끝에는 course가 `totalScore` overall condition을 가진 경우 `Course status: X / Y adjusted total, Z remaining` 한 줄을 status로 표시합니다. Target은 다음 pre-map 안내가 담당합니다.
+- FreeMod 맵의 pre-map target은 `adjusted score`이며, 같은 화면의 `Raw score by choice`가 허용된 mod 조합별 raw 값을 나열합니다. Post-map result line은 player가 실제 선택한 mod 조합 기준의 `raw score`입니다.
+- 최종 맵은 map-level score threshold와 course-level `totalScore` remaining을 하나의 effective adjusted target으로 합칩니다. effective 값은 `max(map score threshold, totalScore remaining, 0)`입니다. 고정 mod이면 `Targets:` 안에 `raw score >= N`을 합쳐 표시하고, FreeMod이면 `Targets:` 안에 `adjusted score >= N`을 표시한 뒤 target이 있을 때만 `Raw score by choice: ...` support line을 추가합니다. map `score` 조건이 있으면 그 위치를 유지하고, 없으면 마지막 segment로 추가합니다. 이미 `Course cannot pass:`가 표시된 run에서는 이후 final-map `totalScore` remaining을 pre-map target에 다시 합치지 않습니다.
+- completed full map 뒤에는 course 조건 순서대로 `Course targets: courseAccuracy X / Y; adjusted total score X / Y; totalMissCount X / Y`처럼 진행도를 표시합니다. Partial play는 해당 map에서 이 줄을 즉시 표시하지 않지만, partial 결과의 score와 miss는 이후 진행도 totals에 포함됩니다.
 - 누적 진행도는 run 종료 시 `adjusted total score:`, leaderboard에서는 `Adjusted Score Total`로 표시합니다.
+- 진행 중 course 통과 불가능 안내는 threshold-level reason을 씁니다: `map N threshold failed`, `totalMissCount threshold exceeded`, `courseAccuracy threshold unreachable`.
+- Human-facing map announcement에서는 강제 `NF`를 숨기지만, 실제 lobby 설정에는 `!mp mods`로 `NF`를 포함합니다.
 
 ScoreV2 multiplier는 다음 기준을 씁니다.
 

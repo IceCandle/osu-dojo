@@ -22,6 +22,21 @@ export interface JudgedCourseRunResult {
   overall: JudgedThreshold[];
 }
 
+export type CoursePassabilityMapResult = Pick<
+  JudgedMapResult,
+  "accuracy" | "countMiss" | "ordinal" | "passed"
+>;
+
+export type CourseImpossibilityReason =
+  | { type: "mapFailed"; mapOrdinal: number }
+  | { type: "totalMissCountExceeded"; value: number; threshold: number }
+  | { type: "courseAccuracyUnreachable"; threshold: number; bestPossible: number };
+
+export interface CoursePassabilityResult {
+  passable: boolean;
+  reasons: CourseImpossibilityReason[];
+}
+
 export function judgeThreshold(
   type: PassConditionType,
   threshold: number,
@@ -118,6 +133,55 @@ export function judgeCourseRun(
     passed: allMapsPassed && overall.passed,
     allMapsPassed,
     overall: overall.evaluations,
+  };
+}
+
+export function assessCoursePassability(
+  course: Pick<CourseDefinition, "overallPassConditions" | "beatmaps">,
+  mapResults: readonly CoursePassabilityMapResult[],
+): CoursePassabilityResult {
+  const reasons: CourseImpossibilityReason[] = [];
+  // Cumulative impossibility: any prior failed map makes the course unpassable.
+  // Surface only the most-recent failed map; runtime gates repeat announcements.
+  const latestFailedMap = [...mapResults].reverse().find((result) => !result.passed);
+
+  if (latestFailedMap) {
+    reasons.push({ type: "mapFailed", mapOrdinal: latestFailedMap.ordinal });
+  }
+
+  const remainingMapCount = Math.max(course.beatmaps.length - mapResults.length, 0);
+
+  for (const condition of course.overallPassConditions) {
+    if (condition.type === "totalMissCount") {
+      const value = sum(mapResults.map((result) => result.countMiss));
+      if (value > condition.threshold) {
+        reasons.push({
+          type: "totalMissCountExceeded",
+          value,
+          threshold: condition.threshold,
+        });
+      }
+      continue;
+    }
+
+    if (condition.type === "courseAccuracy") {
+      const priorPassedAccuracy = sum(
+        mapResults.filter((result) => result.passed).map((result) => result.accuracy),
+      );
+      const bestPossible = priorPassedAccuracy + remainingMapCount * 100;
+      if (bestPossible < condition.threshold) {
+        reasons.push({
+          type: "courseAccuracyUnreachable",
+          threshold: condition.threshold,
+          bestPossible,
+        });
+      }
+    }
+  }
+
+  return {
+    passable: reasons.length === 0,
+    reasons,
   };
 }
 
