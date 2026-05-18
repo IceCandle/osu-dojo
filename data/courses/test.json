@@ -13,7 +13,8 @@
       "ordinal": 1,
       "scoreModel": "scorev2",
       "overallPassConditions": [
-        { "type": "totalScore", "threshold": 30000 }
+        { "type": "totalScore", "threshold": 30000 },
+        { "type": "courseAccuracy", "threshold": 130 }
       ],
       "beatmaps": [
         {
@@ -23,7 +24,8 @@
           "freemod": true,
           "passConditions": [
             { "type": "score", "threshold": 10000 },
-            { "type": "maxCombo", "threshold": 5 }
+            { "type": "maxCombo", "threshold": 5 },
+            { "type": "accuracy", "threshold": 10 }
           ],
           "ordinal": 2,
           "annotations": ["old map", "consistency"]

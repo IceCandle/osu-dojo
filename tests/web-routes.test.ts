@@ -624,8 +624,9 @@ test("DanCoursePage renders the integrated leaderboard and empty state on the sy
   const previousBundle = globalThis.__osuDojoDatabaseBundle;
 
   try {
-    const { db, databaseBundle, accCourse, sv2Course, emptyCourse } =
-      await seedRankingCourses(temp.url);
+    const { db, databaseBundle, accCourse, sv2Course } = await seedRankingCourses(
+      temp.url,
+    );
 
     await storeCourseRun(
       accCourse,

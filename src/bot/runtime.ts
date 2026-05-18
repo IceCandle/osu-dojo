@@ -43,7 +43,12 @@ import {
   validateFreemodPlayerSelection,
 } from "@/lib/mods";
 import { buildPreMapGuidance } from "@/lib/preMapGuidance";
-import { formatConditionValue, kebabizeName } from "@/lib/format";
+import {
+  formatConditionValue,
+  formatInteger,
+  formatPercentage,
+  kebabizeName,
+} from "@/lib/format";
 import { computeAdjustedScore, rawTargetForAdjustedRemaining } from "@/lib/score";
 import { systemCapabilities } from "@/lib/domain";
 import type { CourseDefinition, DanSystemDefinition, JudgedMapResult } from "@/lib/domain";
@@ -1132,9 +1137,9 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
           `${run.playerUsername}: played without NF - add NF on FreeMod maps so a fail still submits a score.`,
         );
       }
-      const courseStatusLine = buildCourseStatusLine(run, isFinalMap);
-      if (courseStatusLine) {
-        await safeSendLobbyMessage(run.lobby, courseStatusLine);
+      const courseProgressLine = buildCourseProgressLine(run);
+      if (courseProgressLine) {
+        await safeSendLobbyMessage(run.lobby, courseProgressLine);
       }
     }
 
@@ -1319,6 +1324,7 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
       beatmap,
       priorMapResults: run.mapResults,
       isFinalMap: run.currentBeatmapIndex === run.course.beatmaps.length - 1,
+      courseAlreadyImpossible: run.impossibilityAnnounced === true,
     })) {
       await safeSendLobbyMessage(run.lobby, line);
     }
@@ -1651,11 +1657,11 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
     const judgedDan = getRunFinalStatus(run);
     const finalLine =
       judgedDan.overall.length > 0
-        ? `${judgedDan.passed ? "PASS" : "FAIL"} (${judgedDan.overall
+        ? `${judgedDan.passed ? "PASS" : "FAIL"} - ${judgedDan.overall
             .map((evaluation) =>
               formatEvaluation(evaluation, { scoreModel: run.course.scoreModel }),
             )
-            .join(", ")})`
+            .join(", ")}`
         : judgedDan.passed
           ? "PASS"
           : "FAIL";
@@ -1785,10 +1791,10 @@ function formatEvaluation(
   return `${display.label}: ${formatConditionValue(
     evaluation.type,
     display.value,
-  )} ${evaluation.comparison} ${formatConditionValue(
+  )} (target ${evaluation.comparison} ${formatConditionValue(
     evaluation.type,
     display.threshold,
-  )} required`;
+  )})`;
 }
 
 function formatFreemodViolation(violation: { rejected: string[] }) {
@@ -1847,32 +1853,41 @@ function formatEvaluationLabel(
   }
 }
 
-function buildCourseStatusLine(run: ActiveRun, isFinalMap: boolean): string | null {
-  if (isFinalMap || run.course.scoreModel !== "scorev2") {
+function buildCourseProgressLine(run: ActiveRun): string | null {
+  if (run.course.overallPassConditions.length === 0) {
     return null;
   }
 
-  const totalScoreCondition = run.course.overallPassConditions.find(
-    (condition) => condition.type === "totalScore",
+  const passedAccuracy = run.mapResults.reduce(
+    (total, result) => total + (result.passed ? result.accuracy : 0),
+    0,
   );
-
-  if (!totalScoreCondition) {
-    return null;
-  }
-
-  const currentAdjustedTotal = run.mapResults.reduce(
+  const totalMisses = run.mapResults.reduce(
+    (total, result) => total + result.countMiss,
+    0,
+  );
+  const totalScore = run.mapResults.reduce(
     (total, result) => total + result.score,
     0,
   );
-  const remaining = Math.max(totalScoreCondition.threshold - currentAdjustedTotal, 0);
+  const segments = run.course.overallPassConditions.map((condition) => {
+    switch (condition.type) {
+      case "courseAccuracy":
+        return `courseAccuracy ${formatPercentage(passedAccuracy)} / ${formatPercentage(
+          condition.threshold,
+        )}`;
+      case "totalMissCount":
+        return `totalMissCount ${formatInteger(totalMisses)} / ${formatInteger(
+          condition.threshold,
+        )}`;
+      case "totalScore":
+        return `${
+          run.course.scoreModel === "scorev2" ? "adjusted total score" : "total score"
+        } ${formatInteger(totalScore)} / ${formatInteger(condition.threshold)}`;
+    }
+  });
 
-  return `Course status: ${formatConditionValue(
-    "totalScore",
-    currentAdjustedTotal,
-  )} / ${formatConditionValue(
-    "totalScore",
-    totalScoreCondition.threshold,
-  )} adjusted total, ${formatConditionValue("totalScore", remaining)} remaining`;
+  return `Course targets: ${segments.join("; ")}`;
 }
 
 function formatCourseImpossibilityMessage(reasons: CourseImpossibilityReason[]) {
@@ -1884,14 +1899,11 @@ function formatCourseImpossibilityMessage(reasons: CourseImpossibilityReason[]) 
 function formatCourseImpossibilityReason(reason: CourseImpossibilityReason) {
   switch (reason.type) {
     case "mapFailed":
-      return `map ${reason.mapOrdinal} failed`;
+      return `map ${reason.mapOrdinal} threshold failed`;
     case "totalMissCountExceeded":
-      return `totalMissCount already exceeded (${formatConditionValue(
-        "totalMissCount",
-        reason.value,
-      )} / ${formatConditionValue("totalMissCount", reason.threshold)})`;
+      return "totalMissCount threshold exceeded";
     case "courseAccuracyUnreachable":
-      return "courseAccuracy unreachable even with 100.00% on remaining maps";
+      return "courseAccuracy threshold unreachable";
   }
 }
 
