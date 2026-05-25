@@ -19,6 +19,10 @@ dojo.db
 dojo.*.db
 dojo.db-journal
 dojo.*.db-journal
+dojo.db-wal
+dojo.*.db-wal
+dojo.db-shm
+dojo.*.db-shm
 *.log
 
 # next.js

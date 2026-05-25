@@ -589,6 +589,11 @@ test("bot runs the seeded course, forces NF, switches to ScoreV2, and stores the
 
   try {
     const { db } = await createTestDatabase(temp.url);
+    setSeededCourseOverallPassConditions(db, [
+      { type: "courseAccuracy", threshold: 130 },
+      { type: "totalScore", threshold: 30_000 },
+      { type: "totalMissCount", threshold: 999 },
+    ]);
     const client = new FakeClient();
     const user = new FakeUser(42, "PlayerOne");
     const seededBeatmapIds = await getSeededBeatmapIds(db);
@@ -2585,6 +2590,11 @@ test("bot continues the course and announces once when a map fails", async () =>
 
   try {
     const { db } = await createTestDatabase(temp.url);
+    setSeededCourseOverallPassConditions(db, [
+      { type: "courseAccuracy", threshold: 130 },
+      { type: "totalScore", threshold: 30_000 },
+      { type: "totalMissCount", threshold: 999 },
+    ]);
     db.$client
       .prepare(
         `
@@ -2757,6 +2767,11 @@ test("partial play skips the immediate Course targets: line but its results stil
 
   try {
     const { db } = await createTestDatabase(temp.url);
+    setSeededCourseOverallPassConditions(db, [
+      { type: "courseAccuracy", threshold: 130 },
+      { type: "totalScore", threshold: 30_000 },
+      { type: "totalMissCount", threshold: 999 },
+    ]);
     setSeededBeatmapTotalObjects(db, 1, 710);
 
     const client = new FakeClient();

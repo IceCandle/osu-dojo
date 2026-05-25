@@ -443,7 +443,7 @@ test("course reads reject stale map pass condition types", async () => {
           SEEDED_COURSE_NAME_KEY,
           db,
         ),
-      /map pass condition type "acc" is not valid/,
+      /map pass conditions for beatmap 259 type "acc" is not valid/,
     );
   } finally {
     temp.cleanup();
@@ -470,7 +470,7 @@ test("course reads reject map-only types in course pass conditions", async () =>
           SEEDED_COURSE_NAME_KEY,
           db,
         ),
-      /course pass condition type "accuracy" is not valid/,
+      /course pass conditions for course "test-1dan" type "accuracy" is not valid/,
     );
   } finally {
     temp.cleanup();

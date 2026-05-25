@@ -132,8 +132,13 @@ async function initializeDatabaseBundle(
   url = process.env.DATABASE_URL ?? "file:./dojo.db",
   seedOptions = getSeedOptionsFromEnvironment(),
 ): Promise<DatabaseBundle> {
-  const sqlite = new Database(resolveDatabaseSource(url));
+  const source = resolveDatabaseSource(url);
+  const sqlite = new Database(source);
   sqlite.pragma("foreign_keys = ON");
+  if (source !== ":memory:") {
+    sqlite.pragma("journal_mode = WAL");
+    sqlite.pragma("busy_timeout = 5000");
+  }
   sqlite.exec(CREATE_TABLES_SQL);
   migrateDatabase(sqlite);
 

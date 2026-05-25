@@ -22,6 +22,7 @@
 Commands run:
 
 ```bash
+pnpm typecheck
 pnpm build
 pnpm test
 ```

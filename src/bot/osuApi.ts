@@ -27,8 +27,11 @@ export interface FetchScoreOptions {
   totalBudgetMs: number;
   perCallTimeoutMs: number;
   retryDelayMs: number;
+  retryBackoffFactor?: number;
+  retryDelayMaxMs?: number;
   fetchMatch: (signal: AbortSignal) => Promise<string>;
   now?: () => number;
+  random?: () => number;
   sleep?: (milliseconds: number) => Promise<void>;
 }
 
@@ -124,9 +127,12 @@ export async function fetchLatestPlayerMapScore(
   options: FetchScoreOptions,
 ): Promise<NormalizedPlayerMapScore> {
   const now = options.now ?? Date.now;
+  const random = options.random ?? Math.random;
   const sleep = options.sleep ?? defaultSleep;
   const startedAt = now();
   const deadline = startedAt + options.totalBudgetMs;
+  const retryBackoffFactor = options.retryBackoffFactor ?? 2;
+  const retryDelayMaxMs = options.retryDelayMaxMs ?? 8_000;
   let attempts = 0;
   let lastUnderlyingError: Error | null = null;
   let sawGameWithoutPlayerScore:
@@ -173,11 +179,19 @@ export async function fetchLatestPlayerMapScore(
       lastUnderlyingError = normalizeUnderlyingError(error);
     }
 
-    if (now() + options.retryDelayMs >= deadline) {
+    const retryDelayMs = getRetryDelayMs({
+      attempt: attempts,
+      baseDelayMs: options.retryDelayMs,
+      factor: retryBackoffFactor,
+      maxDelayMs: retryDelayMaxMs,
+      random,
+    });
+
+    if (now() + retryDelayMs >= deadline) {
       break;
     }
 
-    await sleep(options.retryDelayMs);
+    await sleep(retryDelayMs);
   }
 
   if (sawGameWithoutPlayerScore) {
@@ -201,6 +215,21 @@ export async function fetchLatestPlayerMapScore(
     attempts,
     lastUnderlyingError,
   });
+}
+
+function getRetryDelayMs(args: {
+  attempt: number;
+  baseDelayMs: number;
+  factor: number;
+  maxDelayMs: number;
+  random: () => number;
+}) {
+  const cap = Math.min(
+    args.maxDelayMs,
+    args.baseDelayMs * args.factor ** Math.max(0, args.attempt - 1),
+  );
+  const jitter = Math.max(0, Math.min(1, args.random()));
+  return Math.floor(jitter * cap);
 }
 
 export async function fetchMatchText(
