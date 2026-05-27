@@ -322,25 +322,25 @@ function parseMatchPayload(text: string): { games: LegacyMultiGame[] } {
     throw new FetchTransportError(String(payload.error), false);
   }
 
-  if (!isRecord(payload) || !Array.isArray(payload.games)) {
+  if (!isRecord(payload) || !Array.isArray(payload["games"])) {
     throw new Error("match payload: invalid shape");
   }
 
   return {
-    games: payload.games.map(parseGame),
+    games: payload["games"].map(parseGame),
   };
 }
 
 function parseGame(value: unknown): LegacyMultiGame {
-  if (!isRecord(value) || !Array.isArray(value.scores)) {
+  if (!isRecord(value) || !Array.isArray(value["scores"])) {
     throw new Error("game: invalid shape");
   }
 
   return {
-    id: parseRequiredNonNegativeInteger(value.game_id, "game_id"),
-    beatmapId: parseRequiredNonNegativeInteger(value.beatmap_id, "beatmap_id"),
-    mods: parseOptionalNonNegativeInteger(value.mods, "mods"),
-    scores: value.scores.map(parseScore),
+    id: parseRequiredNonNegativeInteger(value["game_id"], "game_id"),
+    beatmapId: parseRequiredNonNegativeInteger(value["beatmap_id"], "beatmap_id"),
+    mods: parseOptionalNonNegativeInteger(value["mods"], "mods"),
+    scores: value["scores"].map(parseScore),
   };
 }
 
@@ -350,15 +350,15 @@ function parseScore(value: unknown): LegacyMultiScore {
   }
 
   return {
-    userId: parseRequiredNonNegativeInteger(value.user_id, "user_id"),
-    score: parseRequiredNonNegativeInteger(value.score, "score"),
-    enabledMods: parseOptionalNonNegativeInteger(value.enabled_mods, "enabled_mods"),
-    maxCombo: parseRequiredNonNegativeInteger(value.maxcombo, "maxcombo"),
-    count300: parseRequiredNonNegativeInteger(value.count300, "count300"),
-    count100: parseRequiredNonNegativeInteger(value.count100, "count100"),
-    count50: parseRequiredNonNegativeInteger(value.count50, "count50"),
-    countMiss: parseRequiredNonNegativeInteger(value.countmiss, "countmiss"),
-    pass: parsePass(value.pass),
+    userId: parseRequiredNonNegativeInteger(value["user_id"], "user_id"),
+    score: parseRequiredNonNegativeInteger(value["score"], "score"),
+    enabledMods: parseOptionalNonNegativeInteger(value["enabled_mods"], "enabled_mods"),
+    maxCombo: parseRequiredNonNegativeInteger(value["maxcombo"], "maxcombo"),
+    count300: parseRequiredNonNegativeInteger(value["count300"], "count300"),
+    count100: parseRequiredNonNegativeInteger(value["count100"], "count100"),
+    count50: parseRequiredNonNegativeInteger(value["count50"], "count50"),
+    countMiss: parseRequiredNonNegativeInteger(value["countmiss"], "countmiss"),
+    pass: parsePass(value["pass"]),
   };
 }
 

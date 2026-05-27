@@ -4,10 +4,16 @@ import { EventEmitter } from "node:events";
 import { BanchoLobbyPlayerStates, BanchoLobbyWinConditions } from "bancho.js";
 import type { BotLogger } from "@/bot/logger";
 import { createTestDatabase } from "@/db/client";
-import { getCourseByNameKey, listCourseRunsByNameKey } from "@/db/queries";
+import {
+  getCourseByNameKey,
+  listCourseRunsByNameKey,
+  listOpenLobbies,
+  recordOpenLobby,
+} from "@/db/queries";
 import { createTempDatabaseUrl as createTempDatabaseUrlWithPrefix } from "./helpers/tempDatabase";
 import {
   createDojoBot,
+  type BanchoChannelLike,
   type BotClientLike,
   type BotUserLike,
   type LobbyLike,
@@ -33,8 +39,8 @@ type FakeLobbyPlayer = {
 };
 
 class FakeUser implements BotUserLike {
-  id?: number;
-  username?: string;
+  id: number;
+  username: string;
   ircUsername: string;
   messages: string[] = [];
 
@@ -45,7 +51,7 @@ class FakeUser implements BotUserLike {
   }
 
   async fetchFromAPI() {
-    return { id: this.id ?? 0, username: this.username };
+    return { id: this.id, username: this.username };
   }
 
   async sendMessage(message: string) {
@@ -56,7 +62,7 @@ class FakeUser implements BotUserLike {
 
 class FakeLobbyChannel extends EventEmitter {
   messages: string[] = [];
-  handler?: (message: string) => Promise<null>;
+  handler: ((message: string) => Promise<null>) | undefined;
 
   async sendMessage(message: string) {
     this.messages.push(message);
@@ -75,7 +81,11 @@ class FakeLobby extends EventEmitter implements LobbyLike {
   mapHistory: number[] = [];
   modHistory: string[][] = [];
   freemodHistory: Array<boolean | undefined> = [];
-  settingsHistory: Array<{ teamMode?: number; winCondition?: number; size?: number }> = [];
+  settingsHistory: Array<{
+    teamMode: number | undefined;
+    winCondition: number | undefined;
+    size: number | undefined;
+  }> = [];
   startHistory: number[] = [];
   closeLobbyCalls = 0;
   updateSettingsCalls = 0;
@@ -208,15 +218,56 @@ class FakeLobby extends EventEmitter implements LobbyLike {
   }
 }
 
+class FakeCleanupChannel implements BanchoChannelLike {
+  actions: string[] = [];
+  joinError?: Error;
+  closeError?: Error;
+  leaveError?: Error;
+  lobby?: { closeLobby: () => Promise<unknown> };
+
+  constructor(options: { withLobby?: boolean } = { withLobby: true }) {
+    if (options.withLobby ?? true) {
+      this.lobby = {
+        closeLobby: async () => {
+          this.actions.push("closeLobby");
+          if (this.closeError) {
+            throw this.closeError;
+          }
+        },
+      };
+    }
+  }
+
+  async join() {
+    this.actions.push("join");
+    if (this.joinError) {
+      throw this.joinError;
+    }
+  }
+
+  async leave() {
+    this.actions.push("leave");
+    if (this.leaveError) {
+      throw this.leaveError;
+    }
+  }
+
+  async sendMessage(message: string) {
+    this.actions.push(`sendMessage:${message}`);
+  }
+}
+
 class FakeClient extends EventEmitter implements BotClientLike {
   lobby = new FakeLobby();
-  createLobbyCalls: Array<{ name: string; privateLobby?: boolean }> = [];
+  createLobbyCalls: Array<{ name: string; privateLobby: boolean | undefined }> = [];
   createLobbyHandler?: (
     name: string,
     privateLobby?: boolean,
   ) => Promise<{ lobby: FakeLobby }>;
   disconnectCalls = 0;
   connectCalls = 0;
+  getChannelCalls: string[] = [];
+  getChannelHandler?: (name: string) => BanchoChannelLike | undefined;
 
   async createLobby(name: string, privateLobby?: boolean) {
     this.createLobbyCalls.push({ name, privateLobby });
@@ -235,6 +286,11 @@ class FakeClient extends EventEmitter implements BotClientLike {
   disconnect() {
     this.disconnectCalls += 1;
   }
+
+  getChannel(name: string) {
+    this.getChannelCalls.push(name);
+    return this.getChannelHandler?.(name);
+  }
 }
 
 function createPrivateMessage(user: BotUserLike, message: string): PrivateMessageLike {
@@ -245,7 +301,7 @@ function createCapturingLogger() {
   const entries: Array<{
     level: "info" | "warn" | "error";
     message: string;
-    fields?: Record<string, unknown>;
+    fields: Record<string, unknown> | undefined;
   }> = [];
 
   const logger: BotLogger = {
@@ -363,6 +419,12 @@ function setSeededBeatmapPassConditions(
       `,
     )
     .run(JSON.stringify(conditions), SEEDED_COURSE_SLUG, ordinal);
+}
+
+async function getOpenLobbyRows(
+  db: Awaited<ReturnType<typeof createTestDatabase>>["db"],
+) {
+  return listOpenLobbies(db);
 }
 
 function setSeededCourseOverallPassConditions(
@@ -584,8 +646,8 @@ test("bot remembers a valid start command when lobby creation fails", async () =
 
 test("bot runs the seeded course, forces NF, switches to ScoreV2, and stores the result", async () => {
   const temp = createTempDatabaseUrl();
-  const originalSiteUrl = process.env.DOJO_SITE_URL;
-  delete process.env.DOJO_SITE_URL;
+  const originalSiteUrl = process.env["DOJO_SITE_URL"];
+  delete process.env["DOJO_SITE_URL"];
 
   try {
     const { db } = await createTestDatabase(temp.url);
@@ -742,10 +804,343 @@ test("bot runs the seeded course, forces NF, switches to ScoreV2, and stores the
     assert.equal(results?.runs[0]?.maps[1]?.gameId, 2);
   } finally {
     if (originalSiteUrl === undefined) {
-      delete process.env.DOJO_SITE_URL;
+      delete process.env["DOJO_SITE_URL"];
     } else {
-      process.env.DOJO_SITE_URL = originalSiteUrl;
+      process.env["DOJO_SITE_URL"] = originalSiteUrl;
     }
+    temp.cleanup();
+  }
+});
+
+test("bot records an open lobby row when room creation succeeds", async () => {
+  const temp = createTempDatabaseUrl();
+
+  try {
+    const { db } = await createTestDatabase(temp.url);
+    const client = new FakeClient();
+    const bot = createDojoBot({ client, db, connectOnStart: false });
+    const user = new FakeUser(42, "PlayerOne");
+
+    await bot.handlePrivateMessage(createSeededStartMessage(user));
+
+    const rows = await getOpenLobbyRows(db);
+    assert.deepEqual(rows, [
+      {
+        matchId: client.lobby.id,
+        userId: 42,
+        courseId: "course-test-1dan",
+        openedAt: rows[0]?.openedAt,
+      },
+    ]);
+  } finally {
+    temp.cleanup();
+  }
+});
+
+test("bot removes the open lobby row after normal completion closes the lobby", async () => {
+  const temp = createTempDatabaseUrl();
+
+  try {
+    const { db } = await createTestDatabase(temp.url);
+    const client = new FakeClient();
+    const user = new FakeUser(42, "PlayerOne");
+    const seededBeatmapIds = await getSeededBeatmapIds(db);
+    const bot = createDojoBot({
+      client,
+      db,
+      connectOnStart: false,
+      restDurationMs: 0,
+      finalGracePeriodMs: 0,
+      firstMapCountdownSeconds: 0,
+      sleep: async () => {},
+      fetchScore: async (options) => ({
+        gameId: options.beatmapId,
+        beatmapId: options.beatmapId,
+        userId: 42,
+        score: options.beatmapId === seededBeatmapIds[0] ? 910000 : 905000,
+        playerEnabledMods: 0,
+        globalGameMods: 0,
+        accuracy: 96.3,
+        maxCombo: 800,
+        count300: 1000,
+        count100: 40,
+        count50: 4,
+        countMiss: 1,
+        passed: true,
+      }),
+    });
+
+    await bot.handlePrivateMessage(createSeededStartMessage(user));
+    client.lobby.emit("playerJoined", {
+      player: client.lobby.registerPlayer(user),
+    });
+    await flushAsyncWork();
+    client.lobby.emit("matchStarted");
+    client.lobby.emit("matchFinished");
+    await flushAsyncWork(8);
+    client.lobby.emit("matchStarted");
+    client.lobby.emit("matchFinished");
+    await flushAsyncWork(8);
+    await waitForTimer(20);
+
+    assert.equal(client.lobby.closeLobbyCalls, 1);
+    assert.deepEqual(await getOpenLobbyRows(db), []);
+  } finally {
+    temp.cleanup();
+  }
+});
+
+test("bot replaces the persisted lobby row when a run is superseded", async () => {
+  const temp = createTempDatabaseUrl();
+
+  try {
+    const { db } = await createTestDatabase(temp.url);
+    const client = new FakeClient();
+    const firstLobby = new FakeLobby(777);
+    const secondLobby = new FakeLobby(888);
+    const lobbies = [firstLobby, secondLobby];
+    client.lobby = firstLobby;
+    client.createLobbyHandler = async () => {
+      const lobby = lobbies.shift();
+      if (!lobby) {
+        throw new Error("No fake lobby left.");
+      }
+      client.lobby = lobby;
+      return { lobby };
+    };
+    const bot = createDojoBot({ client, db, connectOnStart: false, finalGracePeriodMs: 0 });
+    const user = new FakeUser(42, "PlayerOne");
+
+    await bot.handlePrivateMessage(createSeededStartMessage(user));
+    await bot.handlePrivateMessage(createSeededStartMessage(user));
+    await flushAsyncWork(6);
+
+    assert.equal(firstLobby.closeLobbyCalls, 1);
+    assert.deepEqual(
+      (await getOpenLobbyRows(db)).map((row) => row.matchId),
+      [secondLobby.id],
+    );
+  } finally {
+    temp.cleanup();
+  }
+});
+
+test("bot keeps the open lobby row when the client is disconnected before close", async () => {
+  const temp = createTempDatabaseUrl();
+
+  try {
+    const { db } = await createTestDatabase(temp.url);
+    const client = new FakeClient();
+    const bot = createDojoBot({ client, db, connectOnStart: false, finalGracePeriodMs: 0 });
+    const user = new FakeUser(42, "PlayerOne");
+
+    await bot.handlePrivateMessage(createSeededStartMessage(user));
+    client.emit("disconnected", new Error("lost irc"));
+    await flushAsyncWork(8);
+    await waitForTimer(20);
+
+    assert.deepEqual(
+      (await getOpenLobbyRows(db)).map((row) => row.matchId),
+      [client.lobby.id],
+    );
+  } finally {
+    temp.cleanup();
+  }
+});
+
+test("bot removes the open lobby row after setup failure closes the lobby", async () => {
+  const temp = createTempDatabaseUrl();
+
+  try {
+    const { db } = await createTestDatabase(temp.url);
+    const client = new FakeClient();
+    client.lobby.updateSettingsHandler = async () => {
+      throw new Error("settings failed");
+    };
+    const bot = createDojoBot({ client, db, connectOnStart: false });
+    const user = new FakeUser(42, "PlayerOne");
+
+    await bot.handlePrivateMessage(createSeededStartMessage(user));
+
+    assert.equal(client.lobby.closeLobbyCalls, 1);
+    assert.deepEqual(await getOpenLobbyRows(db), []);
+  } finally {
+    temp.cleanup();
+  }
+});
+
+test("bot stop removes open lobby rows for active lobbies", async () => {
+  const temp = createTempDatabaseUrl();
+
+  try {
+    const { db } = await createTestDatabase(temp.url);
+    const client = new FakeClient();
+    const bot = createDojoBot({ client, db, connectOnStart: false });
+    const user = new FakeUser(42, "PlayerOne");
+
+    await bot.handlePrivateMessage(createSeededStartMessage(user));
+    await bot.stop();
+
+    assert.equal(client.lobby.closeLobbyCalls, 1);
+    assert.deepEqual(await getOpenLobbyRows(db), []);
+  } finally {
+    temp.cleanup();
+  }
+});
+
+test("bot startup cleanup closes and removes stale open lobby rows", async () => {
+  const temp = createTempDatabaseUrl();
+
+  try {
+    const { db } = await createTestDatabase(temp.url);
+    await recordOpenLobby({ matchId: 1001, userId: 42, courseId: "test-1dan" }, db);
+    await recordOpenLobby({ matchId: 1002, userId: 43, courseId: "test-1dan" }, db);
+    const client = new FakeClient();
+    const channels = new Map([
+      ["#mp_1001", new FakeCleanupChannel()],
+      ["#mp_1002", new FakeCleanupChannel()],
+    ]);
+    client.getChannelHandler = (name) => channels.get(name);
+    const bot = createDojoBot({ client, db, connectOnStart: false });
+
+    await bot.start();
+    await flushAsyncWork();
+
+    assert.deepEqual(channels.get("#mp_1001")?.actions, ["join", "closeLobby", "leave"]);
+    assert.deepEqual(channels.get("#mp_1002")?.actions, ["join", "closeLobby", "leave"]);
+    assert.deepEqual(await getOpenLobbyRows(db), []);
+  } finally {
+    temp.cleanup();
+  }
+});
+
+test("bot startup cleanup keeps rows when joining a stale lobby fails", async () => {
+  const temp = createTempDatabaseUrl();
+
+  try {
+    const { db } = await createTestDatabase(temp.url);
+    await recordOpenLobby({ matchId: 1001, userId: 42, courseId: "test-1dan" }, db);
+    const client = new FakeClient();
+    const channel = new FakeCleanupChannel();
+    channel.joinError = new Error("join failed");
+    client.getChannelHandler = () => channel;
+    const { entries, logger } = createCapturingLogger();
+    const bot = createDojoBot({ client, db, logger, connectOnStart: false });
+
+    await bot.start();
+
+    assert.deepEqual(channel.actions, ["join"]);
+    assert.deepEqual(
+      (await getOpenLobbyRows(db)).map((row) => row.matchId),
+      [1001],
+    );
+    assert.ok(entries.some((entry) => entry.message === "dojo open lobby join failed"));
+  } finally {
+    temp.cleanup();
+  }
+});
+
+test("bot startup cleanup removes rows when stale lobby close rejects", async () => {
+  const temp = createTempDatabaseUrl();
+
+  try {
+    const { db } = await createTestDatabase(temp.url);
+    await recordOpenLobby({ matchId: 1001, userId: 42, courseId: "test-1dan" }, db);
+    const client = new FakeClient();
+    const channel = new FakeCleanupChannel();
+    channel.closeError = new Error("close failed");
+    client.getChannelHandler = () => channel;
+    const { entries, logger } = createCapturingLogger();
+    const bot = createDojoBot({ client, db, logger, connectOnStart: false });
+
+    await bot.start();
+    await flushAsyncWork();
+
+    assert.deepEqual(channel.actions, ["join", "closeLobby", "leave"]);
+    assert.deepEqual(await getOpenLobbyRows(db), []);
+    assert.ok(entries.some((entry) => entry.message === "dojo open lobby close failed"));
+  } finally {
+    temp.cleanup();
+  }
+});
+
+test("bot startup cleanup removes rows when stale lobby leave rejects", async () => {
+  const temp = createTempDatabaseUrl();
+
+  try {
+    const { db } = await createTestDatabase(temp.url);
+    await recordOpenLobby({ matchId: 1001, userId: 42, courseId: "test-1dan" }, db);
+    const client = new FakeClient();
+    const channel = new FakeCleanupChannel();
+    channel.leaveError = new Error("leave failed");
+    client.getChannelHandler = () => channel;
+    const { entries, logger } = createCapturingLogger();
+    const bot = createDojoBot({ client, db, logger, connectOnStart: false });
+
+    await bot.start();
+    await flushAsyncWork();
+
+    assert.deepEqual(channel.actions, ["join", "closeLobby", "leave"]);
+    assert.deepEqual(await getOpenLobbyRows(db), []);
+    assert.ok(entries.some((entry) => entry.message === "dojo open lobby leave failed"));
+  } finally {
+    temp.cleanup();
+  }
+});
+
+test("bot startup cleanup keeps rows when getChannel returns undefined", async () => {
+  const temp = createTempDatabaseUrl();
+
+  try {
+    const { db } = await createTestDatabase(temp.url);
+    await recordOpenLobby({ matchId: 1001, userId: 42, courseId: "test-1dan" }, db);
+    const client = new FakeClient();
+    client.getChannelHandler = () => undefined;
+    const { entries, logger } = createCapturingLogger();
+    const bot = createDojoBot({ client, db, logger, connectOnStart: false });
+
+    await bot.start();
+
+    assert.deepEqual(
+      (await getOpenLobbyRows(db)).map((row) => row.matchId),
+      [1001],
+    );
+    assert.ok(
+      entries.some(
+        (entry) => entry.message === "dojo open lobby getChannel returned undefined",
+      ),
+    );
+  } finally {
+    temp.cleanup();
+  }
+});
+
+test("bot startup cleanup keeps rows when the client has no getChannel", async () => {
+  const temp = createTempDatabaseUrl();
+
+  try {
+    const { db } = await createTestDatabase(temp.url);
+    await recordOpenLobby({ matchId: 1001, userId: 42, courseId: "test-1dan" }, db);
+    const client = Object.assign(new EventEmitter(), {
+      createLobby: async () => ({ lobby: new FakeLobby() }),
+      connect: async () => null,
+    }) satisfies BotClientLike;
+    const { entries, logger } = createCapturingLogger();
+    const bot = createDojoBot({ client, db, logger, connectOnStart: false });
+
+    await bot.start();
+
+    assert.deepEqual(
+      (await getOpenLobbyRows(db)).map((row) => row.matchId),
+      [1001],
+    );
+    assert.ok(
+      entries.some(
+        (entry) =>
+          entry.message === "dojo open lobby cleanup skipped (client has no getChannel)",
+      ),
+    );
+  } finally {
     temp.cleanup();
   }
 });
@@ -3840,8 +4235,8 @@ test("bot aborts with score-not-yet-published when confirmed-finish score resolu
         entry.message === "dojo score not yet published",
     );
     assert.ok(timeoutWarning);
-    assert.equal(timeoutWarning.fields?.elapsedMs, 45_000);
-    assert.equal(timeoutWarning.fields?.attempts, 16);
+    assert.equal(timeoutWarning.fields?.["elapsedMs"], 45_000);
+    assert.equal(timeoutWarning.fields?.["attempts"], 16);
   } finally {
     temp.cleanup();
   }
@@ -3901,8 +4296,8 @@ test("bot aborts with score-not-found when the API game omits the player score",
       (entry) => entry.level === "warn" && entry.message === "dojo score not found",
     );
     assert.ok(scoreWarning);
-    assert.equal(scoreWarning.fields?.hadConfirmedFinish, false);
-    assert.equal(scoreWarning.fields?.gameId, 17);
+    assert.equal(scoreWarning.fields?.["hadConfirmedFinish"], false);
+    assert.equal(scoreWarning.fields?.["gameId"], 17);
   } finally {
     temp.cleanup();
   }
@@ -3957,7 +4352,7 @@ test("bot keeps score-not-found when Bancho confirmed finish but API omits the p
       (entry) => entry.level === "warn" && entry.message === "dojo score not found",
     );
     assert.ok(scoreWarning);
-    assert.equal(scoreWarning.fields?.hadConfirmedFinish, true);
+    assert.equal(scoreWarning.fields?.["hadConfirmedFinish"], true);
   } finally {
     temp.cleanup();
   }
@@ -4012,7 +4407,7 @@ test("bot treats an unpublished API game without confirmed finish as an interrup
         entry.message === "dojo interrupted run detected while resolving score",
     );
     assert.ok(interruptedWarning);
-    assert.equal(interruptedWarning.fields?.hadConfirmedFinish, false);
+    assert.equal(interruptedWarning.fields?.["hadConfirmedFinish"], false);
   } finally {
     temp.cleanup();
   }
@@ -4116,7 +4511,7 @@ test("bot aborts with score-api-timeout when confirmed-finish API calls time out
       (entry) => entry.level === "error" && entry.message === "dojo score api timeout",
     );
     assert.ok(timeoutError);
-    assert.equal(timeoutError.fields?.hadConfirmedFinish, true);
+    assert.equal(timeoutError.fields?.["hadConfirmedFinish"], true);
   } finally {
     temp.cleanup();
   }
@@ -4171,7 +4566,7 @@ test("bot treats API timeout without confirmed finish as an interrupted run", as
         entry.message === "dojo interrupted run detected while resolving score",
     );
     assert.ok(interruptedWarning);
-    assert.equal(interruptedWarning.fields?.cause, "api-timeout");
+    assert.equal(interruptedWarning.fields?.["cause"], "api-timeout");
   } finally {
     temp.cleanup();
   }

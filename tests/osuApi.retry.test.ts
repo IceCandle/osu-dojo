@@ -64,12 +64,16 @@ function createOptions(
     totalBudgetMs: overrides.totalBudgetMs ?? 1_000,
     perCallTimeoutMs: 0,
     retryDelayMs: overrides.retryDelayMs ?? 10,
-    retryBackoffFactor: overrides.retryBackoffFactor,
-    retryDelayMaxMs: overrides.retryDelayMaxMs,
     fetchMatch,
     now: clock.now,
     random: overrides.random ?? (() => 1),
     sleep: clock.sleep,
+    ...(overrides.retryBackoffFactor !== undefined
+      ? { retryBackoffFactor: overrides.retryBackoffFactor }
+      : {}),
+    ...(overrides.retryDelayMaxMs !== undefined
+      ? { retryDelayMaxMs: overrides.retryDelayMaxMs }
+      : {}),
   };
 }
 

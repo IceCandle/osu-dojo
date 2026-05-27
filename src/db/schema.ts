@@ -122,3 +122,12 @@ export const mapResults = sqliteTable(
     index("map_results_run_ordinal_idx").on(table.runId, table.ordinal),
   ],
 );
+
+export const openLobbies = sqliteTable("open_lobbies", {
+  matchId: integer("match_id").primaryKey(),
+  userId: integer("user_id").notNull(),
+  courseId: text("course_id").notNull(),
+  openedAt: integer("opened_at")
+    .notNull()
+    .default(sql`(unixepoch() * 1000)`),
+});

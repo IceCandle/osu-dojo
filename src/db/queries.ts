@@ -7,6 +7,7 @@ import {
   courses,
   danSystems,
   mapResults,
+  openLobbies,
   runs,
 } from "@/db/schema";
 import type {
@@ -459,6 +460,31 @@ export async function storeCourseRunResult(
   };
 }
 
+export async function recordOpenLobby(
+  input: { matchId: number; userId: number; courseId: string },
+  db?: AppDatabase,
+) {
+  const database = await useDb(db);
+  database.$client
+    .prepare(
+      `
+      INSERT OR REPLACE INTO open_lobbies (match_id, user_id, course_id, opened_at)
+      VALUES (?, ?, ?, unixepoch() * 1000)
+      `,
+    )
+    .run(input.matchId, input.userId, input.courseId);
+}
+
+export async function removeOpenLobby(matchId: number, db?: AppDatabase) {
+  const database = await useDb(db);
+  await database.delete(openLobbies).where(eq(openLobbies.matchId, matchId));
+}
+
+export async function listOpenLobbies(db?: AppDatabase) {
+  const database = await useDb(db);
+  return database.select().from(openLobbies).orderBy(asc(openLobbies.openedAt));
+}
+
 async function getMapsByRunId(runIds: string[], database: AppDatabase) {
   const mapRows = await database
     .select()
@@ -567,13 +593,13 @@ function parseStoredCondition(
   }
 
   const record = condition as Record<string, unknown>;
-  if (typeof record.type !== "string" || typeof record.threshold !== "number") {
+  if (typeof record["type"] !== "string" || typeof record["threshold"] !== "number") {
     throw new Error(`${label} entry must include type and threshold.`);
   }
 
   return {
-    type: record.type,
-    threshold: record.threshold,
+    type: record["type"],
+    threshold: record["threshold"],
   };
 }
 

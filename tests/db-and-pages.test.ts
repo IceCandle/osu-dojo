@@ -394,6 +394,9 @@ test("createTestDatabase backfills legacy pass condition columns", async () => {
     const mapResultColumns = (
       migratedSqlite.pragma("table_info(map_results)") as { name: string }[]
     ).map((column) => column.name);
+    const openLobbyColumns = (
+      migratedSqlite.pragma("table_info(open_lobbies)") as { name: string }[]
+    ).map((column) => column.name);
 
     assert.deepEqual(JSON.parse(course.overall_pass_conditions), [
       { type: "courseAccuracy", threshold: 95 },
@@ -410,6 +413,7 @@ test("createTestDatabase backfills legacy pass condition columns", async () => {
     assert.equal(mapResultColumns.includes("raw_score"), true);
     assert.equal(mapResultColumns.includes("played_mods"), true);
     assert.equal(beatmapColumns.includes("pass_condition_type"), false);
+    assert.deepEqual(openLobbyColumns, ["match_id", "user_id", "course_id", "opened_at"]);
   } finally {
     temp.cleanup();
   }
@@ -479,11 +483,11 @@ test("course reads reject map-only types in course pass conditions", async () =>
 
 test("pages render seeded course data from SQLite", async () => {
   const temp = createTempDatabaseUrl();
-  const previousDatabaseUrl = process.env.DATABASE_URL;
+  const previousDatabaseUrl = process.env["DATABASE_URL"];
   const previousBundle = globalThis.__osuDojoDatabaseBundle;
 
   try {
-    process.env.DATABASE_URL = temp.url;
+    process.env["DATABASE_URL"] = temp.url;
     const databaseBundle = await createTestDatabase(temp.url);
     await seedDatabase(
       databaseBundle.db,
@@ -550,7 +554,7 @@ test("pages render seeded course data from SQLite", async () => {
     assert.match(courseHtml, /No runs saved yet/);
     assert.doesNotMatch(courseHtml, /\b\d{1,2}:\d{2}\b/);
   } finally {
-    process.env.DATABASE_URL = previousDatabaseUrl;
+    process.env["DATABASE_URL"] = previousDatabaseUrl;
     globalThis.__osuDojoDatabaseBundle = previousBundle;
     temp.cleanup();
   }
@@ -558,11 +562,11 @@ test("pages render seeded course data from SQLite", async () => {
 
 test("catalog hides drafts but exact-key draft detail renders", async () => {
   const temp = createTempDatabaseUrl();
-  const previousDatabaseUrl = process.env.DATABASE_URL;
+  const previousDatabaseUrl = process.env["DATABASE_URL"];
   const previousBundle = globalThis.__osuDojoDatabaseBundle;
 
   try {
-    process.env.DATABASE_URL = temp.url;
+    process.env["DATABASE_URL"] = temp.url;
     const databaseBundle = await createTestDatabase(temp.url);
     const systems = addSampleBeatmapMetadata(
       cloneCourseSystems(loadCoursesFromDir(path.join(process.cwd(), "data/courses"))),
@@ -619,7 +623,7 @@ test("catalog hides drafts but exact-key draft detail renders", async () => {
     assert.match(draftHtml, /Runs on draft systems are not recorded/);
     assert.match(draftHtml, /!dojo start beta 1st/);
   } finally {
-    process.env.DATABASE_URL = previousDatabaseUrl;
+    process.env["DATABASE_URL"] = previousDatabaseUrl;
     globalThis.__osuDojoDatabaseBundle = previousBundle;
     temp.cleanup();
   }
@@ -635,7 +639,7 @@ function escapeRenderedText(value: string) {
 
 test("course run queries and page derive DNF for interrupted partial runs", async () => {
   const temp = createTempDatabaseUrl();
-  const previousDatabaseUrl = process.env.DATABASE_URL;
+  const previousDatabaseUrl = process.env["DATABASE_URL"];
   const previousBundle = globalThis.__osuDojoDatabaseBundle;
 
   try {
@@ -690,7 +694,7 @@ test("course run queries and page derive DNF for interrupted partial runs", asyn
     assert.equal(results?.runs[0]?.username, "DNFPlayer");
     assert.equal(results?.runs[0]?.status, "dnf");
 
-    process.env.DATABASE_URL = temp.url;
+    process.env["DATABASE_URL"] = temp.url;
     globalThis.__osuDojoDatabaseBundle = databaseBundle;
 
     const resultsHtml = renderToStaticMarkup(
@@ -707,7 +711,7 @@ test("course run queries and page derive DNF for interrupted partial runs", asyn
     assert.match(resultsHtml, /DNFPlayer/);
     assert.match(resultsHtml, /status-dnf/);
   } finally {
-    process.env.DATABASE_URL = previousDatabaseUrl;
+    process.env["DATABASE_URL"] = previousDatabaseUrl;
     globalThis.__osuDojoDatabaseBundle = previousBundle;
     temp.cleanup();
   }

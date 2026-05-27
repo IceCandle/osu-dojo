@@ -24,10 +24,16 @@ export function parseDojoCommand(message: string): DojoCommand | null {
   const startMatch =
     /^!dojo\s+start\s+([a-z0-9-]+)\s+([a-z0-9-]+)\s*$/i.exec(trimmedMessage);
   if (startMatch) {
+    const systemNameKey = startMatch[1];
+    const courseNameKey = startMatch[2];
+    if (!systemNameKey || !courseNameKey) {
+      return { type: "invalid" };
+    }
+
     return {
       type: "start",
-      systemNameKey: startMatch[1].toLowerCase(),
-      courseNameKey: startMatch[2].toLowerCase(),
+      systemNameKey: systemNameKey.toLowerCase(),
+      courseNameKey: courseNameKey.toLowerCase(),
     };
   }
 

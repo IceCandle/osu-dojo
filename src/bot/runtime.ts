@@ -13,10 +13,18 @@ import {
 import { getDatabase, type AppDatabase } from "@/db/client";
 import {
   getDanSystemDetailByNameKey,
+  listOpenLobbies,
+  recordOpenLobby,
+  removeOpenLobby,
   storeCourseRunResult,
 } from "@/db/queries";
 import { DOJO_USAGE_LINE, parseDojoCommand } from "@/bot/command";
 import { noopLogger, type BotLogFields, type BotLogger } from "@/bot/logger";
+import {
+  createRunRegistry,
+  type ActiveRun,
+  type ActiveRunStatus,
+} from "@/bot/runRegistry";
 import {
   type FetchScoreOptions,
   fetchMatchText,
@@ -53,6 +61,8 @@ import { computeAdjustedScore, rawTargetForAdjustedRemaining } from "@/lib/score
 import { systemCapabilities } from "@/lib/domain";
 import type { CourseDefinition, DanSystemDefinition, JudgedMapResult } from "@/lib/domain";
 import { sleep as defaultSleep } from "@/lib/sleep";
+
+export type { ActiveRun } from "@/bot/runRegistry";
 
 if (existsSync(".env")) {
   if (typeof loadEnvFile === "function") {
@@ -120,47 +130,18 @@ interface MultiplayerChannelLike {
   lobby: LobbyLike;
 }
 
-export interface BotClientLike extends EventEmitter {
-  createLobby: (name: string, privateLobby?: boolean) => Promise<MultiplayerChannelLike>;
-  connect?: () => Promise<null>;
-  disconnect?: () => void;
+export interface BanchoChannelLike {
+  join: () => Promise<unknown>;
+  leave: () => Promise<unknown>;
+  sendMessage: (message: string) => Promise<unknown>;
+  lobby?: { closeLobby: () => Promise<unknown> };
 }
 
-type ActiveRunStatus =
-  | "waiting_for_player"
-  | "countdown"
-  | "playing_map"
-  | "resolving_map"
-  | "between_maps"
-  | "finalizing"
-  | "aborted";
-
-interface ActiveRun {
-  runId: string;
-  system: DanSystemDefinition;
-  course: CourseDefinition;
-  playerUserId: number;
-  playerUsername: string;
-  startedAt: number;
-  lobby?: LobbyLike;
-  currentBeatmapIndex: number;
-  mapResults: Omit<JudgedMapResult, "id" | "runId">[];
-  processedGameIds: Set<number>;
-  status: ActiveRunStatus;
-  lastProgressAt: number;
-  inactivityTimer?: NodeJS.Timeout;
-  countdownTimer?: NodeJS.Timeout;
-  lobbyCloseTimer?: NodeJS.Timeout;
-  startInFlight?: boolean;
-  disposeListeners: Array<() => void>;
-  targetPlayerFinishedCurrentMap: {
-    score: number;
-    pass: boolean;
-    finishedAt: number;
-  } | null;
-  cleanupPromise?: Promise<void>;
-  endEventEmitted?: boolean;
-  impossibilityAnnounced?: boolean;
+export interface BotClientLike extends EventEmitter {
+  createLobby: (name: string, privateLobby?: boolean) => Promise<MultiplayerChannelLike>;
+  getChannel?: (name: string) => BanchoChannelLike | undefined;
+  connect?: () => Promise<null>;
+  disconnect?: () => void;
 }
 
 interface PreviousStartCommand {
@@ -308,8 +289,9 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
     options.fetchScore ??
     (options.client ? createLazyLiveFetchScore() : getLiveDependencies().fetchScore);
   const events = new EventEmitter();
-  const activeRunsByUserId = new Map<number, ActiveRun>();
-  const activeRunsByLobbyId = new Map<number, ActiveRun>();
+  const runRegistry = createRunRegistry();
+  const activeRunsByUserId = runRegistry.byUserId;
+  const activeRunsByLobbyId = runRegistry.byLobbyId;
   const previousStartByUserId = new Map<number, PreviousStartCommand>();
   const runsPendingLobbyClose = new Set<ActiveRun>();
   const timings = {
@@ -386,6 +368,36 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
     );
   }
 
+  async function recordOpenLobbyForRun(run: ActiveRun) {
+    if (!run.lobby) {
+      return;
+    }
+
+    try {
+      await recordOpenLobby(
+        {
+          matchId: run.lobby.id,
+          userId: run.playerUserId,
+          courseId: run.course.id,
+        },
+        await getDb(),
+      );
+    } catch (error) {
+      logger.warn(
+        "dojo open lobby record failed",
+        getRunLogFields(run, { error, lobbyId: run.lobby.id }),
+      );
+    }
+  }
+
+  async function removeTrackedOpenLobby(matchId: number) {
+    try {
+      await removeOpenLobby(matchId, await getDb());
+    } catch (error) {
+      logger.warn("dojo open lobby removal failed", { error, lobbyId: matchId });
+    }
+  }
+
   type ManagedRunTimer = "countdownTimer" | "inactivityTimer" | "lobbyCloseTimer";
 
   function clearRunTimer(run: ActiveRun, timer: ManagedRunTimer) {
@@ -395,7 +407,7 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
     }
 
     clearTimeout(activeTimer);
-    run[timer] = undefined;
+    delete run[timer];
   }
 
   function scheduleRunTimer(
@@ -447,11 +459,22 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
   }
 
   function isTrackedRun(run: ActiveRun) {
-    return activeRunsByUserId.get(run.playerUserId) === run;
+    return runRegistry.isTracked(run);
   }
 
   function isActiveRun(run: ActiveRun) {
     return run.status !== "aborted" && isTrackedRun(run);
+  }
+
+  function getCurrentBeatmap(run: ActiveRun): CourseDefinition["beatmaps"][number] {
+    const beatmap = run.course.beatmaps[run.currentBeatmapIndex];
+    if (!beatmap) {
+      throw new Error(
+        `Missing beatmap at index ${run.currentBeatmapIndex} for course ${run.course.id}.`,
+      );
+    }
+
+    return beatmap;
   }
 
   function emitRunEnded(run: ActiveRun, event: RunEndedEvent) {
@@ -490,7 +513,7 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
     runtimeState.clientDisconnected = true;
     logger.warn("dojo client disconnected", { error });
 
-    for (const run of [...activeRunsByUserId.values()]) {
+    for (const run of runRegistry.snapshot()) {
       if (run.status === "aborted" || run.status === "finalizing") {
         continue;
       }
@@ -671,7 +694,7 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
       targetPlayerFinishedCurrentMap: null,
     };
 
-    activeRunsByUserId.set(run.playerUserId, run);
+    runRegistry.register(run);
     logger.info("dojo run created", getRunLogFields(run, { startedAt: run.startedAt }));
 
     const isRunAbortedDuringSetup = () =>
@@ -709,7 +732,9 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
       const lobbyChannel = await client.createLobby(lobbyTitle);
       run.lobby = lobbyChannel.lobby;
       await checkAborted();
-      activeRunsByLobbyId.set(run.lobby.id, run);
+      runRegistry.attachLobby(run);
+      await checkAborted();
+      await recordOpenLobbyForRun(run);
 
       await run.lobby.updateSettings();
       await checkAborted();
@@ -902,17 +927,17 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
     run.lobby.on("playerLeft", onPlayerLeft);
     run.lobby.on("matchFinished", onMatchFinished);
     run.lobby.on("matchAborted", onMatchAborted);
-    run.disposeListeners.push(() =>
+    runRegistry.addDispose(run, () =>
       run.lobby?.channel.removeListener("message", onLobbyChannelMessage),
     );
-    run.disposeListeners.push(() => run.lobby?.removeListener("playerJoined", onPlayerJoined));
-    run.disposeListeners.push(() => run.lobby?.removeListener("matchStarted", onMatchStarted));
-    run.disposeListeners.push(() => run.lobby?.removeListener("playerFinished", onPlayerFinished));
-    run.disposeListeners.push(() => run.lobby?.removeListener("playerLeft", onPlayerLeft));
-    run.disposeListeners.push(() =>
+    runRegistry.addDispose(run, () => run.lobby?.removeListener("playerJoined", onPlayerJoined));
+    runRegistry.addDispose(run, () => run.lobby?.removeListener("matchStarted", onMatchStarted));
+    runRegistry.addDispose(run, () => run.lobby?.removeListener("playerFinished", onPlayerFinished));
+    runRegistry.addDispose(run, () => run.lobby?.removeListener("playerLeft", onPlayerLeft));
+    runRegistry.addDispose(run, () =>
       run.lobby?.removeListener("matchFinished", onMatchFinished),
     );
-    run.disposeListeners.push(() =>
+    runRegistry.addDispose(run, () =>
       run.lobby?.removeListener("matchAborted", onMatchAborted),
     );
   }
@@ -922,7 +947,7 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
       throw new Error("Missing lobby state for active run.");
     }
 
-    const beatmap = run.course.beatmaps[run.currentBeatmapIndex];
+    const beatmap = getCurrentBeatmap(run);
     const hasConfirmedFinish = run.targetPlayerFinishedCurrentMap !== null;
     const scoreFetchOptions = hasConfirmedFinish
       ? {
@@ -1312,7 +1337,7 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
       throw new Error("Missing lobby state for active run.");
     }
 
-    const beatmap = run.course.beatmaps[run.currentBeatmapIndex];
+    const beatmap = getCurrentBeatmap(run);
     await safeSendLobbyMessage(
       run.lobby,
       `Map ${beatmap.ordinal}/${run.course.beatmaps.length}: beatmap ${beatmap.beatmapId} with ${formatAnnouncedMods(
@@ -1338,7 +1363,7 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
       throw new Error("Missing lobby state for active run.");
     }
 
-    const beatmap = run.course.beatmaps[run.currentBeatmapIndex];
+    const beatmap = getCurrentBeatmap(run);
 
     run.targetPlayerFinishedCurrentMap = null;
     if (status === "countdown") {
@@ -1390,7 +1415,7 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
     if (playerState === BanchoLobbyPlayerStates.NoMap) {
       await abortMissingMap(
         run,
-        run.course.beatmaps[run.currentBeatmapIndex]?.beatmapId,
+        getCurrentBeatmap(run).beatmapId,
       );
       return;
     }
@@ -1417,10 +1442,15 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
   }
 
   async function closeLobbyBestEffort(run: ActiveRun): Promise<void> {
-    if (!run.lobby || runtimeState.clientDisconnected) {
+    if (!run.lobby) {
       return;
     }
 
+    if (runtimeState.clientDisconnected) {
+      return;
+    }
+
+    const lobbyId = run.lobby.id;
     const closeResult = await Promise.race([
       run.lobby.closeLobby().then(
         () => ({ timedOut: false, error: null as Error | null }),
@@ -1438,8 +1468,9 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
     if (closeResult.timedOut) {
       logger.warn(
         "dojo lobby close timed out",
-        getRunLogFields(run, { lobbyId: run.lobby.id }),
+        getRunLogFields(run, { lobbyId }),
       );
+      await removeTrackedOpenLobby(lobbyId);
       return;
     }
 
@@ -1448,13 +1479,15 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
         "dojo lobby close failed",
         getRunLogFields(run, {
           error: closeResult.error,
-          lobbyId: run.lobby.id,
+          lobbyId,
         }),
       );
+      await removeTrackedOpenLobby(lobbyId);
       return;
     }
 
-    logger.info("dojo lobby closed", getRunLogFields(run, { lobbyId: run.lobby.id }));
+    await removeTrackedOpenLobby(lobbyId);
+    logger.info("dojo lobby closed", getRunLogFields(run, { lobbyId }));
   }
 
   async function abortQueuedCountdown(run: ActiveRun) {
@@ -1480,7 +1513,7 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
       logger.warn(
         "dojo player missing map",
         getRunLogFields(run, {
-          beatmapId: run.course.beatmaps[run.currentBeatmapIndex]?.beatmapId,
+          beatmapId: getCurrentBeatmap(run).beatmapId,
         }),
       );
     }
@@ -1546,14 +1579,8 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
       clearRunTimer(run, "inactivityTimer");
       clearRunTimer(run, "countdownTimer");
 
-      for (const dispose of run.disposeListeners.splice(0)) {
-        dispose();
-      }
-
-      activeRunsByUserId.delete(run.playerUserId);
-      if (run.lobby) {
-        activeRunsByLobbyId.delete(run.lobby.id);
-      }
+      runRegistry.disposeAll(run);
+      runRegistry.unregister(run);
 
       logger.info(
         "dojo run cleaned up",
@@ -1575,7 +1602,7 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
     clearRunTimer(run, "lobbyCloseTimer");
     runsPendingLobbyClose.add(run);
     scheduleRunTimer(run, "lobbyCloseTimer", delayMs, () => {
-      run.lobbyCloseTimer = undefined;
+      delete run.lobbyCloseTimer;
       void closeReleasedLobby(run).catch((error) => {
         logger.warn("dojo delayed lobby close failed", getRunLogFields(run, { error }));
       });
@@ -1709,7 +1736,6 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
     await terminateRun(run, {
       transition: "aborted",
       cleanupReason: reason,
-      closeDelayMs: opts?.closeDelayMs,
       event: {
         runId: run.runId,
         playerUserId: run.playerUserId,
@@ -1727,6 +1753,7 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
         },
         skipWhenNoMaps: true,
       },
+      ...(opts?.closeDelayMs !== undefined ? { closeDelayMs: opts.closeDelayMs } : {}),
     });
   }
 
@@ -1739,6 +1766,72 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
     return runtimeState.databasePromise;
   }
 
+  async function cleanupStaleOpenLobbies() {
+    try {
+      const db = await getDb();
+      const rows = await listOpenLobbies(db);
+      if (rows.length === 0) {
+        return;
+      }
+
+      if (typeof client.getChannel !== "function") {
+        logger.warn("dojo open lobby cleanup skipped (client has no getChannel)");
+        return;
+      }
+
+      const getChannel = client.getChannel.bind(client) as (
+        name: string,
+      ) => BanchoChannelLike | undefined;
+      for (const row of rows) {
+        const channelName = `#mp_${row.matchId}`;
+        const channel = getChannel(channelName);
+        if (!channel) {
+          logger.warn("dojo open lobby getChannel returned undefined", {
+            lobbyId: row.matchId,
+            channelName,
+          });
+          continue;
+        }
+
+        try {
+          await channel.join();
+        } catch (error) {
+          logger.warn("dojo open lobby join failed", {
+            error,
+            lobbyId: row.matchId,
+            channelName,
+          });
+          continue;
+        }
+
+        try {
+          if (channel.lobby) {
+            await channel.lobby.closeLobby();
+          } else {
+            await channel.sendMessage("!mp close");
+          }
+        } catch (error) {
+          logger.warn("dojo open lobby close failed", {
+            error,
+            lobbyId: row.matchId,
+            channelName,
+          });
+        }
+
+        await removeTrackedOpenLobby(row.matchId);
+        void channel.leave().catch((error) => {
+          logger.warn("dojo open lobby leave failed", {
+            error,
+            lobbyId: row.matchId,
+            channelName,
+          });
+        });
+      }
+    } catch (error) {
+      logger.warn("dojo open lobby cleanup failed", { error });
+    }
+  }
+
   return {
     async start() {
       runtimeState.clientDisconnected = false;
@@ -1748,13 +1841,14 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
       if (options.connectOnStart ?? Boolean(client.connect)) {
         await connectWithTimeout(client);
       }
+      await cleanupStaleOpenLobbies();
     },
     async stop() {
       client.removeListener("PM", onPrivateMessage);
       client.removeListener("disconnected", onClientDisconnected);
       client.removeListener("state", onClientState);
 
-      const activeRuns = [...activeRunsByUserId.values()];
+      const activeRuns = runRegistry.snapshot();
       for (const run of activeRuns) {
         transitionRunStatus(run, "aborted");
       }
@@ -1997,7 +2091,7 @@ function requiredEnv(name: string) {
 }
 
 function getCoursePageUrl(system: DanSystemDefinition, course: CourseDefinition) {
-  const baseUrl = (process.env.DOJO_SITE_URL ?? "http://localhost:3000").replace(/\/$/, "");
+  const baseUrl = (process.env["DOJO_SITE_URL"] ?? "http://localhost:3000").replace(/\/$/, "");
   return `${baseUrl}/dan/${encodeURIComponent(
     kebabizeName(system.name),
   )}?course=${encodeURIComponent(kebabizeName(course.name))}`;
