@@ -84,12 +84,12 @@ function parseDanSystem(value: unknown, source: string): DanSystemSeed {
   const record = expectRecord(value, "course system", source);
 
   return {
-    id: expectString(record.id, "id", source),
-    name: expectDisplayName(record.name, "name", source),
-    slug: expectString(record.slug, "slug", source),
-    description: expectString(record.description, "description", source),
-    status: expectDanSystemStatus(record.status, "status", source),
-    courses: expectArray(record.courses, "courses", source).map((course, index) =>
+    id: expectString(record["id"], "id", source),
+    name: expectDisplayName(record["name"], "name", source),
+    slug: expectString(record["slug"], "slug", source),
+    description: expectString(record["description"], "description", source),
+    status: expectDanSystemStatus(record["status"], "status", source),
+    courses: expectArray(record["courses"], "courses", source).map((course, index) =>
       parseCourse(course, `${source} courses[${index}]`),
     ),
   };
@@ -97,12 +97,12 @@ function parseDanSystem(value: unknown, source: string): DanSystemSeed {
 
 function parseCourse(value: unknown, source: string): CourseSeed {
   const record = expectRecord(value, "course", source);
-  const scoreModel = expectScoreModel(record.scoreModel, "scoreModel", source);
-  const beatmaps = expectArray(record.beatmaps, "beatmaps", source).map(
+  const scoreModel = expectScoreModel(record["scoreModel"], "scoreModel", source);
+  const beatmaps = expectArray(record["beatmaps"], "beatmaps", source).map(
     (beatmap, index) => parseCourseBeatmap(beatmap, `${source} beatmaps[${index}]`),
   );
   const overallPassConditions = expectCourseConditionList(
-    record.overallPassConditions,
+    record["overallPassConditions"],
     "overallPassConditions",
     source,
     beatmaps.length,
@@ -111,12 +111,12 @@ function parseCourse(value: unknown, source: string): CourseSeed {
   assertScorev1HasNoScoreConditions(scoreModel, beatmaps, overallPassConditions, source);
 
   return {
-    id: expectString(record.id, "id", source),
-    name: expectDisplayName(record.name, "name", source),
-    slug: expectString(record.slug, "slug", source),
-    description: expectString(record.description, "description", source),
-    tags: optionalStringArray(record.tags, "tags", source, []),
-    ordinal: expectInteger(record.ordinal, "ordinal", source),
+    id: expectString(record["id"], "id", source),
+    name: expectDisplayName(record["name"], "name", source),
+    slug: expectString(record["slug"], "slug", source),
+    description: expectString(record["description"], "description", source),
+    tags: optionalStringArray(record["tags"], "tags", source, []),
+    ordinal: expectInteger(record["ordinal"], "ordinal", source),
     scoreModel,
     overallPassConditions,
     beatmaps,
@@ -127,22 +127,22 @@ function parseCourseBeatmap(value: unknown, source: string): CourseBeatmapSeed {
   const record = expectRecord(value, "beatmap", source);
 
   return {
-    id: expectString(record.id, "id", source),
-    beatmapId: expectInteger(record.beatmapId, "beatmapId", source),
-    mods: validateCourseMods(expectString(record.mods, "mods", source)),
-    freemod: optionalBoolean(record.freemod, "freemod", source, false),
+    id: expectString(record["id"], "id", source),
+    beatmapId: expectInteger(record["beatmapId"], "beatmapId", source),
+    mods: validateCourseMods(expectString(record["mods"], "mods", source)),
+    freemod: optionalBoolean(record["freemod"], "freemod", source, false),
     passConditions: expectMapConditionList(
-      record.passConditions,
+      record["passConditions"],
       "passConditions",
       source,
     ),
-    ordinal: expectInteger(record.ordinal, "ordinal", source),
-    title: optionalString(record.title, "title", source, ""),
-    artist: optionalString(record.artist, "artist", source, ""),
-    difficultyName: optionalString(record.difficultyName, "difficultyName", source, ""),
-    mapper: optionalString(record.mapper, "mapper", source, ""),
-    coverUrl: optionalString(record.coverUrl, "coverUrl", source, ""),
-    annotations: expectStringArray(record.annotations, "annotations", source),
+    ordinal: expectInteger(record["ordinal"], "ordinal", source),
+    title: optionalString(record["title"], "title", source, ""),
+    artist: optionalString(record["artist"], "artist", source, ""),
+    difficultyName: optionalString(record["difficultyName"], "difficultyName", source, ""),
+    mapper: optionalString(record["mapper"], "mapper", source, ""),
+    coverUrl: optionalString(record["coverUrl"], "coverUrl", source, ""),
+    annotations: expectStringArray(record["annotations"], "annotations", source),
   };
 }
 
@@ -302,11 +302,11 @@ function expectCourseConditionList(
 
 function parseMapCondition(value: unknown, source: string): MapPassCondition {
   const record = expectRecord(value, "map pass condition", source);
-  const type = expectMapConditionType(record.type, "type", source);
+  const type = expectMapConditionType(record["type"], "type", source);
 
   return {
     type,
-    threshold: expectConditionThreshold(type, record.threshold, "threshold", source, null),
+    threshold: expectConditionThreshold(type, record["threshold"], "threshold", source, null),
   };
 }
 
@@ -316,13 +316,13 @@ function parseCourseCondition(
   beatmapCount: number,
 ): CoursePassCondition {
   const record = expectRecord(value, "course pass condition", source);
-  const type = expectCourseConditionType(record.type, "type", source);
+  const type = expectCourseConditionType(record["type"], "type", source);
 
   return {
     type,
     threshold: expectConditionThreshold(
       type,
-      record.threshold,
+      record["threshold"],
       "threshold",
       source,
       beatmapCount,

@@ -6,12 +6,18 @@
   "engines": {
     "node": ">=20.0.0"
   },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "better-sqlite3"
+    ]
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "bot": "node --import tsx src/bot/index.ts",
     "bot:dev": "node --import tsx src/bot/dev-trigger.ts",
+    "typecheck": "tsc --noEmit --incremental false",
     "test": "node --import tsx --test tests/*.test.js tests/*.test.ts"
   },
   "dependencies": {

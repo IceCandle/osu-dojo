@@ -61,10 +61,15 @@ export function parseDevTriggerArgs(args: string[]): DevTriggerArgs {
   }
 
   if (args.length === 2) {
+    const [systemNameKey, courseNameKey] = args;
+    if (!systemNameKey || !courseNameKey) {
+      return { type: "usage-error" };
+    }
+
     return {
       type: "start",
-      systemNameKey: args[0],
-      courseNameKey: args[1],
+      systemNameKey,
+      courseNameKey,
     };
   }
 

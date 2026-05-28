@@ -70,6 +70,9 @@ function createOptions(
     totalBudgetMs: number;
     perCallTimeoutMs: number;
     retryDelayMs: number;
+    retryBackoffFactor: number;
+    retryDelayMaxMs: number;
+    random: () => number;
   }> = {},
 ) {
   return {
@@ -81,7 +84,14 @@ function createOptions(
     retryDelayMs: overrides.retryDelayMs ?? 10,
     fetchMatch,
     now: clock.now,
+    random: overrides.random ?? (() => 1),
     sleep: clock.sleep,
+    ...(overrides.retryBackoffFactor !== undefined
+      ? { retryBackoffFactor: overrides.retryBackoffFactor }
+      : {}),
+    ...(overrides.retryDelayMaxMs !== undefined
+      ? { retryDelayMaxMs: overrides.retryDelayMaxMs }
+      : {}),
   };
 }
 

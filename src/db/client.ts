@@ -99,6 +99,13 @@ CREATE TABLE IF NOT EXISTS map_results (
   created_at INTEGER NOT NULL DEFAULT (unixepoch() * 1000)
 );
 
+CREATE TABLE IF NOT EXISTS open_lobbies (
+  match_id INTEGER PRIMARY KEY,
+  user_id INTEGER NOT NULL,
+  course_id TEXT NOT NULL,
+  opened_at INTEGER NOT NULL DEFAULT (unixepoch() * 1000)
+);
+
 CREATE INDEX IF NOT EXISTS courses_system_ordinal_idx
   ON courses(dan_system_id, ordinal);
 
@@ -129,11 +136,16 @@ function resolveDatabaseSource(url: string): string {
 }
 
 async function initializeDatabaseBundle(
-  url = process.env.DATABASE_URL ?? "file:./dojo.db",
+  url = process.env["DATABASE_URL"] ?? "file:./dojo.db",
   seedOptions = getSeedOptionsFromEnvironment(),
 ): Promise<DatabaseBundle> {
-  const sqlite = new Database(resolveDatabaseSource(url));
+  const source = resolveDatabaseSource(url);
+  const sqlite = new Database(source);
   sqlite.pragma("foreign_keys = ON");
+  if (source !== ":memory:") {
+    sqlite.pragma("journal_mode = WAL");
+    sqlite.pragma("busy_timeout = 5000");
+  }
   sqlite.exec(CREATE_TABLES_SQL);
   migrateDatabase(sqlite);
 
@@ -270,6 +282,14 @@ function migrateDatabase(sqlite: BetterSqliteConnection) {
     "pass_condition_type",
     "pass_condition_threshold",
   ]);
+  sqlite.exec(`
+    CREATE TABLE IF NOT EXISTS open_lobbies (
+      match_id INTEGER PRIMARY KEY,
+      user_id INTEGER NOT NULL,
+      course_id TEXT NOT NULL,
+      opened_at INTEGER NOT NULL DEFAULT (unixepoch() * 1000)
+    );
+  `);
   ensureIndexes(sqlite);
 }
 
@@ -570,7 +590,11 @@ function addColumnIfMissing(
   columns: string[],
   definition: string,
 ) {
-  const column = definition.split(/\s+/, 1)[0];
+  const [column] = definition.split(/\s+/, 1);
+  if (!column) {
+    throw new Error(`Invalid column definition for ${table}: ${definition}`);
+  }
+
   if (!columns.includes(column)) {
     sqlite.exec(`ALTER TABLE ${table} ADD COLUMN ${definition}`);
     columns.push(column);
@@ -578,7 +602,7 @@ function addColumnIfMissing(
 }
 
 function getSeedOptionsFromEnvironment(): SeedOptions {
-  const apiKey = process.env.OSU_API_KEY;
+  const apiKey = process.env["OSU_API_KEY"];
 
   return apiKey
     ? {

@@ -1,7 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { createTestDatabase } from "@/db/client";
+import { getCourseByNameKey } from "@/db/queries";
 import { assessCoursePassability } from "@/lib/judging";
 import type { CourseDefinition } from "@/lib/domain";
+import { createTempDatabaseUrl } from "./helpers/tempDatabase";
 
 test("assessCoursePassability returns passable for empty mapResults", () => {
   const result = assessCoursePassability(course(2), []);
@@ -135,6 +138,24 @@ test("assessCoursePassability stacks reasons in declared order", () => {
     { type: "totalMissCountExceeded", value: 2, threshold: 1 },
     { type: "courseAccuracyUnreachable", threshold: 190, bestPossible: 100 },
   ]);
+});
+
+test("course condition parse errors include the course slug", async () => {
+  const temp = createTempDatabaseUrl("osudojo-conditions-");
+
+  try {
+    const { db } = await createTestDatabase(temp.url);
+    db.$client
+      .prepare("UPDATE courses SET overall_pass_conditions = ? WHERE slug = ?")
+      .run("[", "test-1dan");
+
+    await assert.rejects(
+      getCourseByNameKey("test", "1st", db),
+      /course pass conditions for course "test-1dan" contains invalid JSON/,
+    );
+  } finally {
+    temp.cleanup();
+  }
 });
 
 function course(

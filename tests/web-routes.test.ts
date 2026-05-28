@@ -620,7 +620,7 @@ test("getRankingByNameKey keeps only each player's best run", async () => {
 
 test("DanCoursePage renders the integrated leaderboard and empty state on the system page", async () => {
   const temp = createTempDatabaseUrl();
-  const previousDatabaseUrl = process.env.DATABASE_URL;
+  const previousDatabaseUrl = process.env["DATABASE_URL"];
   const previousBundle = globalThis.__osuDojoDatabaseBundle;
 
   try {
@@ -696,7 +696,7 @@ test("DanCoursePage renders the integrated leaderboard and empty state on the sy
       db,
     );
 
-    process.env.DATABASE_URL = temp.url;
+    process.env["DATABASE_URL"] = temp.url;
     globalThis.__osuDojoDatabaseBundle = databaseBundle;
 
     const courseHtml = renderToStaticMarkup(
@@ -747,7 +747,7 @@ test("DanCoursePage renders the integrated leaderboard and empty state on the sy
     assert.match(emptyHtml, /No runs saved yet/);
     assert.match(emptyHtml, /!dojo start test ranking-empty/);
   } finally {
-    process.env.DATABASE_URL = previousDatabaseUrl;
+    process.env["DATABASE_URL"] = previousDatabaseUrl;
     globalThis.__osuDojoDatabaseBundle = previousBundle;
     temp.cleanup();
   }
@@ -755,7 +755,7 @@ test("DanCoursePage renders the integrated leaderboard and empty state on the sy
 
 test("DanCoursePage renders an empty state for systems with no courses", async () => {
   const temp = createTempDatabaseUrl();
-  const previousDatabaseUrl = process.env.DATABASE_URL;
+  const previousDatabaseUrl = process.env["DATABASE_URL"];
   const previousBundle = globalThis.__osuDojoDatabaseBundle;
 
   try {
@@ -777,7 +777,7 @@ test("DanCoursePage renders an empty state for systems with no courses", async (
     await clearAllData(db);
     await seedDatabase(db, systems, { suppressMissingObjectCountWarnings: true });
 
-    process.env.DATABASE_URL = temp.url;
+    process.env["DATABASE_URL"] = temp.url;
     globalThis.__osuDojoDatabaseBundle = databaseBundle;
 
     const html = renderToStaticMarkup(
@@ -794,7 +794,7 @@ test("DanCoursePage renders an empty state for systems with no courses", async (
     assert.doesNotMatch(html, /Course sequence/);
     assert.doesNotMatch(html, /Top runs/);
   } finally {
-    process.env.DATABASE_URL = previousDatabaseUrl;
+    process.env["DATABASE_URL"] = previousDatabaseUrl;
     globalThis.__osuDojoDatabaseBundle = previousBundle;
     temp.cleanup();
   }

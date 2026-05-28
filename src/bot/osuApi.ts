@@ -27,8 +27,11 @@ export interface FetchScoreOptions {
   totalBudgetMs: number;
   perCallTimeoutMs: number;
   retryDelayMs: number;
+  retryBackoffFactor?: number;
+  retryDelayMaxMs?: number;
   fetchMatch: (signal: AbortSignal) => Promise<string>;
   now?: () => number;
+  random?: () => number;
   sleep?: (milliseconds: number) => Promise<void>;
 }
 
@@ -124,9 +127,12 @@ export async function fetchLatestPlayerMapScore(
   options: FetchScoreOptions,
 ): Promise<NormalizedPlayerMapScore> {
   const now = options.now ?? Date.now;
+  const random = options.random ?? Math.random;
   const sleep = options.sleep ?? defaultSleep;
   const startedAt = now();
   const deadline = startedAt + options.totalBudgetMs;
+  const retryBackoffFactor = options.retryBackoffFactor ?? 2;
+  const retryDelayMaxMs = options.retryDelayMaxMs ?? 8_000;
   let attempts = 0;
   let lastUnderlyingError: Error | null = null;
   let sawGameWithoutPlayerScore:
@@ -173,11 +179,19 @@ export async function fetchLatestPlayerMapScore(
       lastUnderlyingError = normalizeUnderlyingError(error);
     }
 
-    if (now() + options.retryDelayMs >= deadline) {
+    const retryDelayMs = getRetryDelayMs({
+      attempt: attempts,
+      baseDelayMs: options.retryDelayMs,
+      factor: retryBackoffFactor,
+      maxDelayMs: retryDelayMaxMs,
+      random,
+    });
+
+    if (now() + retryDelayMs >= deadline) {
       break;
     }
 
-    await sleep(options.retryDelayMs);
+    await sleep(retryDelayMs);
   }
 
   if (sawGameWithoutPlayerScore) {
@@ -201,6 +215,21 @@ export async function fetchLatestPlayerMapScore(
     attempts,
     lastUnderlyingError,
   });
+}
+
+function getRetryDelayMs(args: {
+  attempt: number;
+  baseDelayMs: number;
+  factor: number;
+  maxDelayMs: number;
+  random: () => number;
+}) {
+  const cap = Math.min(
+    args.maxDelayMs,
+    args.baseDelayMs * args.factor ** Math.max(0, args.attempt - 1),
+  );
+  const jitter = Math.max(0, Math.min(1, args.random()));
+  return Math.floor(jitter * cap);
 }
 
 export async function fetchMatchText(
@@ -293,25 +322,25 @@ function parseMatchPayload(text: string): { games: LegacyMultiGame[] } {
     throw new FetchTransportError(String(payload.error), false);
   }
 
-  if (!isRecord(payload) || !Array.isArray(payload.games)) {
+  if (!isRecord(payload) || !Array.isArray(payload["games"])) {
     throw new Error("match payload: invalid shape");
   }
 
   return {
-    games: payload.games.map(parseGame),
+    games: payload["games"].map(parseGame),
   };
 }
 
 function parseGame(value: unknown): LegacyMultiGame {
-  if (!isRecord(value) || !Array.isArray(value.scores)) {
+  if (!isRecord(value) || !Array.isArray(value["scores"])) {
     throw new Error("game: invalid shape");
   }
 
   return {
-    id: parseRequiredNonNegativeInteger(value.game_id, "game_id"),
-    beatmapId: parseRequiredNonNegativeInteger(value.beatmap_id, "beatmap_id"),
-    mods: parseOptionalNonNegativeInteger(value.mods, "mods"),
-    scores: value.scores.map(parseScore),
+    id: parseRequiredNonNegativeInteger(value["game_id"], "game_id"),
+    beatmapId: parseRequiredNonNegativeInteger(value["beatmap_id"], "beatmap_id"),
+    mods: parseOptionalNonNegativeInteger(value["mods"], "mods"),
+    scores: value["scores"].map(parseScore),
   };
 }
 
@@ -321,15 +350,15 @@ function parseScore(value: unknown): LegacyMultiScore {
   }
 
   return {
-    userId: parseRequiredNonNegativeInteger(value.user_id, "user_id"),
-    score: parseRequiredNonNegativeInteger(value.score, "score"),
-    enabledMods: parseOptionalNonNegativeInteger(value.enabled_mods, "enabled_mods"),
-    maxCombo: parseRequiredNonNegativeInteger(value.maxcombo, "maxcombo"),
-    count300: parseRequiredNonNegativeInteger(value.count300, "count300"),
-    count100: parseRequiredNonNegativeInteger(value.count100, "count100"),
-    count50: parseRequiredNonNegativeInteger(value.count50, "count50"),
-    countMiss: parseRequiredNonNegativeInteger(value.countmiss, "countmiss"),
-    pass: parsePass(value.pass),
+    userId: parseRequiredNonNegativeInteger(value["user_id"], "user_id"),
+    score: parseRequiredNonNegativeInteger(value["score"], "score"),
+    enabledMods: parseOptionalNonNegativeInteger(value["enabled_mods"], "enabled_mods"),
+    maxCombo: parseRequiredNonNegativeInteger(value["maxcombo"], "maxcombo"),
+    count300: parseRequiredNonNegativeInteger(value["count300"], "count300"),
+    count100: parseRequiredNonNegativeInteger(value["count100"], "count100"),
+    count50: parseRequiredNonNegativeInteger(value["count50"], "count50"),
+    countMiss: parseRequiredNonNegativeInteger(value["countmiss"], "countmiss"),
+    pass: parsePass(value["pass"]),
   };
 }
 

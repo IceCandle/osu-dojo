@@ -830,14 +830,14 @@ function systemFixture(overrides: Record<string, unknown> = {}) {
         ordinal: 1,
         scoreModel: "scorev2",
         overallPassConditions:
-          overrides.overallPassConditions ?? [{ type: "courseAccuracy", threshold: 95 }],
+          overrides["overallPassConditions"] ?? [{ type: "courseAccuracy", threshold: 95 }],
         beatmaps: [
           {
             id: "beatmap-conditions",
             beatmapId: 1,
             mods: "",
             passConditions:
-              overrides.passConditions ?? [{ type: "accuracy", threshold: 95 }],
+              overrides["passConditions"] ?? [{ type: "accuracy", threshold: 95 }],
             ordinal: 1,
             annotations: ["x"],
           },

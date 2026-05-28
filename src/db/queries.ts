@@ -7,6 +7,7 @@ import {
   courses,
   danSystems,
   mapResults,
+  openLobbies,
   runs,
 } from "@/db/schema";
 import type {
@@ -114,6 +115,7 @@ export async function listDanSystemsWithCourses(db?: AppDatabase) {
         overallPassConditions: parseConditionList(
           row.overallPassConditions ?? "[]",
           "course",
+          { courseSlug: row.slug ?? "" },
         ),
       });
     }
@@ -262,7 +264,9 @@ async function hydrateCourseRows(
     tags: parseTags(row.tags),
     ordinal: row.courseOrdinal,
     scoreModel: row.scoreModel ?? "scorev2",
-    overallPassConditions: parseConditionList(row.overallPassConditions, "course"),
+    overallPassConditions: parseConditionList(row.overallPassConditions, "course", {
+      courseSlug: row.slug,
+    }),
     beatmaps: (beatmapsByCourseId.get(row.courseId) ?? []).map(parseBeatmapRow),
   }));
 }
@@ -456,6 +460,31 @@ export async function storeCourseRunResult(
   };
 }
 
+export async function recordOpenLobby(
+  input: { matchId: number; userId: number; courseId: string },
+  db?: AppDatabase,
+) {
+  const database = await useDb(db);
+  database.$client
+    .prepare(
+      `
+      INSERT OR REPLACE INTO open_lobbies (match_id, user_id, course_id, opened_at)
+      VALUES (?, ?, ?, unixepoch() * 1000)
+      `,
+    )
+    .run(input.matchId, input.userId, input.courseId);
+}
+
+export async function removeOpenLobby(matchId: number, db?: AppDatabase) {
+  const database = await useDb(db);
+  await database.delete(openLobbies).where(eq(openLobbies.matchId, matchId));
+}
+
+export async function listOpenLobbies(db?: AppDatabase) {
+  const database = await useDb(db);
+  return database.select().from(openLobbies).orderBy(asc(openLobbies.openedAt));
+}
+
 async function getMapsByRunId(runIds: string[], database: AppDatabase) {
   const mapRows = await database
     .select()
@@ -493,7 +522,9 @@ function parseBeatmapRow(row: {
     beatmapId: row.beatmapId,
     mods: row.mods,
     freemod: row.freemod,
-    passConditions: parseConditionList(row.passConditions, "map"),
+    passConditions: parseConditionList(row.passConditions, "map", {
+      beatmapId: row.beatmapId,
+    }),
     ordinal: row.ordinal,
     title: row.title ?? "",
     artist: row.artist ?? "",
@@ -508,54 +539,77 @@ function parseBeatmapRow(row: {
 function parseMapResultRow(row: typeof mapResults.$inferSelect): JudgedMapResult {
   return {
     ...row,
-    passConditions: parseConditionList(row.passConditions, "map"),
+    passConditions: parseConditionList(row.passConditions, "map", {
+      beatmapId: row.beatmapId,
+    }),
   };
 }
 
-function parseConditionList(raw: string, kind: "map"): MapPassCondition[];
-function parseConditionList(raw: string, kind: "course"): CoursePassCondition[];
+type ConditionParseContext = {
+  courseSlug?: string;
+  beatmapId?: number;
+};
+
+function parseConditionList(
+  raw: string,
+  kind: "map",
+  context?: ConditionParseContext,
+): MapPassCondition[];
+function parseConditionList(
+  raw: string,
+  kind: "course",
+  context?: ConditionParseContext,
+): CoursePassCondition[];
 function parseConditionList(
   raw: string,
   kind: "map" | "course",
+  context: ConditionParseContext = {},
 ): MapPassCondition[] | CoursePassCondition[] {
-  const parsed = JSON.parse(raw) as unknown;
+  const label = formatConditionParseLabel(kind, context);
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw) as unknown;
+  } catch (error) {
+    throw new Error(`${label} contains invalid JSON: ${toErrorMessage(error)}`);
+  }
+
   if (!Array.isArray(parsed)) {
-    throw new Error(`${kind} pass conditions must be stored as an array.`);
+    throw new Error(`${label} must be stored as an array.`);
   }
 
   if (kind === "map") {
-    return parsed.map((condition) => parseStoredMapCondition(condition, kind));
+    return parsed.map((condition) => parseStoredMapCondition(condition, label));
   }
 
-  return parsed.map((condition) => parseStoredCourseCondition(condition, kind));
+  return parsed.map((condition) => parseStoredCourseCondition(condition, label));
 }
 
 function parseStoredCondition(
   condition: unknown,
-  kind: "map" | "course",
+  label: string,
 ): { type: string; threshold: number } {
   if (!condition || typeof condition !== "object" || Array.isArray(condition)) {
-    throw new Error(`${kind} pass condition must be an object.`);
+    throw new Error(`${label} entry must be an object.`);
   }
 
   const record = condition as Record<string, unknown>;
-  if (typeof record.type !== "string" || typeof record.threshold !== "number") {
-    throw new Error(`${kind} pass condition must include type and threshold.`);
+  if (typeof record["type"] !== "string" || typeof record["threshold"] !== "number") {
+    throw new Error(`${label} entry must include type and threshold.`);
   }
 
   return {
-    type: record.type,
-    threshold: record.threshold,
+    type: record["type"],
+    threshold: record["threshold"],
   };
 }
 
 function parseStoredMapCondition(
   condition: unknown,
-  kind: "map",
+  label: string,
 ): MapPassCondition {
-  const record = parseStoredCondition(condition, kind);
+  const record = parseStoredCondition(condition, label);
   if (!isMapPassConditionType(record.type)) {
-    throw new Error(`${kind} pass condition type "${record.type}" is not valid.`);
+    throw new Error(`${label} type "${record.type}" is not valid.`);
   }
 
   return {
@@ -566,17 +620,36 @@ function parseStoredMapCondition(
 
 function parseStoredCourseCondition(
   condition: unknown,
-  kind: "course",
+  label: string,
 ): CoursePassCondition {
-  const record = parseStoredCondition(condition, kind);
+  const record = parseStoredCondition(condition, label);
   if (!isCoursePassConditionType(record.type)) {
-    throw new Error(`${kind} pass condition type "${record.type}" is not valid.`);
+    throw new Error(`${label} type "${record.type}" is not valid.`);
   }
 
   return {
     type: record.type,
     threshold: record.threshold,
   };
+}
+
+function formatConditionParseLabel(
+  kind: "map" | "course",
+  context: ConditionParseContext,
+) {
+  if (kind === "course" && context.courseSlug) {
+    return `course pass conditions for course "${context.courseSlug}"`;
+  }
+
+  if (kind === "map" && context.beatmapId !== undefined) {
+    return `map pass conditions for beatmap ${context.beatmapId}`;
+  }
+
+  return `${kind} pass conditions`;
+}
+
+function toErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function parseTags(value: string): string[] {
