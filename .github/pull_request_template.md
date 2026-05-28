@@ -10,10 +10,7 @@
 
 영향을 받는 area:
 
-- [ ] Bot
-- [ ] DB
-- [ ] Web
-- [ ] Docs
+- Bot / DB / Web / Docs 중 해당 항목만 남기거나 쉼표로 적어주세요.
 
 관련 issue:
 
@@ -29,8 +26,8 @@ pnpm test
 
 Manual checks:
 
-- [ ] No unrelated files were changed
-- [ ] No new dependencies were added without justification
+- Unrelated files:
+- New dependencies:
 
 ## Not Tested
 
