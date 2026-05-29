@@ -62,9 +62,6 @@ export function buildPreMapGuidance({
 
   if (beatmap.freemod) {
     lines.push("FreeMod allowed: NF optional, NM, HD, HR, HDHR");
-    lines.push(
-      "FreeMod active: add NF if you want the bot to receive your score after HP reaches 0.",
-    );
   }
 
   if (beatmap.freemod && useMergedFinalScoreTarget) {

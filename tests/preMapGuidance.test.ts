@@ -100,7 +100,7 @@ test("buildPreMapGuidance converts fixed DT ScoreV2 targets to raw score units",
   );
 });
 
-test("buildPreMapGuidance emits adjusted FreeMod target and NF guidance", () => {
+test("buildPreMapGuidance emits adjusted FreeMod target and allowed choices", () => {
   const beatmap = createBeatmap({
     freemod: true,
     passConditions: [{ type: "score", threshold: 1_000_000 }],
@@ -117,7 +117,6 @@ test("buildPreMapGuidance emits adjusted FreeMod target and NF guidance", () => 
     [
       "Targets: adjusted score >= 1,000,000",
       "FreeMod allowed: NF optional, NM, HD, HR, HDHR",
-      "FreeMod active: add NF if you want the bot to receive your score after HP reaches 0.",
     ],
   );
 });
@@ -170,7 +169,6 @@ test("buildPreMapGuidance emits FreeMod final score target in source order with 
     [
       "Targets: accuracy >= 95.00%, adjusted score >= 1,000,000, miss <= 5",
       "FreeMod allowed: NF optional, NM, HD, HR, HDHR",
-      "FreeMod active: add NF if you want the bot to receive your score after HP reaches 0.",
       "Raw score by choice: NM 1,000,000 / HD 1,060,000 / HR 1,100,000 / HDHR 1,166,000",
     ],
   );
@@ -199,7 +197,6 @@ test("buildPreMapGuidance appends FreeMod final course-only totalScore target wi
     [
       "Targets: accuracy >= 95.00%, miss <= 5, adjusted score >= 1,000,000",
       "FreeMod allowed: NF optional, NM, HD, HR, HDHR",
-      "FreeMod active: add NF if you want the bot to receive your score after HP reaches 0.",
       "Raw score by choice: NM 1,000,000 / HD 1,060,000 / HR 1,100,000 / HDHR 1,166,000",
     ],
   );
@@ -227,7 +224,6 @@ test("buildPreMapGuidance omits zero final totalScore target and FreeMod raw cho
     [
       "Targets: accuracy >= 95.00%",
       "FreeMod allowed: NF optional, NM, HD, HR, HDHR",
-      "FreeMod active: add NF if you want the bot to receive your score after HP reaches 0.",
     ],
   );
 });

@@ -8,11 +8,10 @@ export type DojoCommand =
   | StartCommand
   | { type: "help" }
   | { type: "prev" }
-  | { type: "skip" }
   | { type: "invalid" };
 
 export const DOJO_USAGE_LINE =
-  "DM: !dojo start <system-name> <course-name> | !dojo prev | !dojo help. In the lobby chat: !dojo skip.";
+  "DM: !dojo start <system-name> <course-name> | !dojo prev | !dojo help. In the lobby, press Ready to start early.";
 
 export function parseDojoCommand(message: string): DojoCommand | null {
   const trimmedMessage = message.trim();
@@ -43,10 +42,6 @@ export function parseDojoCommand(message: string): DojoCommand | null {
 
   if (/^!dojo\s+prev\s*$/i.test(trimmedMessage)) {
     return { type: "prev" };
-  }
-
-  if (/^!dojo\s+skip\s*$/i.test(trimmedMessage)) {
-    return { type: "skip" };
   }
 
   return { type: "invalid" };
