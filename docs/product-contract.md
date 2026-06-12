@@ -81,6 +81,7 @@ CourseRun (id, userId, courseId, passed, timestamp, matchId?)
 - 플레이어는 멀티플레이어 로비에서 osu! 기본 Ready 버튼을 눌러 첫 map 또는 map 사이의 남은 시작 대기 시간을 건너뜁니다.
 - 플레이어가 이미 진행 중인 run이 있는 상태에서 `!dojo start`를 다시 보내면, bot은 이전 방을 닫고 새 방을 만듭니다. resolved map이 있으면 이전 run은 DNF로 저장됩니다.
 - 플레이어가 로비에서 나가면 현재 run이 중단됩니다.
+- 위와 같이 중단되었거나, 진행 중이던 run이 프로세스 재시작, Bancho 연결 끊김, 매치 중단, score 미발견, score API 지연 등으로 끊기면 bot은 그 run을 이어서 복구하지 않습니다. 가능한 경우 남은 로비를 정리하고, 플레이어는 `!dojo start`로 새 run을 시작합니다. 런타임이 중단을 처리해 run을 저장한 경우에는 저장된 map 결과를 기준으로 pass/fail/DNF가 계산되며, 저장할 run 상태나 map 결과가 없으면 run 결과를 저장하지 않습니다.
 - bot은 `osu!dojo: <system_name> / <course_name>` 제목의 멀티플레이어 방을 만듭니다.
 
 ### AC2: Course Sequencing
