@@ -101,12 +101,6 @@ interface LobbyChannelLike extends EventEmitter {
   sendMessage: (message: string) => Promise<null>;
 }
 
-interface LobbyChannelMessageLike {
-  user: BotUserLike;
-  message: string;
-  self: boolean;
-}
-
 export interface LobbyLike extends EventEmitter {
   id: number;
   channel: LobbyChannelLike;
@@ -552,14 +546,6 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
       return;
     }
 
-    if (command.type === "skip") {
-      await safeSendUserMessage(
-        message.user,
-        "Use !dojo skip in the multiplayer lobby chat.",
-      );
-      return;
-    }
-
     const playerIdentity = await resolvePlayerIdentity(message.user);
 
     if (command.type === "prev") {
@@ -789,49 +775,6 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
       return;
     }
 
-    const handleLobbySkip = async (user: BotUserLike) => {
-      let identity: PlayerIdentity;
-      try {
-        identity = await resolvePlayerIdentity(user);
-      } catch (error) {
-        logger.warn(
-          "dojo lobby skip identity resolve failed",
-          getRunLogFields(run, { error }),
-        );
-        return;
-      }
-
-      if (identity.userId !== run.playerUserId) {
-        return;
-      }
-      if (!isActiveRun(run)) {
-        return;
-      }
-      if (!isWaitingToStart(run) || run.startInFlight) {
-        return;
-      }
-
-      await startMatchAfterCountdown(run);
-    };
-
-    const onLobbyChannelMessage = (msg: LobbyChannelMessageLike) => {
-      if (msg.self) {
-        return;
-      }
-
-      const command = parseDojoCommand(msg.message);
-      if (!command || command.type !== "skip") {
-        return;
-      }
-
-      void handleLobbySkip(msg.user).catch((error) => {
-        logger.error(
-          "dojo lobby skip handling failed",
-          getRunLogFields(run, { error }),
-        );
-      });
-    };
-
     const onPlayerJoined = async ({ player }: { player: LobbyPlayerLike }) => {
       if (run.status !== "waiting_for_player" || !isTargetPlayer(player.user, run)) {
         return;
@@ -857,6 +800,16 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
 
       transitionRunStatus(run, "playing_map");
       touchRunProgress(run);
+    };
+
+    const onAllPlayersReady = () => {
+      if (!isActiveRun(run) || !isWaitingToStart(run) || run.startInFlight) {
+        return;
+      }
+
+      void startMatchAfterCountdown(run).catch((error) => {
+        logger.error("dojo ready start failed", getRunLogFields(run, { error }));
+      });
     };
 
     const onPlayerFinished = ({ score, pass, player }: LobbyPlayerScoreLike) => {
@@ -920,18 +873,18 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
       await abortRun(run, "match-aborted", MATCH_INTERRUPTED_MESSAGE);
     };
 
-    run.lobby.channel.on("message", onLobbyChannelMessage);
     run.lobby.on("playerJoined", onPlayerJoined);
     run.lobby.on("matchStarted", onMatchStarted);
+    run.lobby.on("allPlayersReady", onAllPlayersReady);
     run.lobby.on("playerFinished", onPlayerFinished);
     run.lobby.on("playerLeft", onPlayerLeft);
     run.lobby.on("matchFinished", onMatchFinished);
     run.lobby.on("matchAborted", onMatchAborted);
-    runRegistry.addDispose(run, () =>
-      run.lobby?.channel.removeListener("message", onLobbyChannelMessage),
-    );
     runRegistry.addDispose(run, () => run.lobby?.removeListener("playerJoined", onPlayerJoined));
     runRegistry.addDispose(run, () => run.lobby?.removeListener("matchStarted", onMatchStarted));
+    runRegistry.addDispose(run, () =>
+      run.lobby?.removeListener("allPlayersReady", onAllPlayersReady),
+    );
     runRegistry.addDispose(run, () => run.lobby?.removeListener("playerFinished", onPlayerFinished));
     runRegistry.addDispose(run, () => run.lobby?.removeListener("playerLeft", onPlayerLeft));
     runRegistry.addDispose(run, () =>

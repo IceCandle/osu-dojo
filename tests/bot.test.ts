@@ -20,7 +20,6 @@ import {
   latestMeaningfulLobbyMessage,
   SEEDED_COURSE_NAME_KEY,
   SEEDED_COURSE_SLUG,
-  SEEDED_START_COMMAND,
   SEEDED_SYSTEM_NAME_KEY,
   setSeededBeatmapFreemod,
   setSeededBeatmapPassConditions,
@@ -476,13 +475,6 @@ test("bot enables freemod per map, judges adjusted score, and stores raw audit d
     assert.ok(
       client.lobby.channelMessages.some((message) =>
         /FreeMod allowed: NF optional, NM, HD, HR, HDHR/.test(message),
-      ),
-    );
-    assert.ok(
-      client.lobby.channelMessages.some((message) =>
-        /FreeMod active: add NF if you want the bot to receive your score after HP reaches 0\./.test(
-          message,
-        ),
       ),
     );
     assert.ok(
@@ -1632,7 +1624,7 @@ test("bot persists a superseded run after at least one resolved map", async () =
   }
 });
 
-test("bot redirects skip sent over DM", async () => {
+test("bot treats skip as an invalid DM command", async () => {
   const client = new FakeClient();
   const user = new FakeUser(42, "PlayerOne");
   const bot = createDojoBot({
@@ -1642,7 +1634,7 @@ test("bot redirects skip sent over DM", async () => {
 
   await bot.handlePrivateMessage(createPrivateMessage(user, "!dojo skip"));
 
-  assert.equal(user.messages.at(-1), "Use !dojo skip in the multiplayer lobby chat.");
+  assert.equal(user.messages.at(-1), "Invalid command. Use !dojo help for a guide.");
   assert.equal(client.createLobbyCalls.length, 0);
   assert.equal(client.lobby.startHistory.length, 0);
 });
@@ -1671,7 +1663,7 @@ test("bot treats abort as an invalid DM command", async () => {
   }
 });
 
-test("bot lobby skip starts the pending countdown exactly once", async () => {
+test("bot ready event starts the pending countdown exactly once", async () => {
   const temp = createTempDatabaseUrl();
   const refreshStarted = createDeferred<null>();
   const releaseRefresh = createDeferred<null>();
@@ -1699,9 +1691,9 @@ test("bot lobby skip starts the pending countdown exactly once", async () => {
       return releaseRefresh.promise;
     };
 
-    emitLobbyMessage(client.lobby, user, "!dojo skip");
+    client.lobby.emit("allPlayersReady");
     await refreshStarted.promise;
-    emitLobbyMessage(client.lobby, user, "!dojo skip");
+    client.lobby.emit("allPlayersReady");
     await waitForTimer(1_100);
 
     assert.equal(client.lobby.startHistory.length, 0);
@@ -1713,7 +1705,7 @@ test("bot lobby skip starts the pending countdown exactly once", async () => {
     assert.equal(client.lobby.channelMessages.includes("!mp timer 1"), true);
     client.lobby.emit("matchStarted");
     await flushAsyncWork();
-    emitLobbyMessage(client.lobby, user, "!dojo skip");
+    client.lobby.emit("allPlayersReady");
     await flushAsyncWork();
     assert.equal(client.lobby.startHistory.length, 1);
   } finally {
@@ -1722,7 +1714,7 @@ test("bot lobby skip starts the pending countdown exactly once", async () => {
   }
 });
 
-test("bot lobby skip between maps advances to the next map immediately", async () => {
+test("bot ready event between maps advances to the next map immediately", async () => {
   const temp = createTempDatabaseUrl();
 
   try {
@@ -1766,7 +1758,7 @@ test("bot lobby skip between maps advances to the next map immediately", async (
     assert.equal(client.lobby.startHistory.length, 1);
     assert.equal(client.lobby.mapHistory.at(-1), seededBeatmapIds[1]);
 
-    emitLobbyMessage(client.lobby, user, "!dojo skip");
+    client.lobby.emit("allPlayersReady");
     await flushAsyncWork(6);
 
     assert.equal(client.lobby.startHistory.length, 2);
@@ -1775,7 +1767,7 @@ test("bot lobby skip between maps advances to the next map immediately", async (
   }
 });
 
-test("bot lobby skip aborts with missing-map when the target player has no map", async () => {
+test("bot ready event aborts with missing-map when the target player has no map", async () => {
   const temp = createTempDatabaseUrl();
 
   try {
@@ -1800,7 +1792,7 @@ test("bot lobby skip aborts with missing-map when the target player has no map",
     });
     await flushAsyncWork();
 
-    emitLobbyMessage(client.lobby, user, "!dojo skip");
+    client.lobby.emit("allPlayersReady");
     await flushAsyncWork(6);
 
     assert.equal(client.lobby.startHistory.length, 0);
@@ -1812,14 +1804,13 @@ test("bot lobby skip aborts with missing-map when the target player has no map",
   }
 });
 
-test("bot lobby skip ignores non-owners and self echoes", async () => {
+test("bot ready event does not start again after match started", async () => {
   const temp = createTempDatabaseUrl();
 
   try {
     const { db } = await createTestDatabase(temp.url);
     const client = new FakeClient();
     const target = new FakeUser(42, "PlayerOne");
-    const other = new FakeUser(99, "PlayerTwo");
     const bot = createDojoBot({
       client,
       db,
@@ -1833,12 +1824,12 @@ test("bot lobby skip ignores non-owners and self echoes", async () => {
       player: client.lobby.registerPlayer(target, BanchoLobbyPlayerStates.NotReady),
     });
     await flushAsyncWork();
+    client.lobby.emit("matchStarted");
+    await flushAsyncWork();
 
-    emitLobbyMessage(client.lobby, other, "!dojo skip");
-    emitLobbyMessage(client.lobby, target, "!dojo skip", true);
+    client.lobby.emit("allPlayersReady");
     await flushAsyncWork(6);
 
-    assert.equal(other.messages.length, 0);
     assert.equal(client.lobby.startHistory.length, 0);
     assert.equal(bot.activeRunsByUserId.has(42), true);
   } finally {
@@ -1846,7 +1837,7 @@ test("bot lobby skip ignores non-owners and self echoes", async () => {
   }
 });
 
-test("bot ignores non-skip dojo commands in the lobby channel", async () => {
+test("lobby chat !dojo skip no longer starts the match", async () => {
   const temp = createTempDatabaseUrl();
 
   try {
@@ -1868,9 +1859,7 @@ test("bot ignores non-skip dojo commands in the lobby channel", async () => {
     await flushAsyncWork();
     const messageCount = client.lobby.channelMessages.length;
 
-    emitLobbyMessage(client.lobby, user, "!dojo help");
-    emitLobbyMessage(client.lobby, user, "!dojo prev");
-    emitLobbyMessage(client.lobby, user, SEEDED_START_COMMAND);
+    emitLobbyMessage(client.lobby, user, "!dojo skip");
     await flushAsyncWork(6);
 
     assert.equal(client.lobby.channelMessages.length, messageCount);
