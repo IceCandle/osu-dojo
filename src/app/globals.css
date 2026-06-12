@@ -91,7 +91,7 @@ code {
 .cta-link,
 .scope-badge,
 .system-status-pill,
-.system-card-meta span,
+.system-card-metaline,
 .detail-stats span,
 .course-tab,
 .course-command-line,
@@ -160,6 +160,12 @@ code {
   border-color: var(--text);
   color: var(--bg);
   outline: none;
+}
+
+.cta-link-compact {
+  min-height: 34px;
+  padding: 0 12px;
+  font-size: 11px;
 }
 
 .site-header-tools {
@@ -512,6 +518,14 @@ code {
   align-items: end;
 }
 
+.dan-index-header {
+  padding: 24px;
+}
+
+.dan-index-header .directory-heading {
+  grid-template-columns: 1fr;
+}
+
 .system-heading {
   margin-bottom: 18px;
 }
@@ -560,6 +574,8 @@ code {
 
 .systems-grid-index {
   align-items: stretch;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 320px));
+  justify-content: start;
 }
 
 .system-link-card {
@@ -569,10 +585,19 @@ code {
 .system-card-index {
   height: 100%;
   display: grid;
-  gap: 24px;
+  gap: 16px;
+  padding: 16px;
   transition:
     background 160ms ease,
     border-color 160ms ease;
+}
+
+.system-card-index .system-heading {
+  margin-bottom: 12px;
+}
+
+.system-card-index h2 {
+  font-size: 20px;
 }
 
 .system-link-card:hover .system-card-index,
@@ -586,21 +611,11 @@ code {
   outline-offset: 3px;
 }
 
-.system-card-meta {
-  display: grid;
-  grid-template-columns: auto;
-  gap: 18px;
-  align-items: end;
-}
-
-.system-card-meta div {
-  display: grid;
-  gap: 6px;
-}
-
-.system-card-meta strong {
-  font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
-  font-size: 30px;
+.system-card-metaline {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
 }
 
 .detail-stats div {
@@ -694,14 +709,14 @@ code {
 .course-tab {
   display: inline-flex;
   align-items: center;
-  min-height: 44px;
-  padding: 0 16px;
+  min-height: 36px;
+  padding: 0 12px;
   border: 1px solid var(--line);
   border-right-width: 0;
   background: var(--bg);
   color: var(--muted);
-  font-size: 13px;
-  letter-spacing: 0.08em;
+  font-size: 12px;
+  letter-spacing: 0.04em;
   transition:
     background 160ms ease,
     color 160ms ease,
@@ -716,13 +731,24 @@ code {
 .course-tab:focus-visible {
   background: var(--panel-2);
   color: var(--text);
-  outline: none;
+  outline: 2px solid var(--text);
+  outline-offset: -2px;
+}
+
+.course-tab.is-active:focus-visible {
+  outline-color: var(--bg);
 }
 
 .course-tab.is-active {
   border-color: var(--text);
   background: var(--text);
   color: var(--bg);
+}
+
+@media (pointer: coarse) {
+  .course-tab {
+    min-height: 44px;
+  }
 }
 
 .course-overview {
@@ -1105,6 +1131,7 @@ code {
   .results-layout,
   .masthead-grid,
   .section-heading,
+  .systems-grid-index,
   .course-beatmap-card,
   .detail-stats {
     grid-template-columns: 1fr;

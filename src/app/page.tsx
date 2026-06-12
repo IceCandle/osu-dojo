@@ -17,8 +17,8 @@ export default async function HomePage() {
               sequence, scoring, and leaderboard archive run themselves.
             </p>
             <div className="masthead-actions">
-              <Link className="cta-link" href="/dan">
-                Browse dan systems
+              <Link className="cta-link cta-link-compact" href="/dan">
+                View dan systems
               </Link>
             </div>
           </div>

@@ -57,11 +57,14 @@ test("pages render seeded course data from SQLite", async () => {
 
     assert.ok(course);
 
-    assert.match(homeHtml, /Browse dan systems/);
+    assert.match(homeHtml, /View dan systems/);
     assert.doesNotMatch(homeHtml, /Open system/);
     assert.match(systemsHtml, /test/i);
     assert.match(systemsHtml, /\/dan\/test/);
-    assert.match(systemsHtml, /Each dan system groups related courses under one scoring model\./);
+    assert.match(
+      systemsHtml,
+      /Choose a system to view its courses, pass rules, and saved top runs\./,
+    );
     assert.match(courseHtml, /test stage one/i);
     assert.match(courseHtml, /!dojo start test 1st/);
     assert.match(courseHtml, /Sample dan system for the MVP\./);
@@ -256,4 +259,3 @@ test("course run queries and page derive DNF for interrupted partial runs", asyn
     temp.cleanup();
   }
 });
-
