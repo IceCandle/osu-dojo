@@ -66,6 +66,7 @@ CourseRun (id, userId, courseId, passed, timestamp, matchId?)
 
 - `/` — home과 system 개요
 - `/dan` — current와 legacy system catalog
+- `/api/search?q=` — 전역 헤더 검색 dialog가 조회하는 읽기 전용 JSON endpoint
 - `/dan/[systemNameKey]?course=<courseNameKey>` — playable system 상세 페이지. draft는 exact key로만 접근됩니다.
 
 ## Acceptance Criteria
@@ -122,7 +123,8 @@ CourseRun (id, userId, courseId, passed, timestamp, matchId?)
 
 - `/`와 `/dan`은 current와 legacy system을 보여줍니다.
 - legacy system은 badge를 표시하고 current 아래에 정렬됩니다.
-- `/dan/[systemNameKey]`는 playable system의 모든 course, beatmap 목록, 통과 조건, 통합 리더보드, `?course=<courseNameKey>` 앵커 이동을 렌더링합니다.
-- draft detail page는 Draft badge를 표시하고, draft run은 저장되지 않는다고 안내합니다.
+- `/dan/[systemNameKey]`는 playable system의 모든 course, beatmap 목록, 통과 조건, 통합 리더보드, `?course=<courseNameKey>` anchor 이동을 렌더링합니다.
+- draft detail page는 상응하는 정보를 표시하고, draft run은 저장되지 않는다고 안내합니다.
 - 리더보드의 `Course Acc`는 통과한 map accuracy의 합계입니다.
-- 인증(auth)은 없습니다. 읽기 전용입니다. SSR with server components입니다.
+- 전역 헤더 검색 버튼은 client component dialog를 열고, 읽기 전용 `/api/search?q=` JSON endpoint로 current/legacy 시스템과 코스를 display name 기준으로 찾습니다. system 결과는 `/dan/<systemNameKey>`, course 결과는 `/dan/<systemNameKey>?course=<courseNameKey>`로 이동하며 route key는 Public Name Key 규칙을 그대로 사용합니다.
+- 인증은 없습니다. 읽기 전용입니다. 기본은 SSR with server components이며, 전역 검색 dialog와 `/api/search` endpoint만 예외입니다.

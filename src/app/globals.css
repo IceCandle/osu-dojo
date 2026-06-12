@@ -82,7 +82,12 @@ code {
 .site-brand-mark,
 .site-nav-link,
 .site-action,
-.site-search input,
+.site-search,
+.search-dialog-input,
+.search-dialog-close,
+.search-result-group h3,
+.search-result-row,
+.search-state,
 .cta-link,
 .scope-badge,
 .system-status-pill,
@@ -168,10 +173,9 @@ code {
 }
 
 .site-search {
-  display: block;
-}
-
-.site-search input {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
   width: 100%;
   min-height: 38px;
   padding: 0 12px;
@@ -180,6 +184,20 @@ code {
   background: var(--bg);
   color: var(--muted);
   font-size: 12px;
+  letter-spacing: 0.12em;
+  text-align: left;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition:
+    border-color 160ms ease,
+    color 160ms ease;
+}
+
+.site-search:hover,
+.site-search:focus-visible {
+  border-color: var(--line);
+  color: var(--text);
+  outline: none;
 }
 
 .site-action {
@@ -194,8 +212,154 @@ code {
 }
 
 .site-action:disabled,
-.site-search input:read-only {
+.site-search {
   opacity: 1;
+}
+
+.search-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.72);
+}
+
+.search-dialog {
+  width: min(640px, calc(100vw - 32px));
+  max-height: min(720px, calc(100vh - 48px));
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--panel);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.45);
+}
+
+.search-dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 18px 12px;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.search-dialog-header h2 {
+  margin: 0;
+  font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 14px;
+  letter-spacing: 0.12em;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.search-dialog-close {
+  min-height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--line-soft);
+  border-radius: 2px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.search-dialog-close:hover,
+.search-dialog-close:focus-visible {
+  border-color: var(--line);
+  color: var(--text);
+  outline: none;
+}
+
+.search-dialog-input {
+  width: calc(100% - 36px);
+  min-height: 46px;
+  margin: 18px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 14px;
+}
+
+.search-dialog-input:focus-visible {
+  border-color: var(--text);
+  outline: none;
+}
+
+.search-dialog-results {
+  display: grid;
+  gap: 18px;
+  padding: 0 18px 18px;
+}
+
+.search-state {
+  margin: 0;
+  padding: 16px;
+  border: 1px solid var(--line-soft);
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.search-result-group {
+  display: grid;
+  gap: 8px;
+}
+
+.search-result-group h3 {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.search-result-list {
+  display: grid;
+  border-top: 1px solid var(--line-soft);
+}
+
+.search-result-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 16px;
+  align-items: center;
+  min-height: 48px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line-soft);
+  color: var(--text);
+  font-size: 12px;
+}
+
+.search-result-row span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.search-result-row span:last-child {
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.search-result-row:hover,
+.search-result-row:focus-visible {
+  color: var(--bg);
+  background: var(--text);
+  outline: none;
+}
+
+.search-result-row:hover span:last-child,
+.search-result-row:focus-visible span:last-child {
+  color: var(--bg);
 }
 
 .masthead,
@@ -929,7 +1093,7 @@ code {
   }
 
   .site-action,
-  .site-search input {
+  .site-search {
     min-height: 36px;
     padding-inline: 10px;
     font-size: 11px;

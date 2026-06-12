@@ -1,6 +1,7 @@
 import React from "react";
 import type { Metadata } from "next";
 import Link from "next/link";
+import SearchOverlay from "@/app/SearchOverlay";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -30,9 +31,7 @@ export default function RootLayout({
             </nav>
 
             <div className="site-header-tools">
-              <label className="site-search" aria-label="Search">
-                <input aria-label="Search" placeholder="" readOnly type="search" />
-              </label>
+              <SearchOverlay />
               <button className="site-action" disabled type="button">
                 Upload
               </button>

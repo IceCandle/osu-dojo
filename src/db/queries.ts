@@ -26,6 +26,14 @@ import {
   playableSystemStatuses,
 } from "@/lib/domain";
 import { kebabizeName } from "@/lib/format";
+import {
+  emptySearchResults,
+  isValidQuery,
+  normalizeSearch,
+  type CourseHit,
+  type SearchResults,
+  type SystemHit,
+} from "@/lib/search";
 
 type DerivedRunStatus = "pass" | "fail" | "dnf";
 
@@ -124,6 +132,67 @@ export async function listDanSystemsWithCourses(db?: AppDatabase) {
   }
 
   return [...systems.values()].sort(compareSystemSummaries);
+}
+
+export async function searchDanCatalog(
+  query: string,
+  db?: AppDatabase,
+): Promise<SearchResults> {
+  if (!isValidQuery(query)) {
+    return emptySearchResults();
+  }
+
+  const database = await useDb(db);
+  const normalizedQuery = normalizeSearch(query);
+  const rows = await database
+    .select({
+      danSystemId: danSystems.id,
+      danSystemName: danSystems.name,
+      danSystemStatus: danSystems.status,
+      courseId: courses.id,
+      courseName: courses.name,
+      courseOrdinal: courses.ordinal,
+    })
+    .from(danSystems)
+    .leftJoin(courses, eq(courses.danSystemId, danSystems.id))
+    .where(inArray(danSystems.status, catalogSystemStatuses()))
+    .orderBy(asc(danSystems.name), asc(courses.ordinal));
+
+  const systemHitsById = new Map<string, SystemHit>();
+  const courseHits: CourseHit[] = [];
+
+  for (const row of rows) {
+    const systemNameKey = kebabizeName(row.danSystemName);
+
+    if (
+      normalizeSearch(row.danSystemName).includes(normalizedQuery) &&
+      !systemHitsById.has(row.danSystemId)
+    ) {
+      systemHitsById.set(row.danSystemId, {
+        name: row.danSystemName,
+        nameKey: systemNameKey,
+        status: row.danSystemStatus,
+      });
+    }
+
+    if (
+      row.courseId &&
+      row.courseName &&
+      normalizeSearch(row.courseName).includes(normalizedQuery)
+    ) {
+      courseHits.push({
+        name: row.courseName,
+        nameKey: kebabizeName(row.courseName),
+        systemName: row.danSystemName,
+        systemNameKey,
+      });
+    }
+  }
+
+  return {
+    systems: [...systemHitsById.values()].slice(0, 10),
+    courses: courseHits.slice(0, 20),
+  };
 }
 
 export async function listCoursesByDanSystemNameKey(
