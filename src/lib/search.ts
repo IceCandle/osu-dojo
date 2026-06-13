@@ -15,9 +15,18 @@ export type CourseHit = {
   systemNameKey: string;
 };
 
+export type PlayerHit = {
+  userId: number;
+  username: string;
+  avatarUrl: string;
+  country: null;
+  gameMode: "osu";
+};
+
 export type SearchResults = {
   systems: SystemHit[];
   courses: CourseHit[];
+  players: PlayerHit[];
 };
 
 export function normalizeSearch(value: string): string {
@@ -30,5 +39,5 @@ export function isValidQuery(value: string): boolean {
 }
 
 export function emptySearchResults(): SearchResults {
-  return { systems: [], courses: [] };
+  return { systems: [], courses: [], players: [] };
 }

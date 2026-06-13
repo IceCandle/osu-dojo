@@ -119,7 +119,10 @@ export default function SearchOverlay() {
   }
 
   const hasQuery = isValidQuery(query);
-  const hasResults = results.systems.length > 0 || results.courses.length > 0;
+  const hasResults =
+    results.systems.length > 0 ||
+    results.courses.length > 0 ||
+    results.players.length > 0;
 
   return (
     <>
@@ -181,7 +184,7 @@ export default function SearchOverlay() {
                 <p className="search-state">No results.</p>
               ) : null}
               {!hasQuery && status === "idle" ? (
-                <p className="search-state">Type a system or course name.</p>
+                <p className="search-state">Type a system, course, or player name.</p>
               ) : null}
 
               {results.systems.length > 0 ? (
@@ -216,6 +219,28 @@ export default function SearchOverlay() {
                       >
                         <span>{course.name}</span>
                         <span>{course.systemName}</span>
+                      </Link>
+                    ))}
+                  </div>
+                </section>
+              ) : null}
+
+              {results.players.length > 0 ? (
+                <section className="search-result-group" aria-labelledby="search-players">
+                  <h3 id="search-players">Players</h3>
+                  <div className="search-result-list">
+                    {results.players.map((player) => (
+                      <Link
+                        className="search-result-row search-result-row-player"
+                        href={`/players/${player.userId}`}
+                        key={`player-${player.userId}`}
+                        onClick={closeOverlay}
+                      >
+                        <span className="search-player-identity">
+                          <img alt="" src={player.avatarUrl} />
+                          <span>{player.username}</span>
+                        </span>
+                        <span>{player.gameMode}</span>
                       </Link>
                     ))}
                   </div>

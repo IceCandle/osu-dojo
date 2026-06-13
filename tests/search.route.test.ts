@@ -27,6 +27,7 @@ test("GET /api/search returns catalog search results from the configured databas
           systemNameKey: "test",
         },
       ],
+      players: [],
     });
   } finally {
     process.env["DATABASE_URL"] = previousDatabaseUrl;
@@ -39,6 +40,6 @@ test("GET /api/search returns empty results for blank and over-length queries", 
   const blank = await GET(new Request("http://x/api/search?q=%20%20"));
   const long = await GET(new Request(`http://x/api/search?q=${"a".repeat(101)}`));
 
-  assert.deepEqual(await blank.json(), { systems: [], courses: [] });
-  assert.deepEqual(await long.json(), { systems: [], courses: [] });
+  assert.deepEqual(await blank.json(), { systems: [], courses: [], players: [] });
+  assert.deepEqual(await long.json(), { systems: [], courses: [], players: [] });
 });

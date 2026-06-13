@@ -67,6 +67,8 @@ export async function seedDatabase(
         slug: system.slug,
         description: system.description,
         status: system.status,
+        ladder: system.ladder ?? null,
+        ladderOrder: system.ladderOrder ?? 0,
       })
       .onConflictDoUpdate({
         target: danSystems.id,
@@ -75,6 +77,8 @@ export async function seedDatabase(
           slug: system.slug,
           description: system.description,
           status: system.status,
+          ladder: system.ladder ?? null,
+          ladderOrder: system.ladderOrder ?? 0,
         },
       });
 
@@ -110,6 +114,8 @@ export async function seedDatabase(
           description: course.description,
           tags: JSON.stringify(course.tags),
           ordinal: course.ordinal,
+          official: course.official ?? false,
+          label: course.label ?? null,
           scoreModel: course.scoreModel,
           overallPassConditions: JSON.stringify(course.overallPassConditions),
           updatedAt: Date.now(),
@@ -122,6 +128,8 @@ export async function seedDatabase(
             description: course.description,
             tags: JSON.stringify(course.tags),
             ordinal: course.ordinal,
+            official: course.official ?? false,
+            label: course.label ?? null,
             scoreModel: course.scoreModel,
             overallPassConditions: JSON.stringify(course.overallPassConditions),
             updatedAt: Date.now(),

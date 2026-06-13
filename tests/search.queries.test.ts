@@ -34,6 +34,7 @@ test("searchDanCatalog matches current and legacy systems and courses by display
     assert.deepEqual(systemResults.systems, [
       { name: "Legacy Alpha", nameKey: "legacy-alpha", status: "legacy" },
     ]);
+    assert.deepEqual(systemResults.players, []);
     assert.deepEqual(courseResults.courses, [
       {
         name: "Alpha Pro",
@@ -42,6 +43,7 @@ test("searchDanCatalog matches current and legacy systems and courses by display
         systemNameKey: "legacy-alpha",
       },
     ]);
+    assert.deepEqual(courseResults.players, []);
   } finally {
     temp.cleanup();
   }
@@ -93,7 +95,7 @@ test("searchDanCatalog excludes draft and archived systems and their courses", a
 
     const results = await searchDanCatalog("hidden", db);
 
-    assert.deepEqual(results, { systems: [], courses: [] });
+    assert.deepEqual(results, { systems: [], courses: [], players: [] });
   } finally {
     temp.cleanup();
   }

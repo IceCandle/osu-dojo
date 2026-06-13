@@ -105,7 +105,10 @@ code {
 .ranking-table td,
 .status-pass,
 .status-fail,
-.status-dnf {
+.status-dnf,
+.player-dan-badge,
+.player-clear-meta,
+.player-badge-card p {
   font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
 }
 
@@ -366,6 +369,26 @@ code {
 .search-result-row:hover span:last-child,
 .search-result-row:focus-visible span:last-child {
   color: var(--bg);
+}
+
+.search-result-row-player {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.search-player-identity {
+  display: inline-grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+}
+
+.search-player-identity img {
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  background: var(--bg);
+  object-fit: cover;
 }
 
 .masthead,
@@ -644,6 +667,155 @@ code {
   margin-top: 24px;
 }
 
+.player-header {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 24px;
+  align-items: end;
+}
+
+.player-avatar-link {
+  display: block;
+  width: 112px;
+  height: 112px;
+}
+
+.player-avatar {
+  width: 112px;
+  height: 112px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--bg);
+  object-fit: cover;
+}
+
+.player-header-copy {
+  min-width: 0;
+}
+
+.player-title-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+}
+
+.player-title-row h1 {
+  max-width: 18ch;
+}
+
+.player-dan-badges,
+.player-badge-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.player-dan-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 9px;
+  border: 1px solid var(--text);
+  border-radius: 2px;
+  background: var(--text);
+  color: var(--bg);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1;
+}
+
+.player-header-stats {
+  min-width: 150px;
+  margin-top: 0;
+}
+
+.player-header-stats div {
+  padding-top: 0;
+  border-top: none;
+}
+
+.player-mode-tabs {
+  margin-bottom: 24px;
+}
+
+.player-profile-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px;
+  min-width: 0;
+}
+
+.player-profile-section {
+  margin-top: 0;
+  min-width: 0;
+}
+
+.player-profile-section .compact-empty-card {
+  background: var(--bg);
+}
+
+.player-badge-card,
+.player-clear-card {
+  border: 1px solid var(--line-soft);
+  background: var(--bg);
+}
+
+.player-badge-card {
+  display: grid;
+  gap: 10px;
+  min-width: 160px;
+  padding: 14px;
+}
+
+.player-badge-card p,
+.player-clear-card p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.player-clear-list {
+  display: grid;
+  gap: 10px;
+}
+
+.player-clear-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 16px;
+  align-items: center;
+  min-width: 0;
+  padding: 14px;
+}
+
+.player-clear-card h3 {
+  margin: 0 0 6px;
+  font-size: 16px;
+  line-height: 1.3;
+}
+
+.player-clear-meta {
+  display: grid;
+  gap: 4px;
+  justify-items: end;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.3;
+  text-transform: uppercase;
+}
+
+.player-clear-meta strong {
+  color: var(--text);
+  font-size: 16px;
+}
+
+.player-empty-card {
+  margin-top: 24px;
+}
+
 .results-layout {
   display: grid;
   grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.72fr);
@@ -743,6 +915,11 @@ code {
   border-color: var(--text);
   background: var(--text);
   color: var(--bg);
+}
+
+.course-tab.is-disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
 }
 
 @media (pointer: coarse) {
@@ -1126,6 +1303,8 @@ code {
   }
 
   .dan-overview-header,
+  .player-header,
+  .player-profile-grid,
   .system-header-grid,
   .directory-heading,
   .results-layout,
@@ -1155,6 +1334,25 @@ code {
   .status-dnf {
     justify-items: start;
     justify-self: start;
+  }
+
+  .player-avatar-link,
+  .player-avatar {
+    width: 84px;
+    height: 84px;
+  }
+
+  .player-header-stats {
+    min-width: 0;
+    margin-top: 8px;
+  }
+
+  .player-clear-card {
+    grid-template-columns: 1fr;
+  }
+
+  .player-clear-meta {
+    justify-items: start;
   }
 
   .ranking-section {

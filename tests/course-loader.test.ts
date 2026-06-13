@@ -21,12 +21,19 @@ test("course loader reads the seeded test course json", () => {
   const courseSystem = systems.find((system) => system.slug === "test");
 
   assert.ok(courseSystem);
+  assert.equal(courseSystem.ladder, null);
+  assert.equal(courseSystem.ladderOrder, 0);
   assert.ok(courseSystem.courses.length > 0);
 
   for (const course of courseSystem.courses) {
     assert.equal(typeof course.slug, "string");
     assert.match(course.slug, /\S/);
     assert.match(course.scoreModel, /^scorev[12]$/);
+    assert.equal(typeof course.official, "boolean");
+    assert.equal(
+      course.label === null || typeof course.label === "string",
+      true,
+    );
     assert.ok(course.beatmaps.length > 0);
 
     for (const beatmap of course.beatmaps) {
@@ -50,6 +57,78 @@ test("mod validator accepts the full ranked stable mod set we support in course 
     validateCourseMods("EZHTHDHRSDDTNCFLSOPFK4K5K6K7K8FIK9SV2MRNF"),
     "EZHTHDHRSDDTNCFLSOPFK4K5K6K7K8FIK9SV2MRNF",
   );
+});
+
+test("course loader parses display-only course and ladder metadata", () => {
+  const temp = createTempDirectory();
+
+  try {
+    writeFileSync(
+      path.join(temp.directory, "metadata.json"),
+      JSON.stringify(systemJson("system-meta", "meta", "shared-ladder", 2, [
+        {
+          ...courseJson("course-meta", "1st"),
+          official: true,
+          label: "  ★★  ",
+        },
+      ])),
+    );
+
+    const system = loadCoursesFromDir(temp.directory)[0];
+
+    assert.equal(system?.ladder, "shared-ladder");
+    assert.equal(system?.ladderOrder, 2);
+    assert.equal(system?.courses[0]?.official, true);
+    assert.equal(system?.courses[0]?.label, "★★");
+  } finally {
+    temp.cleanup();
+  }
+});
+
+test("course loader normalizes blank and null course labels to null", () => {
+  const temp = createTempDirectory();
+
+  try {
+    writeFileSync(
+      path.join(temp.directory, "labels.json"),
+      JSON.stringify(systemJson("system-labels", "labels", null, 0, [
+        { ...courseJson("course-blank", "1st"), label: "   " },
+        { ...courseJson("course-null", "2nd"), label: null },
+      ])),
+    );
+
+    const courses = loadCoursesFromDir(temp.directory)[0]?.courses ?? [];
+
+    assert.deepEqual(courses.map((course) => course.label), [null, null]);
+  } finally {
+    temp.cleanup();
+  }
+});
+
+test("course loader rejects duplicate ladder orders inside the same ladder", () => {
+  const temp = createTempDirectory();
+
+  try {
+    writeFileSync(
+      path.join(temp.directory, "a.json"),
+      JSON.stringify(systemJson("system-a", "alpha", "shared", 1, [
+        courseJson("course-a", "1st"),
+      ])),
+    );
+    writeFileSync(
+      path.join(temp.directory, "b.json"),
+      JSON.stringify(systemJson("system-b", "beta", "shared", 1, [
+        courseJson("course-b", "1st"),
+      ])),
+    );
+
+    assert.throws(
+      () => loadCoursesFromDir(temp.directory),
+      /Duplicate ladderOrder 1 in ladder "shared"/,
+    );
+  } finally {
+    temp.cleanup();
+  }
 });
 
 test("course loader rejects unsupported beatmap mods", () => {
@@ -842,6 +921,46 @@ function systemFixture(overrides: Record<string, unknown> = {}) {
             annotations: ["x"],
           },
         ],
+      },
+    ],
+  };
+}
+
+function systemJson(
+  id: string,
+  name: string,
+  ladder: string | null,
+  ladderOrder: number,
+  courses: Array<Record<string, unknown>>,
+) {
+  return {
+    id,
+    name,
+    slug: id,
+    description: `${name} system`,
+    ladder,
+    ladderOrder,
+    courses,
+  };
+}
+
+function courseJson(id: string, name: string) {
+  return {
+    id,
+    name,
+    slug: id,
+    description: `${name} course`,
+    ordinal: Number.parseInt(name, 10),
+    scoreModel: "scorev2",
+    overallPassConditions: [{ type: "courseAccuracy", threshold: 95 }],
+    beatmaps: [
+      {
+        id: `${id}-beatmap`,
+        beatmapId: 1,
+        mods: "",
+        passConditions: [{ type: "accuracy", threshold: 95 }],
+        ordinal: 1,
+        annotations: [],
       },
     ],
   };

@@ -18,6 +18,8 @@ import { kebabizeName } from "@/lib/format";
 import { validateCourseMods } from "@/lib/mods";
 
 const DISPLAY_NAME_PATTERN = /^[A-Za-z0-9]+(?: [A-Za-z0-9]+)*$/;
+const LADDER_KEY_PATTERN = /^[a-z0-9-]+$/;
+const MAX_COURSE_LABEL_LENGTH = 16;
 
 interface CourseBeatmapSeed {
   id: string;
@@ -41,6 +43,8 @@ interface CourseSeed {
   description: string;
   tags: string[];
   ordinal: number;
+  official?: boolean;
+  label?: string | null;
   scoreModel: DanScoreModel;
   overallPassConditions: CoursePassCondition[];
   beatmaps: CourseBeatmapSeed[];
@@ -52,6 +56,8 @@ export interface DanSystemSeed {
   slug: string;
   description: string;
   status: DanSystemStatus;
+  ladder?: string | null;
+  ladderOrder?: number;
   courses: CourseSeed[];
 }
 
@@ -77,6 +83,7 @@ export function loadCoursesFromDir(dir: string): DanSystemSeed[] {
   });
 
   assertUniqueNameKeys(systems);
+  assertUniqueLadderOrders(systems);
   return systems;
 }
 
@@ -89,6 +96,8 @@ function parseDanSystem(value: unknown, source: string): DanSystemSeed {
     slug: expectString(record["slug"], "slug", source),
     description: expectString(record["description"], "description", source),
     status: expectDanSystemStatus(record["status"], "status", source),
+    ladder: optionalLadderKey(record["ladder"], "ladder", source),
+    ladderOrder: optionalInteger(record["ladderOrder"], "ladderOrder", source, 0),
     courses: expectArray(record["courses"], "courses", source).map((course, index) =>
       parseCourse(course, `${source} courses[${index}]`),
     ),
@@ -117,6 +126,8 @@ function parseCourse(value: unknown, source: string): CourseSeed {
     description: expectString(record["description"], "description", source),
     tags: optionalStringArray(record["tags"], "tags", source, []),
     ordinal: expectInteger(record["ordinal"], "ordinal", source),
+    official: optionalBoolean(record["official"], "official", source, false),
+    label: optionalNullableString(record["label"], "label", source),
     scoreModel,
     overallPassConditions,
     beatmaps,
@@ -216,6 +227,29 @@ function optionalBoolean(
   return value;
 }
 
+function optionalNullableString(
+  value: unknown,
+  field: string,
+  source: string,
+): string | null {
+  if (value === undefined || value === null) {
+    return null;
+  }
+
+  const trimmed = expectString(value, field, source).trim();
+  if (trimmed === "") {
+    return null;
+  }
+
+  if (trimmed.length > MAX_COURSE_LABEL_LENGTH) {
+    throw new Error(
+      `${source} field "${field}" must be ${MAX_COURSE_LABEL_LENGTH} characters or fewer after trim.`,
+    );
+  }
+
+  return trimmed;
+}
+
 function expectStringArray(value: unknown, field: string, source: string): string[] {
   if (!Array.isArray(value) || value.some((entry) => typeof entry !== "string")) {
     throw new Error(`${source} field "${field}" must be an array of strings.`);
@@ -253,6 +287,43 @@ function expectInteger(value: unknown, field: string, source: string): number {
   }
 
   return number;
+}
+
+function optionalInteger(
+  value: unknown,
+  field: string,
+  source: string,
+  fallback: number,
+): number {
+  if (value === undefined) {
+    return fallback;
+  }
+
+  return expectInteger(value, field, source);
+}
+
+function optionalLadderKey(
+  value: unknown,
+  field: string,
+  source: string,
+): string | null {
+  if (value === undefined || value === null) {
+    return null;
+  }
+
+  const trimmed = expectString(value, field, source).trim();
+  if (trimmed === "") {
+    return null;
+  }
+
+  const normalized = trimmed.toLowerCase();
+  if (!LADDER_KEY_PATTERN.test(normalized)) {
+    throw new Error(
+      `${source} field "${field}" must match ${LADDER_KEY_PATTERN} after lowercase normalization.`,
+    );
+  }
+
+  return normalized;
 }
 
 function expectScoreModel(
@@ -490,5 +561,26 @@ function assertUniqueNameKeys(systems: DanSystemSeed[]) {
       }
       courseKeys.set(courseNameKey, course.name);
     }
+  }
+}
+
+function assertUniqueLadderOrders(systems: DanSystemSeed[]) {
+  const ordersByLadder = new Map<string, Map<number, string>>();
+
+  for (const system of systems) {
+    if (!system.ladder) {
+      continue;
+    }
+
+    const orders = ordersByLadder.get(system.ladder) ?? new Map<number, string>();
+    const existingSystemName = orders.get(system.ladderOrder ?? 0);
+    if (existingSystemName) {
+      throw new Error(
+        `Duplicate ladderOrder ${system.ladderOrder ?? 0} in ladder "${system.ladder}" from "${existingSystemName}" and "${system.name}".`,
+      );
+    }
+
+    orders.set(system.ladderOrder ?? 0, system.name);
+    ordersByLadder.set(system.ladder, orders);
   }
 }
