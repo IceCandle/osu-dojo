@@ -1,5 +1,6 @@
 import React from "react";
 import { notFound } from "next/navigation";
+import { LocalTime } from "@/app/LocalTime";
 import { getPlayerProfile } from "@/db/queries";
 import type { PlayerPinnedClear, PlayerRecentRun } from "@/lib/domain";
 import { formatPercentage } from "@/lib/format";
@@ -7,6 +8,7 @@ import { formatPercentage } from "@/lib/format";
 export const dynamic = "force-dynamic";
 
 const MODE_TABS = ["osu", "taiko", "catch", "mania"] as const;
+const SUPPORTED_MODE = "osu";
 
 export default async function PlayerProfilePage({
   params,
@@ -25,7 +27,7 @@ export default async function PlayerProfilePage({
   const requestedMode = Array.isArray(resolvedSearchParams?.mode)
     ? resolvedSearchParams?.mode[0]
     : resolvedSearchParams?.mode;
-  const selectedMode = requestedMode === "osu" || !requestedMode ? "osu" : requestedMode;
+  const selectedMode = resolveSelectedMode(requestedMode);
   const profile = await getPlayerProfile(userId);
   const avatarUrl = profile?.avatarUrl ?? `https://a.ppy.sh/${userId}`;
   const osuProfileUrl = profile?.osuProfileUrl ?? `https://osu.ppy.sh/users/${userId}`;
@@ -34,7 +36,13 @@ export default async function PlayerProfilePage({
     return (
       <main className="page-shell">
         <section className="detail-header player-header">
-          <a className="player-avatar-link" href={osuProfileUrl} rel="noreferrer" target="_blank">
+          <a
+            aria-label={`User ${userId} osu! profile`}
+            className="player-avatar-link"
+            href={osuProfileUrl}
+            rel="noreferrer"
+            target="_blank"
+          >
             <img alt="" className="player-avatar" src={avatarUrl} />
           </a>
           <div className="player-header-copy">
@@ -55,7 +63,13 @@ export default async function PlayerProfilePage({
   return (
     <main className="page-shell">
       <section className="detail-header player-header">
-        <a className="player-avatar-link" href={profile.osuProfileUrl} rel="noreferrer" target="_blank">
+        <a
+          aria-label={`${profile.username}'s osu! profile`}
+          className="player-avatar-link"
+          href={profile.osuProfileUrl}
+          rel="noreferrer"
+          target="_blank"
+        >
           <img alt="" className="player-avatar" src={profile.avatarUrl} />
         </a>
         <div className="player-header-copy">
@@ -190,19 +204,20 @@ export default async function PlayerProfilePage({
 
 function ModeTabs({ selectedMode }: { selectedMode: string }) {
   return (
-    <nav className="course-tab-bar player-mode-tabs" aria-label="Game mode selector">
+    <nav className="course-tab-bar player-mode-tabs" role="tablist" aria-label="Game mode selector">
       {MODE_TABS.map((mode) => (
-        <span
-          aria-disabled={mode !== "osu"}
+        <button
           aria-selected={mode === selectedMode}
           className={`course-tab${mode === selectedMode ? " is-active" : ""}${
             mode !== "osu" ? " is-disabled" : ""
           }`}
+          disabled={mode !== "osu"}
           key={mode}
           role="tab"
+          type="button"
         >
           {mode}
-        </span>
+        </button>
       ))}
     </nav>
   );
@@ -215,7 +230,9 @@ function RecentRunRow({ run }: { run: PlayerRecentRun }) {
         <strong className="ranking-player-name">{run.courseLabel ?? run.courseName}</strong>
       </td>
       <td className={getRunStatusClassName(run.status)}>{run.status}</td>
-      <td>{formatDate(run.completedAt)}</td>
+      <td>
+        <LocalTime value={run.completedAt} ssrFallback={formatDate(run.completedAt)} />
+      </td>
     </tr>
   );
 }
@@ -236,6 +253,10 @@ function parseUserId(value: string) {
 
   const parsed = Number(value);
   return Number.isSafeInteger(parsed) ? parsed : null;
+}
+
+function resolveSelectedMode(requestedMode: string | undefined) {
+  return requestedMode === SUPPORTED_MODE ? requestedMode : SUPPORTED_MODE;
 }
 
 function formatPinnedMetric(clear: PlayerPinnedClear) {

@@ -49,3 +49,6 @@ yarn-error.log*
 
 # typescript
 *.tsbuildinfo
+
+#local reference material
+/local-resources/

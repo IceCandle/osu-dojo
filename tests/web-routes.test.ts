@@ -733,6 +733,10 @@ test("DanCoursePage renders the integrated leaderboard and empty state on the sy
     assert.match(courseHtml, /Course sequence/);
     assert.match(courseHtml, /Top runs/);
     assert.match(courseHtml, /RenderPlayer/);
+    assert.match(
+      courseHtml,
+      /<a class="ranking-player-link" href="\/players\/21"><strong class="ranking-player-name">RenderPlayer<\/strong><\/a>/,
+    );
     assert.match(courseHtml, /Course Acc/);
     assert.match(courseHtml, /status-pass/);
     assert.match(courseHtml, /https:\/\/osu\.ppy\.sh\/mp\/4242/);

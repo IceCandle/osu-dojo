@@ -225,6 +225,12 @@ code {
   opacity: 1;
 }
 
+.site-action:disabled {
+  color: var(--muted);
+  cursor: not-allowed;
+  opacity: 0.72;
+}
+
 .search-overlay {
   position: fixed;
   inset: 0;
@@ -879,6 +885,7 @@ code {
 }
 
 .course-tab {
+  appearance: none;
   display: inline-flex;
   align-items: center;
   min-height: 36px;
@@ -887,8 +894,10 @@ code {
   border-right-width: 0;
   background: var(--bg);
   color: var(--muted);
+  cursor: pointer;
   font-size: 12px;
   letter-spacing: 0.04em;
+  text-decoration: none;
   transition:
     background 160ms ease,
     color 160ms ease,
@@ -970,7 +979,9 @@ code {
 .status-dnf {
   justify-self: end;
   font-size: 13px;
+  font-weight: 600;
   letter-spacing: 0.12em;
+  text-transform: uppercase;
 }
 
 .status-pass {
@@ -987,6 +998,7 @@ code {
 
 .ranking-section {
   margin-top: 24px;
+  min-width: 0;
   position: sticky;
   top: 92px;
 }
@@ -1050,6 +1062,22 @@ code {
   display: block;
   font-size: 16px;
   line-height: 1.45;
+}
+
+.ranking-player-link {
+  color: var(--text);
+  text-decoration: none;
+}
+
+.ranking-player-link:hover,
+.ranking-player-link:focus-visible {
+  color: var(--accent);
+  outline: none;
+}
+
+.ranking-player-link:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: 3px;
 }
 
 .ranking-metric-link {
@@ -1142,6 +1170,11 @@ code {
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
   line-clamp: 2;
+}
+
+.course-beatmap-visual.is-placeholder .course-beatmap-song-title {
+  font-size: clamp(18px, 2.2vw, 24px);
+  line-height: 1.12;
 }
 
 .course-beatmap-song-meta {
