@@ -12,6 +12,8 @@
 # testing
 /coverage
 /test/
+/playwright-report/
+/test-results/
 dojo-dev.jsonl
 
 # local runtime artifacts

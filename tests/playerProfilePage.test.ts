@@ -4,12 +4,12 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { createTestDatabase } from "@/db/client";
 import { getCourseByNameKey, storeCourseRunResult } from "@/db/queries";
 import PlayerProfilePage from "@/app/players/[userId]/page";
-import type { CourseDefinition } from "@/lib/domain";
 import {
   createTempDatabaseUrl,
   SEEDED_COURSE_NAME_KEY,
   SEEDED_SYSTEM_NAME_KEY,
 } from "./helpers/dbFixtures";
+import { passRun } from "./helpers/runFixtures";
 
 test("player profile page renders saved local runs", async () => {
   const temp = createTempDatabaseUrl();
@@ -131,38 +131,3 @@ test("player profile mode tabs clamp unsupported modes to osu", async () => {
     temp.cleanup();
   }
 });
-
-function passRun(
-  userId: number,
-  username: string,
-  course: CourseDefinition,
-  completedAt: number,
-) {
-  return {
-    userId,
-    username,
-    courseId: course.id,
-    passed: true,
-    startedAt: completedAt - 60_000,
-    completedAt,
-    matchId: null,
-    maps: course.beatmaps.map((beatmap, index) => ({
-      gameId: completedAt + index,
-      beatmapId: beatmap.beatmapId,
-      mods: beatmap.mods,
-      passConditions: beatmap.passConditions,
-      ordinal: beatmap.ordinal,
-      score: 1_000_000 - index,
-      rawScore: 1_000_000 - index,
-      playedMods: beatmap.mods,
-      accuracy: 99 - index,
-      maxCombo: 1_000,
-      count300: 1_000,
-      count100: 0,
-      count50: 0,
-      countMiss: 0,
-      passed: true,
-      createdAt: completedAt + index,
-    })),
-  };
-}
