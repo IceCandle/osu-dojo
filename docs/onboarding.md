@@ -34,6 +34,7 @@
 4. Run checks and site.
 
    ```bash
+   pnpm typecheck
    pnpm test
    pnpm build
    pnpm dev
@@ -47,6 +48,7 @@
    - `http://localhost:3000/`
    - `http://localhost:3000/dan`
    - `http://localhost:3000/dan/test?course=1st`
+   - `http://localhost:3000/players/<userId>`
 
 ## 봇 확인
 

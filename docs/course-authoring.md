@@ -208,8 +208,10 @@ course data를 바꾸기 전에 아래를 확인합니다.
 8. frozen system의 gameplay field를 바꾸지 않았는지 확인
 9. `label`은 16자 이하인지, `ladder`는 `^[a-z0-9-]+$`와 맞는지 확인
 10. 같은 ladder 안에서 `ladderOrder`가 중복되지 않는지 확인
-11. `pnpm test` 실행
-12. `pnpm build` 실행
-13. `pnpm dev`를 켜고 `/dan`, `/dan/<system-name-key>?course=<course-name-key>` 확인
+11. `pnpm typecheck` 실행
+12. `pnpm test` 실행
+13. `pnpm build` 실행
+14. `pnpm dev`를 켜고 `/dan`, `/dan/<system-name-key>?course=<course-name-key>` 확인
+15. 브라우저에서 보이는 catalog/course 동작을 바꾸면 `pnpm test:e2e` 실행
 
 실제 Bancho 동작 확인이 필요하면 `pnpm bot:dev <system-name-key> <course-name-key>`를 실행합니다.

@@ -7,35 +7,14 @@ assignees: ''
 
 ---
 
-**Describe the bug**
-A clear and concise description of what the bug is.
+## Summary
 
-**To Reproduce**
-Steps to reproduce the behavior:
-1. Go to '...'
-2. Click on '....'
-3. Scroll down to '....'
-4. See error
+무슨 문제가 생겼는지, 재현 순서, 기대한 동작, 실제 동작, 환경 정보를 적어주세요.
 
-**Expected behavior**
-A clear and concise description of what you expected to happen.
+## Done when
 
-**Screenshots**
-If applicable, add screenshots to help explain your problem.
+이 issue가 끝났다고 볼 조건을 적어주세요.
 
-**Desktop (please complete the following information):**
- - OS: [e.g. iOS]
- - Browser [e.g. chrome, safari]
- - Version [e.g. 22]
+## Verifier
 
-**Smartphone (please complete the following information):**
- - Device: [e.g. iPhone6]
- - OS: [e.g. iOS8.1]
- - Browser [e.g. stock browser, safari]
- - Version [e.g. 22]
-
-**Acceptance criteria / Verification**
-What must be true for this issue to be considered done, and how should it be checked?
-
-**Additional context**
-Add any other context about the problem here.
+어떤 명령이나 수동 확인으로 검증할지 적어주세요.
