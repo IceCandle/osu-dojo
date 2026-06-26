@@ -93,6 +93,31 @@ test("searchDanCatalog includes player hits with catalog hits", async () => {
   }
 });
 
+test("player search is local-runs-only and does not resolve exact usernames from the network", async () => {
+  const temp = createTempDatabaseUrl();
+  const originalFetch = globalThis.fetch;
+
+  try {
+    const { db } = await createTestDatabase(temp.url);
+    let fetchCalls = 0;
+    globalThis.fetch = (() => {
+      fetchCalls += 1;
+      throw new Error("player search must not call fetch");
+    }) as typeof fetch;
+
+    await db
+      .insert(runs)
+      .values(run("run-local-player", 4001, "StoredLocalPlayer", 1_800_000_000_000));
+
+    assert.deepEqual(await searchPlayers("MissingExactName", db), []);
+    assert.equal((await searchPlayers("storedlocalplayer", db))[0]?.username, "StoredLocalPlayer");
+    assert.equal(fetchCalls, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+    temp.cleanup();
+  }
+});
+
 function run(id: string, userId: number, username: string, completedAt: number) {
   return {
     id,

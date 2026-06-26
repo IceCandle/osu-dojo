@@ -702,7 +702,7 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
     };
 
     try {
-      const lobbyTitle = getLobbyTitle(system, course);
+      const lobbyTitle = getLobbyTitle(run.playerUsername, system, course);
       if (!capabilities.persistRuns) {
         await safeSendUserMessage(
           user,
@@ -2050,8 +2050,12 @@ function getCoursePageUrl(system: DanSystemDefinition, course: CourseDefinition)
   )}?course=${encodeURIComponent(kebabizeName(course.name))}`;
 }
 
-function getLobbyTitle(system: DanSystemDefinition, course: CourseDefinition) {
-  return `osu!dojo: ${system.name} / ${course.name}`;
+function getLobbyTitle(
+  playerUsername: string,
+  system: DanSystemDefinition,
+  course: CourseDefinition,
+) {
+  return `(osu!dojo): (${playerUsername}) vs (${system.name} ${course.name})`;
 }
 
 function loadEnvFallback(filePath: string) {

@@ -88,7 +88,7 @@ CourseRun (id, userId, courseId, passed, timestamp, matchId?)
 - 플레이어가 이미 진행 중인 run이 있는 상태에서 `!dojo start`를 다시 보내면, bot은 이전 방을 닫고 새 방을 만듭니다. resolved map이 있으면 이전 run은 DNF로 저장됩니다.
 - 플레이어가 로비에서 나가면 현재 run이 중단됩니다.
 - 위와 같이 중단되었거나, 진행 중이던 run이 프로세스 재시작, Bancho 연결 끊김, 매치 중단, score 미발견, score API 지연 등으로 끊기면 bot은 그 run을 이어서 복구하지 않습니다. 가능한 경우 남은 로비를 정리하고, 플레이어는 `!dojo start`로 새 run을 시작합니다. 런타임이 중단을 처리해 run을 저장한 경우에는 저장된 map 결과를 기준으로 pass/fail/DNF가 계산되며, 저장할 run 상태나 map 결과가 없으면 run 결과를 저장하지 않습니다.
-- bot은 `osu!dojo: <system_name> / <course_name>` 제목의 멀티플레이어 방을 만듭니다.
+- bot은 `(osu!dojo): (<player_name>) vs (<system_name> <course_name>)` 제목의 멀티플레이어 방을 만듭니다.
 
 ### AC2: Course Sequencing
 
@@ -131,8 +131,9 @@ CourseRun (id, userId, courseId, passed, timestamp, matchId?)
 - `/dan/[systemNameKey]`는 playable system의 모든 course, beatmap 목록, 통과 조건, 통합 리더보드, `?course=<courseNameKey>` anchor 이동을 렌더링합니다.
 - draft detail page는 상응하는 정보를 표시하고, draft run은 저장되지 않는다고 안내합니다.
 - 리더보드의 `Course Acc`는 통과한 map accuracy의 합계입니다.
-- `/players/[userId]`는 저장된 `runs`의 `userId`와 최신 `username`만 사용합니다. osu! API 조회, profile cache, account linking은 없습니다. avatar는 `https://a.ppy.sh/{userId}`를 사용합니다.
+- `/players/[userId]`는 저장된 `runs`의 `userId`와 최신 `username`만 사용합니다. osu! API 조회, profile cache, account linking은 없습니다. avatar는 `https://a.ppy.sh/{userId}`를 사용합니다. 이 규칙은 검색에서 player 결과를 만들 때도 같습니다.
 - Player profile은 최고 official dan badge, 자동 선택된 pinned clears 최대 5개, 최근 run, 많이 플레이한 course, play count를 보여줍니다. 최고 official dan은 통과한 official course만 대상으로 하며, 같은 ladder 안에서는 `(ladderOrder, course ordinal)`이 가장 큰 course 하나만 badge로 보여줍니다. badge 글자는 `course.label`이 있으면 그것을 쓰고, 없으면 course name을 씁니다.
 - Player profile의 mode selector는 표시용 scaffold입니다. 현재 동작은 osu!standard만 지원합니다.
-- 전역 헤더 검색 버튼은 client component dialog를 열고, 읽기 전용 `/api/search?q=` JSON endpoint로 current/legacy 시스템과 코스를 display name 기준으로 찾고, 저장된 run의 과거 username 기준으로 player도 찾습니다. system 결과는 `/dan/<systemNameKey>`, course 결과는 `/dan/<systemNameKey>?course=<courseNameKey>`, player 결과는 `/players/<userId>`로 이동합니다. system/course route key는 Public Name Key 규칙을 그대로 사용합니다.
+- 전역 헤더 검색 버튼은 client component dialog를 열고, 읽기 전용 `/api/search?q=` JSON endpoint로 current/legacy 시스템과 코스를 display name 기준으로 찾고, 저장된 run의 과거 username 기준으로 player도 찾습니다. player 검색은 저장된 run만 사용합니다. `/api/search`는 osu! API나 외부 network를 호출하지 않습니다. osu! identity 보강이 필요하면 course import나 metadata refresh 때 처리하고, 검색 요청 중에는 하지 않습니다. 저장된 run이 없는 정확한 username은 현재 찾지 못하는 한계가 있습니다. system 결과는 `/dan/<systemNameKey>`, course 결과는 `/dan/<systemNameKey>?course=<courseNameKey>`, player 결과는 `/players/<userId>`로 이동합니다. system/course route key는 Public Name Key 규칙을 그대로 사용합니다.
+- `/api/search?q=&official=1`은 official course만 보여주는 catalog filter를 지원합니다. 이 filter는 system/course 결과에만 적용되고 player 결과에는 적용되지 않습니다.
 - 인증은 없습니다. 읽기 전용입니다. 기본은 SSR with server components이며, 전역 검색 dialog와 `/api/search` endpoint만 예외입니다.

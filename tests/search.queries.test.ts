@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createTestDatabase } from "@/db/client";
-import { courses, danSystems } from "@/db/schema";
+import { courses, danSystems, runs } from "@/db/schema";
 import { searchDanCatalog } from "@/db/queries";
 import { createTempDatabaseUrl } from "./helpers/dbFixtures";
 
@@ -141,3 +141,91 @@ test("searchDanCatalog caps ordered results", async () => {
     temp.cleanup();
   }
 });
+
+test("searchDanCatalog applies official filter only to catalog hits", async () => {
+  const temp = createTempDatabaseUrl();
+
+  try {
+    const { db } = await createTestDatabase(temp.url);
+    await db.insert(danSystems).values([
+      catalogSystem("system-main-alpha", "Main Alpha", "current", "main-dan"),
+      catalogSystem("system-main-beta", "Main Beta", "current", "main-dan"),
+      catalogSystem("system-alt-alpha", "Alt Alpha", "legacy", "alt-dan"),
+      catalogSystem("system-draft-alpha", "Draft Alpha", "draft", "main-dan"),
+      catalogSystem("system-archived-alpha", "Archived Alpha", "archived", "main-dan"),
+    ]);
+    await db.insert(courses).values([
+      catalogCourse("course-main-alpha-official", "system-main-alpha", "Alpha Official", 1, true),
+      catalogCourse("course-main-alpha-community", "system-main-alpha", "Alpha Community", 2, false),
+      catalogCourse("course-main-beta-community", "system-main-beta", "Alpha Beta Community", 1, false),
+      catalogCourse("course-alt-alpha-official", "system-alt-alpha", "Alpha Alt Official", 1, true),
+      catalogCourse("course-draft-alpha-official", "system-draft-alpha", "Alpha Draft Official", 1, true),
+      catalogCourse("course-archived-alpha-official", "system-archived-alpha", "Alpha Archived Official", 1, true),
+    ]);
+    await db.insert(runs).values({
+      id: "run-alpha-player",
+      userId: 9001,
+      username: "AlphaPlayer",
+      courseId: "course-main-alpha-community",
+      passed: true,
+      startedAt: 1_800_000_000_000,
+      completedAt: 1_800_000_060_000,
+      matchId: null,
+    });
+
+    const officialResults = await searchDanCatalog(
+      "alpha",
+      { officialOnly: true },
+      db,
+    );
+
+    assert.deepEqual(
+      officialResults.systems.map((system) => system.name),
+      ["Alt Alpha", "Main Alpha"],
+    );
+    assert.deepEqual(
+      officialResults.courses.map((course) => course.name),
+      ["Alpha Alt Official", "Alpha Official"],
+    );
+    assert.equal(officialResults.players[0]?.username, "AlphaPlayer");
+  } finally {
+    temp.cleanup();
+  }
+});
+
+function catalogSystem(
+  id: string,
+  name: string,
+  status: "current" | "legacy" | "draft" | "archived",
+  ladder: string | null,
+) {
+  return {
+    id,
+    name,
+    slug: `${id}-slug`,
+    description: `${name} fixture.`,
+    status,
+    ladder,
+    ladderOrder: 0,
+  };
+}
+
+function catalogCourse(
+  id: string,
+  danSystemId: string,
+  name: string,
+  ordinal: number,
+  official: boolean,
+) {
+  return {
+    id,
+    danSystemId,
+    name,
+    slug: `${id}-slug`,
+    description: `${name} fixture.`,
+    ordinal,
+    official,
+    scoreModel: "scorev2" as const,
+    overallPassConditions: "[]",
+  };
+}

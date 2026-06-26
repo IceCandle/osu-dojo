@@ -35,6 +35,7 @@ import {
   emptySearchResults,
   isValidQuery,
   normalizeSearch,
+  type CatalogFilters,
   type CourseHit,
   type PlayerHit,
   type SearchResults,
@@ -159,12 +160,25 @@ export async function listDanSystemsWithCourses(db?: AppDatabase) {
 export async function searchDanCatalog(
   query: string,
   db?: AppDatabase,
+): Promise<SearchResults>;
+export async function searchDanCatalog(
+  query: string,
+  filters: CatalogFilters,
+  db?: AppDatabase,
+): Promise<SearchResults>;
+export async function searchDanCatalog(
+  query: string,
+  filtersOrDb?: CatalogFilters | AppDatabase,
+  db?: AppDatabase,
 ): Promise<SearchResults> {
   if (!isValidQuery(query)) {
     return emptySearchResults();
   }
 
-  const database = await useDb(db);
+  const filters = isCatalogFilters(filtersOrDb)
+    ? filtersOrDb
+    : { officialOnly: false };
+  const database = await useDb(isCatalogFilters(filtersOrDb) ? db : filtersOrDb);
   const normalizedQuery = normalizeSearch(query);
   const rows = await database
     .select({
@@ -174,6 +188,7 @@ export async function searchDanCatalog(
       courseId: courses.id,
       courseName: courses.name,
       courseOrdinal: courses.ordinal,
+      courseOfficial: courses.official,
     })
     .from(danSystems)
     .leftJoin(courses, eq(courses.danSystemId, danSystems.id))
@@ -184,6 +199,10 @@ export async function searchDanCatalog(
   const courseHits: CourseHit[] = [];
 
   for (const row of rows) {
+    if (!matchesCatalogFilters(row, filters)) {
+      continue;
+    }
+
     const systemNameKey = kebabizeName(row.danSystemName);
 
     if (
@@ -216,6 +235,28 @@ export async function searchDanCatalog(
     courses: courseHits.slice(0, 20),
     players: await safeSearchPlayers(query, database),
   };
+}
+
+function matchesCatalogFilters(
+  row: {
+    courseId: string | null;
+    courseOfficial: boolean | null;
+  },
+  filters: CatalogFilters,
+) {
+  if (filters.officialOnly && (!row.courseId || row.courseOfficial !== true)) {
+    return false;
+  }
+
+  return true;
+}
+
+function isCatalogFilters(value: CatalogFilters | AppDatabase | undefined): value is CatalogFilters {
+  return (
+    value !== undefined &&
+    "officialOnly" in value &&
+    typeof value.officialOnly === "boolean"
+  );
 }
 
 export async function searchPlayers(

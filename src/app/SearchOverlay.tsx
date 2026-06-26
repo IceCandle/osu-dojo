@@ -13,11 +13,17 @@ import {
 type SearchStatus = "idle" | "loading" | "success" | "error";
 
 const FOCUSABLE_SELECTOR =
-  'a[href], button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])';
+  [
+    "a[href]",
+    "button:not([disabled])",
+    "input:not([disabled])",
+    '[tabindex]:not([tabindex="-1"])',
+  ].join(", ");
 
 export default function SearchOverlay() {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const [officialOnly, setOfficialOnly] = useState(false);
   const [results, setResults] = useState<SearchResults>(emptySearchResults);
   const [status, setStatus] = useState<SearchStatus>("idle");
   const triggerRef = useRef<HTMLButtonElement | null>(null);
@@ -63,7 +69,12 @@ export default function SearchOverlay() {
 
     const timeoutId = window.setTimeout(async () => {
       try {
-        const response = await fetch(`/api/search?q=${encodeURIComponent(trimmedQuery)}`);
+        const searchParams = new URLSearchParams({ q: trimmedQuery });
+        if (officialOnly) {
+          searchParams.set("official", "1");
+        }
+
+        const response = await fetch(`/api/search?${searchParams.toString()}`);
         if (!response.ok) {
           throw new Error("Search request failed.");
         }
@@ -84,7 +95,7 @@ export default function SearchOverlay() {
     return () => {
       window.clearTimeout(timeoutId);
     };
-  }, [open, query]);
+  }, [open, query, officialOnly]);
 
   function handleDialogKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
     if (event.key === "Escape") {
@@ -167,13 +178,30 @@ export default function SearchOverlay() {
 
             <input
               ref={inputRef}
-              aria-label="Search dan systems and courses"
+              aria-label="Search dan systems, courses, and players"
               className="search-dialog-input"
               maxLength={MAX_QUERY_LENGTH}
               type="search"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
             />
+
+            <section
+              aria-labelledby="search-catalog-filters"
+              className="search-dialog-filters"
+            >
+              <h3 id="search-catalog-filters">Filter systems & courses</h3>
+              <div className="search-filter-row">
+                <label className="search-filter-check">
+                  <input
+                    checked={officialOnly}
+                    type="checkbox"
+                    onChange={(event) => setOfficialOnly(event.target.checked)}
+                  />
+                  <span>Official</span>
+                </label>
+              </div>
+            </section>
 
             <div className="search-dialog-results" aria-live="polite">
               {status === "loading" ? <p className="search-state">Searching...</p> : null}

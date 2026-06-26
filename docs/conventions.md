@@ -55,7 +55,7 @@ UI 문구와 스타일 변경은 test-first가 필요하지 않습니다. 라우
 
 공유 SQLite의 WAL / `busy_timeout`, 재시도 가능한 네트워크 오류의 지터 백오프 같은 기본 복구 장치는 최적화가 아니라 안정성 기준입니다.
 
-browser verification, link check, browser-driven flow는 `playwright-cli`를 먼저 씁니다. 환경 제약으로 막히면 임의 수동 확인으로 대체하기 전에 blocker를 기록합니다.
+browser verification, link check, browser-driven flow는 Playwright 기반 browser tooling을 먼저 씁니다. Playwright가 막히거나 필요한 확인을 깔끔하게 표현하기 어렵다면, 다른 browser tool이나 수동 확인으로 대체하기 전에 blocker를 기록합니다.
 
 ## Branches and PRs
 

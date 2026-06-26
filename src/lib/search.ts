@@ -29,6 +29,10 @@ export type SearchResults = {
   players: PlayerHit[];
 };
 
+export type CatalogFilters = {
+  officialOnly: boolean;
+};
+
 export function normalizeSearch(value: string): string {
   return value.trim().toLowerCase().replace(/\s+/g, " ");
 }
@@ -40,4 +44,12 @@ export function isValidQuery(value: string): boolean {
 
 export function emptySearchResults(): SearchResults {
   return { systems: [], courses: [], players: [] };
+}
+
+export function parseCatalogFilters(searchParams: URLSearchParams): CatalogFilters {
+  const official = searchParams.get("official");
+
+  return {
+    officialOnly: official === "1" || official === "true",
+  };
 }
