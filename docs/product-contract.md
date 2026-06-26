@@ -4,7 +4,7 @@
 
 ## Goal
 
-osu! dan course를 자동 멀티플레이어 방에서 진행하는 IRC bot, pass/fail 판정, 결과 저장, 그리고 course와 최근 결과를 보여주는 최소 웹사이트를 제공합니다.
+osu! dan course를 자동 멀티플레이어 방에서 진행하는 IRC bot, pass/fail 판정, 결과 저장, 그리고 course/최근 결과/검색/플레이어 프로필을 보여주는 최소 웹사이트를 제공합니다.
 
 ## Architecture
 

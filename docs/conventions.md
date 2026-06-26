@@ -7,7 +7,7 @@
 - Bot: `src/bot/`, 멀티플레이어 생명주기, 점수 수집, timeout, 실제 연결 확인 스크립트. GitHub label: `area:bot`
 - Web: `src/app/`, 라우트 렌더링, 카탈로그 페이지, 리더보드 표시, 브라우저 동작 확인. GitHub label: `area:web`
 - DB: `src/db/`, `data/courses/`, course loader, seed 동작, course data 유효성 검사, 결과 저장. GitHub label: `area:db`
-- Docs: README, 동작 기준 문서, onboarding, conventions, roadmap, runbook. GitHub label: `documentation`
+- Docs: `docs/product-contract.md`, `README.md`, `docs/onboarding.md`, `docs/course-authoring.md`, `docs/roadmap.md`, `.github/pull_request_template.md`, `.github/ISSUE_TEMPLATE/`, `.github/workflows/`, `AGENTS.md`, `CLAUDE.md`. GitHub label: `documentation`
 
 `src/lib/accuracy.ts`, `src/lib/judging.ts` 같은 판정 로직은 별도 area가 아니라 shared logic입니다. 판정 변경은 PR description의 What Changed와 verifier에 명확히 적고, issue가 있으면 title에 `[Judgment]`를 씁니다.
 
@@ -64,6 +64,14 @@ browser verification, link check, browser-driven flow는 Playwright 기반 brows
 Issue가 있는 작업은 짧은 설명형 branch를 씁니다. 예: `bot/abort-reasons`, `web/dan-search`, `docs/course-edit-policy`.
 
 한 PR에는 하나의 범위가 정해진 issue 또는 task만 담습니다. 둘 이상의 area를 바꾸거나, 검증 경로가 둘 이상 필요하거나, 동작 변경과 docs 정리가 섞이면 PR을 나눌지 먼저 판단합니다.
+
+### Documentation Sweep
+
+커밋하기 전, 그리고 PR을 열기 전에 이번 변경이 제품 동작, setup, 명령어, route/browser flow, GitHub/issue/CI workflow, contributor 안내에 영향을 주는지 확인합니다. 영향이 있으면 위 Docs area의 기준 문서와 비교해서 stale한 문서를 같은 변경에서 고치고, 영향이 없으면 PR에 `doc 영향 없음`을 적습니다.
+
+이 확인은 새 검증 명령이나 새 issue 형식을 따로 만들지 않습니다. 검증 명령은 Testing 섹션을 따르고, issue 본문은 Issues 섹션의 `## Summary / ## Done when / ## Verifier` 구조를 따릅니다.
+
+오타 수정, 깨진 링크 수정, 포맷 정리, 동작을 바꾸지 않는 주석은 `doc 영향 없음` 한 줄로 충분합니다.
 
 PR description에는 관련 issue, 실행한 명령어, 수동 확인을 적습니다.
 

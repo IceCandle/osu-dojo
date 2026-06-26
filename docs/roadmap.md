@@ -11,6 +11,7 @@ osu!dojo의 주 기능은 자동으로 진행되는 단위인정 로비 flow입�
 - Bancho IRC 기반 자동 단위인정 방
 - 스테이블 std 멀티 점수 수집 및 판정
 - `/`, `/dan`, `/dan/[systemNameKey]?course=<courseNameKey>`의 읽기 전용 코스/결과 카탈로그
+- 전역 검색과 `/players/[userId]` 읽기 전용 플레이어 프로필
 
 ## Phase 2: Near-Term Hardening
 
