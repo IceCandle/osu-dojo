@@ -11,19 +11,14 @@ export default async function DanSystemsPage() {
 
   return (
     <main className="page-shell">
-      <section className="detail-header">
+      <section className="detail-header dan-index-header">
         <p className="masthead-kicker">dans</p>
         <div className="directory-heading">
           <div>
-            <h1>Dan systems, archived cleanly.</h1>
+            <h1>Dan systems</h1>
             <p className="detail-copy">
-              Each dan system groups related courses under one scoring model.
+              Choose a system to view its courses, pass rules, and saved top runs.
             </p>
-          </div>
-          <div className="scope-panel">
-            <span className="scope-badge">How it works</span>
-            <p>Open a system to compare its courses without losing the full set.</p>
-            <p>Each course keeps its map order, pass rules, and top clears close together.</p>
           </div>
         </div>
       </section>
@@ -48,12 +43,7 @@ export default async function DanSystemsPage() {
                 <p className="system-card-description">{system.description}</p>
               </div>
 
-              <div className="system-card-meta">
-                <div>
-                  <span>Courses</span>
-                  <strong>{system.courses.length}</strong>
-                </div>
-              </div>
+              <p className="system-card-metaline">{system.courses.length} courses</p>
             </article>
           </Link>
         ))}

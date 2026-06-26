@@ -116,6 +116,39 @@ test("seedDatabase rejects gameplay edits on current systems", async () => {
   }
 });
 
+test("seedDatabase allows display metadata edits on current systems", async () => {
+  const temp = createTempDatabaseUrl();
+
+  try {
+    const { db } = await createTestDatabase(temp.url);
+    const systems = cloneCourseSystems(loadCoursesFromDir(path.join(process.cwd(), "data/courses")));
+    const system = systems[0];
+    const seededCourse = system?.courses.find((entry) => entry.slug === SEEDED_COURSE_SLUG);
+
+    assert.ok(system);
+    assert.ok(seededCourse);
+    system!.ladder = "sample-ladder";
+    system!.ladderOrder = 3;
+    seededCourse!.official = true;
+    seededCourse!.label = "S1";
+
+    await seedDatabase(db, systems, { suppressMissingObjectCountWarnings: true });
+
+    const updatedCourse = await getCourseByNameKey(
+      SEEDED_SYSTEM_NAME_KEY,
+      SEEDED_COURSE_NAME_KEY,
+      db,
+    );
+
+    assert.equal(updatedCourse?.danSystemLadder, "sample-ladder");
+    assert.equal(updatedCourse?.danSystemLadderOrder, 3);
+    assert.equal(updatedCourse?.official, true);
+    assert.equal(updatedCourse?.label, "S1");
+  } finally {
+    temp.cleanup();
+  }
+});
+
 test("seedDatabase allows current systems to roll over to legacy keys", async () => {
   const temp = createTempDatabaseUrl();
 

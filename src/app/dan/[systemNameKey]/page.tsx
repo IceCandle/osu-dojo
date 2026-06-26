@@ -249,7 +249,9 @@ export default async function DanSystemPage({
                             {result.rank}
                           </td>
                           <td>
-                            <strong className="ranking-player-name">{result.username}</strong>
+                            <Link className="ranking-player-link" href={`/players/${result.userId}`}>
+                              <strong className="ranking-player-name">{result.username}</strong>
+                            </Link>
                           </td>
                           <td className="numeric-cell">
                             <div className="ranking-metric-cell">

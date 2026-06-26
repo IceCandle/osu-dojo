@@ -8,6 +8,8 @@ export const danSystems = sqliteTable("dan_systems", {
   slug: text("slug").notNull().unique(),
   description: text("description").notNull(),
   status: text("status").$type<DanSystemStatus>().notNull().default("current"),
+  ladder: text("ladder"),
+  ladderOrder: integer("ladder_order").notNull().default(0),
 });
 
 export const courses = sqliteTable(
@@ -23,6 +25,8 @@ export const courses = sqliteTable(
     description: text("description").notNull().default(""),
     tags: text("tags").notNull().default("[]"),
     ordinal: integer("ordinal").notNull(),
+    official: integer("official", { mode: "boolean" }).notNull().default(false),
+    label: text("label"),
     scoreModel: text("score_model").$type<DanScoreModel>().notNull(),
     overallPassConditions: text("overall_pass_conditions")
       .$type<string>()
@@ -89,6 +93,7 @@ export const runs = sqliteTable(
   },
   (table) => [
     index("runs_course_completed_idx").on(table.courseId, table.completedAt),
+    index("runs_user_completed_idx").on(table.userId, table.completedAt),
   ],
 );
 

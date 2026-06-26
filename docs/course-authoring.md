@@ -13,6 +13,8 @@ course seed 파일은 `data/courses/*.json`에 둡니다. seed 시점에는 이 
   "slug": "test",
   "description": "Sample dan system.",
   "status": "current",
+  "ladder": "sample-ladder",
+  "ladderOrder": 0,
   "courses": []
 }
 ```
@@ -24,6 +26,8 @@ System field:
 - `slug`: 내부 seed 식별자
 - `description`: catalog와 detail page에 보여줄 설명
 - `status`: `draft`, `current`, `legacy`, `archived` 중 하나. 생략하면 `current`
+- `ladder`: 선택 field. 여러 system을 player profile에서 하나의 진행도로 합칠 때 쓰는 표시용 key. 생략, `null`, 빈 문자열은 standalone입니다. 값이 있으면 소문자 기준 `^[a-z0-9-]+$`와 맞아야 합니다.
+- `ladderOrder`: 선택 field. 같은 `ladder` 안에서 낮은 단계에서 높은 단계로 정렬하는 정수입니다. 생략하면 `0`입니다. 같은 non-null `ladder` 안에서 같은 `ladderOrder`를 두 번 쓸 수 없습니다.
 - `courses`: course object 배열
 
 각 course object는 아래 형식을 사용합니다.
@@ -35,6 +39,8 @@ System field:
   "slug": "test-1dan",
   "description": "Two-map sample course.",
   "ordinal": 1,
+  "official": true,
+  "label": "1st",
   "scoreModel": "scorev2",
   "overallPassConditions": [{ "type": "courseAccuracy", "threshold": 190 }],
   "beatmaps": []
@@ -49,6 +55,8 @@ Course field:
 - `description`: detail page에 보여줄 설명
 - `tags`: 선택적 문자열 배열
 - `ordinal`: system 안에서의 표시 순서
+- `official`: 선택 field. 관리자가 고른 official dan이면 `true`입니다. 생략하면 `false`입니다. 만든 사람이나 system status에서 자동으로 정해지지 않습니다.
+- `label`: 선택 field. player profile의 acquired-dan badge에 쓰는 짧은 표시 글자입니다. 생략, `null`, 빈 문자열은 `null`입니다. trim 후 16자 이하여야 하며, 기호를 쓸 수 있고 display-name key 규칙을 따르지 않습니다.
 - `scoreModel`: `scorev1` 또는 `scorev2`
 - `overallPassConditions`: course 전체 통과 조건 배열. 비어 있으면 map별 조건만 사용
 - `beatmaps`: beatmap object 배열
@@ -135,7 +143,7 @@ ScoreV2 multiplier는 다음 기준을 씁니다.
 
 ## System Status
 
-상태는 system에만 둡니다. Course는 system의 상태를 상속하며, course object에는 별도 status를 쓰지 않습니다.
+상태는 system에만 둡니다. Course는 system의 상태를 상속하며, course object에는 별도 status를 쓰지 않습니다. `official`은 상태가 아니라 프로필에 네임플레이트를 보여줄지 정하는 표시용 값입니다.
 
 | 상태 | catalog 공개 | exact key 접근 | gameplay 수정 | run 저장 |
 | --- | --- | --- | --- | --- |
@@ -153,7 +161,18 @@ ScoreV2 multiplier는 다음 기준을 씁니다.
 - beatmap 추가/삭제
 - beatmap `id`, `beatmapId`, `mods`, `freemod`, `passConditions`, `ordinal`
 
-허용되는 cosmetic edit은 system `description`, 같은 key를 유지하는 system `name`, course `description`, course `tags`, 같은 key를 유지하는 course `name`, beatmap metadata cache입니다.
+허용되는 cosmetic edit은 system `description`, 같은 key를 유지하는 system `name`, system `ladder`, system `ladderOrder`, course `description`, course `tags`, course `official`, course `label`, 같은 key를 유지하는 course `name`, beatmap metadata cache입니다.
+
+## Official dan badge와 ladder
+
+Player profile의 acquired-dan badge는 통과한 official course에서만 나옵니다.
+
+- standalone system은 system 하나가 badge group 하나입니다.
+- 같은 `ladder` 값을 가진 system들은 하나의 badge group으로 합쳐집니다.
+- 같은 ladder 안에서는 `ladderOrder`가 큰 system이 더 높은 단계입니다. 같은 system 안에서는 course `ordinal`이 큰 course가 더 높은 단계입니다.
+- 뱃지 글자는 course `label`이 있으면 `label`, 없으면 course `name`입니다.
+
+예를 들어 kyu system에 `ladder: "main", ladderOrder: 0`, regular dan system에 `ladder: "main", ladderOrder: 1`을 주면 player profile에는 둘을 합쳐 가장 높은  official dan 하나만 보여줍니다.
 
 ## 연간 롤오버
 
@@ -187,8 +206,10 @@ course data를 바꾸기 전에 아래를 확인합니다.
 6. score model이 `scorev1` 또는 `scorev2`만 쓰는지 확인
 7. `scorev1` course에 `score` 또는 `totalScore` 조건이 없는지 확인
 8. frozen system의 gameplay field를 바꾸지 않았는지 확인
-9. `pnpm test` 실행
-10. `pnpm build` 실행
-11. `pnpm dev`를 켜고 `/dan`, `/dan/<system-name-key>?course=<course-name-key>` 확인
+9. `label`은 16자 이하인지, `ladder`는 `^[a-z0-9-]+$`와 맞는지 확인
+10. 같은 ladder 안에서 `ladderOrder`가 중복되지 않는지 확인
+11. `pnpm test` 실행
+12. `pnpm build` 실행
+13. `pnpm dev`를 켜고 `/dan`, `/dan/<system-name-key>?course=<course-name-key>` 확인
 
 실제 Bancho 동작 확인이 필요하면 `pnpm bot:dev <system-name-key> <course-name-key>`를 실행합니다.

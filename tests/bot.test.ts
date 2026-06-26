@@ -171,9 +171,15 @@ test("bot replays the previous start command after the active run is released", 
     assert.equal(client.createLobbyCalls.length, 2);
     assert.deepEqual(
       client.createLobbyCalls.map((call) => call.name),
-      ["osu!dojo: test / 1st", "osu!dojo: test / 1st"],
+      [
+        "(osu!dojo): (PlayerOne) vs (test 1st)",
+        "(osu!dojo): (PlayerOne) vs (test 1st)",
+      ],
     );
-    assert.match(user.messages.at(-1) ?? "", /Room ready: osu!dojo: test \/ 1st/i);
+    assert.match(
+      user.messages.at(-1) ?? "",
+      /Room ready: \(osu!dojo\): \(PlayerOne\) vs \(test 1st\)/i,
+    );
   } finally {
     temp.cleanup();
   }
@@ -1153,7 +1159,7 @@ test("bot playtests draft courses without storing results", async () => {
     await bot.handlePrivateMessage(createSeededStartMessage(user));
 
     assert.equal(client.createLobbyCalls[0]?.privateLobby, undefined);
-    assert.match(client.createLobbyCalls[0]?.name ?? "", /^osu!dojo/);
+    assert.match(client.createLobbyCalls[0]?.name ?? "", /^\(osu!dojo\):/);
     assert.deepEqual(client.lobby.invites, ["#42"]);
     assert.match(user.messages[0] ?? "", /Results will not be saved/i);
 

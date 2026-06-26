@@ -55,7 +55,9 @@ UI 문구와 스타일 변경은 test-first가 필요하지 않습니다. 라우
 
 공유 SQLite의 WAL / `busy_timeout`, 재시도 가능한 네트워크 오류의 지터 백오프 같은 기본 복구 장치는 최적화가 아니라 안정성 기준입니다.
 
-browser verification, link check, browser-driven flow는 `playwright-cli`를 먼저 씁니다. 환경 제약으로 막히면 임의 수동 확인으로 대체하기 전에 blocker를 기록합니다.
+browser verification, link check, browser-driven flow는 Playwright 기반 browser tooling을 먼저 씁니다. Playwright가 막히거나 필요한 확인을 깔끔하게 표현하기 어렵다면, 다른 browser tool이나 수동 확인으로 대체하기 전에 blocker를 기록합니다.
+
+웹 route나 browser-visible behavior를 바꾸면 검토로 넘기기 전에 `pnpm test:e2e`를 실행합니다. 이 명령은 임시 SQLite DB를 만들고 player/run fixture를 자동으로 seed한 뒤 Next server를 그 DB로 실행합니다. "local DB에 데이터가 없다"는 browser 검증 생략 사유가 아닙니다.
 
 ## Branches and PRs
 

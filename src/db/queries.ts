@@ -18,6 +18,11 @@ import type {
   DanSystemDefinition,
   JudgedMapResult,
   MapPassCondition,
+  PlayerDanBadge,
+  PlayerMostPlayedCourse,
+  PlayerPinnedClear,
+  PlayerProfile,
+  PlayerRecentRun,
 } from "@/lib/domain";
 import {
   catalogSystemStatuses,
@@ -26,6 +31,16 @@ import {
   playableSystemStatuses,
 } from "@/lib/domain";
 import { kebabizeName } from "@/lib/format";
+import {
+  emptySearchResults,
+  isValidQuery,
+  normalizeSearch,
+  type CatalogFilters,
+  type CourseHit,
+  type PlayerHit,
+  type SearchResults,
+  type SystemHit,
+} from "@/lib/search";
 
 type DerivedRunStatus = "pass" | "fail" | "dnf";
 
@@ -36,6 +51,8 @@ type CourseRow = {
   courseDescription: string;
   tags: string;
   courseOrdinal: number;
+  courseOfficial: boolean;
+  courseLabel: string | null;
   scoreModel: CourseDefinition["scoreModel"] | null;
   overallPassConditions: string;
   danSystemId: string;
@@ -43,6 +60,8 @@ type CourseRow = {
   danSystemSlug: string;
   danSystemDescription: string;
   danSystemStatus: DanSystemDefinition["status"];
+  danSystemLadder: string | null;
+  danSystemLadderOrder: number;
 };
 
 async function useDb(db?: AppDatabase): Promise<AppDatabase> {
@@ -58,12 +77,16 @@ export async function listDanSystemsWithCourses(db?: AppDatabase) {
       danSystemSlug: danSystems.slug,
       danSystemDescription: danSystems.description,
       danSystemStatus: danSystems.status,
+      danSystemLadder: danSystems.ladder,
+      danSystemLadderOrder: danSystems.ladderOrder,
       courseId: courses.id,
       courseName: courses.name,
       slug: courses.slug,
       courseDescription: courses.description,
       tags: courses.tags,
       courseOrdinal: courses.ordinal,
+      courseOfficial: courses.official,
+      courseLabel: courses.label,
       scoreModel: courses.scoreModel,
       overallPassConditions: courses.overallPassConditions,
     })
@@ -80,12 +103,16 @@ export async function listDanSystemsWithCourses(db?: AppDatabase) {
       slug: string;
       description: string;
       status: DanSystemDefinition["status"];
+      ladder: string | null;
+      ladderOrder: number;
       courses: Array<{
         id: string;
         name: string;
         slug: string;
         description: string;
         ordinal: number;
+        official: boolean;
+        label: string | null;
         scoreModel: CourseDefinition["scoreModel"];
         overallPassConditions: CourseDefinition["overallPassConditions"];
       }>;
@@ -101,6 +128,8 @@ export async function listDanSystemsWithCourses(db?: AppDatabase) {
         slug: row.danSystemSlug,
         description: row.danSystemDescription,
         status: row.danSystemStatus,
+        ladder: row.danSystemLadder,
+        ladderOrder: row.danSystemLadderOrder,
         courses: [],
       };
 
@@ -111,6 +140,8 @@ export async function listDanSystemsWithCourses(db?: AppDatabase) {
         slug: row.slug ?? "",
         description: row.courseDescription ?? "",
         ordinal: row.courseOrdinal ?? 0,
+        official: row.courseOfficial ?? false,
+        label: row.courseLabel ?? null,
         scoreModel: row.scoreModel ?? "scorev2",
         overallPassConditions: parseConditionList(
           row.overallPassConditions ?? "[]",
@@ -124,6 +155,158 @@ export async function listDanSystemsWithCourses(db?: AppDatabase) {
   }
 
   return [...systems.values()].sort(compareSystemSummaries);
+}
+
+export async function searchDanCatalog(
+  query: string,
+  db?: AppDatabase,
+): Promise<SearchResults>;
+export async function searchDanCatalog(
+  query: string,
+  filters: CatalogFilters,
+  db?: AppDatabase,
+): Promise<SearchResults>;
+export async function searchDanCatalog(
+  query: string,
+  filtersOrDb?: CatalogFilters | AppDatabase,
+  db?: AppDatabase,
+): Promise<SearchResults> {
+  if (!isValidQuery(query)) {
+    return emptySearchResults();
+  }
+
+  const filters = isCatalogFilters(filtersOrDb)
+    ? filtersOrDb
+    : { officialOnly: false };
+  const database = await useDb(isCatalogFilters(filtersOrDb) ? db : filtersOrDb);
+  const normalizedQuery = normalizeSearch(query);
+  const rows = await database
+    .select({
+      danSystemId: danSystems.id,
+      danSystemName: danSystems.name,
+      danSystemStatus: danSystems.status,
+      courseId: courses.id,
+      courseName: courses.name,
+      courseOrdinal: courses.ordinal,
+      courseOfficial: courses.official,
+    })
+    .from(danSystems)
+    .leftJoin(courses, eq(courses.danSystemId, danSystems.id))
+    .where(inArray(danSystems.status, catalogSystemStatuses()))
+    .orderBy(asc(danSystems.name), asc(courses.ordinal));
+
+  const systemHitsById = new Map<string, SystemHit>();
+  const courseHits: CourseHit[] = [];
+
+  for (const row of rows) {
+    if (!matchesCatalogFilters(row, filters)) {
+      continue;
+    }
+
+    const systemNameKey = kebabizeName(row.danSystemName);
+
+    if (
+      normalizeSearch(row.danSystemName).includes(normalizedQuery) &&
+      !systemHitsById.has(row.danSystemId)
+    ) {
+      systemHitsById.set(row.danSystemId, {
+        name: row.danSystemName,
+        nameKey: systemNameKey,
+        status: row.danSystemStatus,
+      });
+    }
+
+    if (
+      row.courseId &&
+      row.courseName &&
+      normalizeSearch(row.courseName).includes(normalizedQuery)
+    ) {
+      courseHits.push({
+        name: row.courseName,
+        nameKey: kebabizeName(row.courseName),
+        systemName: row.danSystemName,
+        systemNameKey,
+      });
+    }
+  }
+
+  return {
+    systems: [...systemHitsById.values()].slice(0, 10),
+    courses: courseHits.slice(0, 20),
+    players: await safeSearchPlayers(query, database),
+  };
+}
+
+function matchesCatalogFilters(
+  row: {
+    courseId: string | null;
+    courseOfficial: boolean | null;
+  },
+  filters: CatalogFilters,
+) {
+  if (filters.officialOnly && (!row.courseId || row.courseOfficial !== true)) {
+    return false;
+  }
+
+  return true;
+}
+
+function isCatalogFilters(value: CatalogFilters | AppDatabase | undefined): value is CatalogFilters {
+  return (
+    value !== undefined &&
+    "officialOnly" in value &&
+    typeof value.officialOnly === "boolean"
+  );
+}
+
+export async function searchPlayers(
+  query: string,
+  db?: AppDatabase,
+): Promise<PlayerHit[]> {
+  if (!isValidQuery(query)) {
+    return [];
+  }
+
+  const database = await useDb(db);
+  const pattern = `%${escapeLikePattern(query.trim().toLowerCase())}%`;
+  const rows = database.$client
+    .prepare(
+      `
+      WITH matching_users AS (
+        SELECT user_id
+        FROM runs
+        WHERE LOWER(username) LIKE ? ESCAPE '\\'
+        GROUP BY user_id
+        ORDER BY MAX(completed_at) DESC, user_id ASC
+        LIMIT 10
+      )
+      SELECT r.user_id AS userId, r.username AS username
+      FROM runs r
+      WHERE r.id IN (
+        SELECT latest.id
+        FROM runs latest
+        WHERE latest.user_id IN (SELECT user_id FROM matching_users)
+          AND latest.id = (
+            SELECT rr.id
+            FROM runs rr
+            WHERE rr.user_id = latest.user_id
+            ORDER BY rr.completed_at DESC, rr.id DESC
+            LIMIT 1
+          )
+      )
+      ORDER BY r.completed_at DESC, r.user_id ASC
+      LIMIT 10
+      `,
+    )
+    .all(pattern) as Array<{ userId: number; username: string }>;
+
+  return rows.map((row) => ({
+    userId: row.userId,
+    username: row.username,
+    avatarUrl: playerAvatarUrl(row.userId),
+    country: null,
+    gameMode: "osu",
+  }));
 }
 
 export async function listCoursesByDanSystemNameKey(
@@ -146,6 +329,8 @@ export async function getDanSystemDetailByNameKey(
       slug: danSystems.slug,
       description: danSystems.description,
       status: danSystems.status,
+      ladder: danSystems.ladder,
+      ladderOrder: danSystems.ladderOrder,
     })
     .from(danSystems)
     .where(inArray(danSystems.status, playableSystemStatuses()))
@@ -169,12 +354,16 @@ export async function getDanSystemDetailByNameKey(
       tags: courses.tags,
       courseOrdinal: courses.ordinal,
       scoreModel: courses.scoreModel,
+      courseOfficial: courses.official,
+      courseLabel: courses.label,
       overallPassConditions: courses.overallPassConditions,
       danSystemId: danSystems.id,
       danSystemName: danSystems.name,
       danSystemSlug: danSystems.slug,
       danSystemDescription: danSystems.description,
       danSystemStatus: danSystems.status,
+      danSystemLadder: danSystems.ladder,
+      danSystemLadderOrder: danSystems.ladderOrder,
     })
     .from(courses)
     .innerJoin(danSystems, eq(courses.danSystemId, danSystems.id))
@@ -188,6 +377,8 @@ export async function getDanSystemDetailByNameKey(
       slug: system.slug,
       description: system.description,
       status: system.status,
+      ladder: system.ladder,
+      ladderOrder: system.ladderOrder,
     },
     courses: await hydrateCourseRows(rows, database),
   };
@@ -258,11 +449,16 @@ async function hydrateCourseRows(
     danSystemName: row.danSystemName,
     danSystemSlug: row.danSystemSlug,
     danSystemDescription: row.danSystemDescription,
+    danSystemStatus: row.danSystemStatus,
+    danSystemLadder: row.danSystemLadder,
+    danSystemLadderOrder: row.danSystemLadderOrder,
     name: row.courseName,
     slug: row.slug,
     description: row.courseDescription,
     tags: parseTags(row.tags),
     ordinal: row.courseOrdinal,
+    official: Boolean(row.courseOfficial),
+    label: row.courseLabel,
     scoreModel: row.scoreModel ?? "scorev2",
     overallPassConditions: parseConditionList(row.overallPassConditions, "course", {
       courseSlug: row.slug,
@@ -394,6 +590,398 @@ export async function getRankingForCourse(
         rank: index + 1,
       })),
   };
+}
+
+export async function getPlayerProfile(
+  userId: number,
+  db?: AppDatabase,
+): Promise<PlayerProfile | null> {
+  const database = await useDb(db);
+  const latestRun = database.$client
+    .prepare(
+      `
+      SELECT username
+      FROM runs
+      WHERE user_id = ?
+      ORDER BY completed_at DESC, id DESC
+      LIMIT 1
+      `,
+    )
+    .get(userId) as { username: string } | undefined;
+
+  if (!latestRun) {
+    return null;
+  }
+
+  const playCountRow = database.$client
+    .prepare("SELECT COUNT(*) AS count FROM runs WHERE user_id = ?")
+    .get(userId) as { count: number };
+
+  const [mostPlayedCourses, recentRuns, highestOfficialDans, pinnedClears] =
+    await Promise.all([
+      getPlayerMostPlayedCourses(userId, database),
+      getPlayerRecentRuns(userId, database),
+      getPlayerHighestOfficialDans(userId, database),
+      getPlayerPinnedClears(userId, database),
+    ]);
+
+  return {
+    userId,
+    username: latestRun.username,
+    avatarUrl: playerAvatarUrl(userId),
+    osuProfileUrl: `https://osu.ppy.sh/users/${userId}`,
+    playCount: playCountRow.count,
+    highestOfficialDans,
+    pinnedClears,
+    recentRuns,
+    mostPlayedCourses,
+  };
+}
+
+async function safeSearchPlayers(query: string, database: AppDatabase) {
+  try {
+    return await searchPlayers(query, database);
+  } catch {
+    return [];
+  }
+}
+
+function escapeLikePattern(value: string) {
+  return value.replace(/\\/g, "\\\\").replace(/%/g, "\\%").replace(/_/g, "\\_");
+}
+
+function playerAvatarUrl(userId: number) {
+  return `https://a.ppy.sh/${userId}`;
+}
+
+async function getPlayerMostPlayedCourses(
+  userId: number,
+  database: AppDatabase,
+): Promise<PlayerMostPlayedCourse[]> {
+  const rows = database.$client
+    .prepare(
+      `
+      SELECT
+        c.id AS courseId,
+        c.name AS courseName,
+        c.label AS courseLabel,
+        ds.name AS systemName,
+        COUNT(*) AS playCount
+      FROM runs r
+      INNER JOIN courses c ON c.id = r.course_id
+      INNER JOIN dan_systems ds ON ds.id = c.dan_system_id
+      WHERE r.user_id = ?
+      GROUP BY c.id
+      ORDER BY COUNT(*) DESC, MAX(r.completed_at) DESC, c.ordinal ASC, c.name ASC
+      LIMIT 10
+      `,
+    )
+    .all(userId) as PlayerMostPlayedCourse[];
+
+  return rows;
+}
+
+async function getPlayerRecentRuns(
+  userId: number,
+  database: AppDatabase,
+): Promise<PlayerRecentRun[]> {
+  const runRows = database.$client
+    .prepare(
+      `
+      SELECT
+        r.id,
+        r.course_id AS courseId,
+        r.passed,
+        r.completed_at AS completedAt,
+        r.match_id AS matchId,
+        c.name AS courseName,
+        c.label AS courseLabel,
+        ds.name AS systemName
+      FROM runs r
+      INNER JOIN courses c ON c.id = r.course_id
+      INNER JOIN dan_systems ds ON ds.id = c.dan_system_id
+      WHERE r.user_id = ?
+      ORDER BY r.completed_at DESC, r.id DESC
+      LIMIT 10
+      `,
+    )
+    .all(userId) as Array<{
+    id: string;
+    courseId: string;
+    passed: 0 | 1;
+    completedAt: number;
+    matchId: number | null;
+    courseName: string;
+    courseLabel: string | null;
+    systemName: string;
+  }>;
+
+  if (runRows.length === 0) {
+    return [];
+  }
+
+  const nonPassedRuns = runRows.filter((row) => !row.passed);
+  const mapsByRunId =
+    nonPassedRuns.length > 0
+      ? await getMapsByRunId(nonPassedRuns.map((row) => row.id), database)
+      : new Map<string, JudgedMapResult[]>();
+  const beatmapCounts = await getBeatmapCountsForCourses(
+    [...new Set(nonPassedRuns.map((row) => row.courseId))],
+    database,
+  );
+
+  return runRows.map((row) => {
+    const maps = mapsByRunId.get(row.id) ?? [];
+    const beatmapCount = beatmapCounts.get(row.courseId) ?? 0;
+    return {
+      id: row.id,
+      courseId: row.courseId,
+      courseName: row.courseName,
+      courseLabel: row.courseLabel,
+      systemName: row.systemName,
+      status: deriveRunStatus(Boolean(row.passed), maps, beatmapCount),
+      completedAt: row.completedAt,
+      matchId: row.matchId,
+    };
+  });
+}
+
+async function getBeatmapCountsForCourses(
+  courseIds: string[],
+  database: AppDatabase,
+) {
+  if (courseIds.length === 0) {
+    return new Map<string, number>();
+  }
+
+  const rows = database.$client
+    .prepare(
+      `
+      SELECT course_id AS courseId, COUNT(*) AS beatmapCount
+      FROM beatmaps
+      WHERE course_id IN (${placeholders(courseIds.length)})
+      GROUP BY course_id
+      `,
+    )
+    .all(...courseIds) as Array<{ courseId: string; beatmapCount: number }>;
+
+  return new Map(rows.map((row) => [row.courseId, row.beatmapCount]));
+}
+
+async function getPlayerHighestOfficialDans(
+  userId: number,
+  database: AppDatabase,
+): Promise<PlayerDanBadge[]> {
+  const rows = database.$client
+    .prepare(
+      `
+      SELECT
+        c.id AS courseId,
+        c.name AS courseName,
+        c.label AS courseLabel,
+        c.ordinal AS ordinal,
+        ds.id AS systemId,
+        ds.name AS systemName,
+        ds.status AS systemStatus,
+        ds.ladder AS ladder,
+        ds.ladder_order AS ladderOrder
+      FROM runs r
+      INNER JOIN courses c ON c.id = r.course_id
+      INNER JOIN dan_systems ds ON ds.id = c.dan_system_id
+      WHERE r.user_id = ?
+        AND r.passed = 1
+        AND c.official = 1
+      `,
+    )
+    .all(userId) as Array<{
+    courseId: string;
+    courseName: string;
+    courseLabel: string | null;
+    ordinal: number;
+    systemId: string;
+    systemName: string;
+    systemStatus: DanSystemDefinition["status"];
+    ladder: string | null;
+    ladderOrder: number;
+  }>;
+
+  const winnersByGroup = new Map<string, (typeof rows)[number]>();
+  for (const row of rows) {
+    const ladderKey = row.ladder ?? row.systemId;
+    const existing = winnersByGroup.get(ladderKey);
+    if (
+      !existing ||
+      row.ladderOrder > existing.ladderOrder ||
+      (row.ladderOrder === existing.ladderOrder && row.ordinal > existing.ordinal)
+    ) {
+      winnersByGroup.set(ladderKey, row);
+    }
+  }
+
+  return [...winnersByGroup.entries()]
+    .map(([ladderKey, row]) => ({
+      courseId: row.courseId,
+      systemId: row.systemId,
+      systemName: row.systemName,
+      ladderKey,
+      label: row.courseLabel ?? row.courseName,
+      ladderOrder: row.ladderOrder,
+      ordinal: row.ordinal,
+      systemStatus: row.systemStatus,
+    }))
+    .sort(comparePlayerBadgeOrder)
+    .map(({ systemStatus: _systemStatus, ...badge }) => badge);
+}
+
+async function getPlayerPinnedClears(
+  userId: number,
+  database: AppDatabase,
+): Promise<PlayerPinnedClear[]> {
+  const candidateRows = database.$client
+    .prepare(
+      `
+      SELECT DISTINCT
+        c.id AS courseId,
+        c.name AS courseName,
+        c.slug AS slug,
+        c.description AS courseDescription,
+        c.tags AS tags,
+        c.ordinal AS courseOrdinal,
+        c.official AS courseOfficial,
+        c.label AS courseLabel,
+        c.score_model AS scoreModel,
+        c.overall_pass_conditions AS overallPassConditions,
+        ds.id AS danSystemId,
+        ds.name AS danSystemName,
+        ds.slug AS danSystemSlug,
+        ds.description AS danSystemDescription,
+        ds.status AS danSystemStatus,
+        ds.ladder AS danSystemLadder,
+        ds.ladder_order AS danSystemLadderOrder
+      FROM runs r
+      INNER JOIN courses c ON c.id = r.course_id
+      INNER JOIN dan_systems ds ON ds.id = c.dan_system_id
+      WHERE r.user_id = ?
+        AND r.passed = 1
+      `,
+    )
+    .all(userId) as CourseRow[];
+
+  if (candidateRows.length === 0) {
+    return [];
+  }
+
+  const candidateCourses = (await hydrateCourseRows(candidateRows, database))
+    .sort(comparePinnedCoursePreRank)
+    .slice(0, 25);
+  const pinnedClears: PlayerPinnedClear[] = [];
+
+  for (const course of candidateCourses) {
+    const ranking = await getRankingForCourse(course, database);
+    const ownRow = ranking.results.find((row) => row.userId === userId);
+    if (!ownRow) {
+      continue;
+    }
+
+    pinnedClears.push({
+      runId: ownRow.id,
+      courseId: course.id,
+      courseName: course.name,
+      courseLabel: course.label,
+      official: course.official,
+      systemName: course.danSystemName,
+      systemStatus: course.danSystemStatus,
+      ladderKey: course.danSystemLadder ?? course.danSystemId,
+      ladderOrder: course.danSystemLadderOrder,
+      ordinal: course.ordinal,
+      rank: ownRow.rank,
+      status: ownRow.status,
+      scoreModel: course.scoreModel,
+      summedAccuracy: ownRow.summedAccuracy,
+      totalScore: ownRow.totalScore,
+      completedAt: ownRow.completedAt,
+      matchId: ownRow.matchId,
+    });
+  }
+
+  return pinnedClears.sort(comparePinnedClears).slice(0, 5);
+}
+
+function comparePinnedCoursePreRank(left: CourseDefinition, right: CourseDefinition) {
+  return comparePinnedCourseTier(left, right) || left.name.localeCompare(right.name) || left.id.localeCompare(right.id);
+}
+
+function comparePinnedClears(left: PlayerPinnedClear, right: PlayerPinnedClear) {
+  return (
+    comparePinnedClearTier(left, right) ||
+    left.rank - right.rank ||
+    compareScoreQuality(left, right) ||
+    right.completedAt - left.completedAt
+  );
+}
+
+function comparePinnedClearTier(left: PlayerPinnedClear, right: PlayerPinnedClear) {
+  if (left.official !== right.official) {
+    return left.official ? -1 : 1;
+  }
+
+  if (left.official && right.official && left.ladderKey === right.ladderKey) {
+    return right.ladderOrder - left.ladderOrder || right.ordinal - left.ordinal;
+  }
+
+  return (
+    getCatalogStatusWeight(left.systemStatus) -
+      getCatalogStatusWeight(right.systemStatus) ||
+    left.systemName.localeCompare(right.systemName) ||
+    right.ordinal - left.ordinal
+  );
+}
+
+function comparePinnedCourseTier(left: CourseDefinition, right: CourseDefinition) {
+  if (left.official !== right.official) {
+    return left.official ? -1 : 1;
+  }
+
+  const leftGroup = left.danSystemLadder ?? left.danSystemId;
+  const rightGroup = right.danSystemLadder ?? right.danSystemId;
+  if (left.official && right.official && leftGroup === rightGroup) {
+    return (
+      right.danSystemLadderOrder - left.danSystemLadderOrder ||
+      right.ordinal - left.ordinal
+    );
+  }
+
+  return (
+    getCatalogStatusWeight(left.danSystemStatus) -
+      getCatalogStatusWeight(right.danSystemStatus) ||
+    left.danSystemName.localeCompare(right.danSystemName) ||
+    right.ordinal - left.ordinal
+  );
+}
+
+function compareScoreQuality(left: PlayerPinnedClear, right: PlayerPinnedClear) {
+  if (left.scoreModel === "scorev1" || right.scoreModel === "scorev1") {
+    return right.summedAccuracy - left.summedAccuracy;
+  }
+
+  return right.totalScore - left.totalScore || right.summedAccuracy - left.summedAccuracy;
+}
+
+function comparePlayerBadgeOrder(
+  left: PlayerDanBadge & { systemStatus: DanSystemDefinition["status"] },
+  right: PlayerDanBadge & { systemStatus: DanSystemDefinition["status"] },
+) {
+  return (
+    getCatalogStatusWeight(left.systemStatus) -
+      getCatalogStatusWeight(right.systemStatus) ||
+    left.systemName.localeCompare(right.systemName) ||
+    left.ladderOrder - right.ladderOrder ||
+    left.ordinal - right.ordinal
+  );
+}
+
+function placeholders(length: number) {
+  return Array.from({ length }, () => "?").join(", ");
 }
 
 export async function storeCourseRunResult(

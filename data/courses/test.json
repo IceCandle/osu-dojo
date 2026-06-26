@@ -11,6 +11,8 @@
       "slug": "test-1dan",
       "description": "Two-map smoke-test sample course with short beatmaps and zeroed thresholds for quick manual verification.",
       "ordinal": 1,
+      "official": true,
+      "label": "1st",
       "scoreModel": "scorev2",
       "overallPassConditions": [
         { "type": "totalScore", "threshold": 30000 },

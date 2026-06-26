@@ -12,6 +12,8 @@
 # testing
 /coverage
 /test/
+/playwright-report/
+/test-results/
 dojo-dev.jsonl
 
 # local runtime artifacts
@@ -49,3 +51,6 @@ yarn-error.log*
 
 # typescript
 *.tsbuildinfo
+
+#local reference material
+/local-resources/

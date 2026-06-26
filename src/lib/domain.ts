@@ -100,6 +100,8 @@ export interface DanSystemDefinition {
   slug: string;
   description: string;
   status: DanSystemStatus;
+  ladder: string | null;
+  ladderOrder: number;
 }
 
 export interface CourseBeatmapDefinition {
@@ -124,11 +126,16 @@ export interface CourseDefinition {
   danSystemName: string;
   danSystemSlug: string;
   danSystemDescription: string;
+  danSystemStatus: DanSystemStatus;
+  danSystemLadder: string | null;
+  danSystemLadderOrder: number;
   name: string;
   slug: string;
   description: string;
   tags: string[];
   ordinal: number;
+  official: boolean;
+  label: string | null;
   scoreModel: DanScoreModel;
   overallPassConditions: CoursePassCondition[];
   beatmaps: CourseBeatmapDefinition[];
@@ -167,4 +174,65 @@ export interface CourseRunResult {
   startedAt: number;
   completedAt: number;
   matchId: number | null;
+}
+
+export interface PlayerDanBadge {
+  courseId: string;
+  systemId: string;
+  systemName: string;
+  ladderKey: string;
+  label: string;
+  ladderOrder: number;
+  ordinal: number;
+}
+
+export interface PlayerPinnedClear {
+  runId: string;
+  courseId: string;
+  courseName: string;
+  courseLabel: string | null;
+  official: boolean;
+  systemName: string;
+  systemStatus: DanSystemStatus;
+  ladderKey: string;
+  ladderOrder: number;
+  ordinal: number;
+  rank: number;
+  status: "pass" | "fail" | "dnf";
+  scoreModel: DanScoreModel;
+  summedAccuracy: number;
+  totalScore: number;
+  completedAt: number;
+  matchId: number | null;
+}
+
+export interface PlayerRecentRun {
+  id: string;
+  courseId: string;
+  courseName: string;
+  courseLabel: string | null;
+  systemName: string;
+  status: "pass" | "fail" | "dnf";
+  completedAt: number;
+  matchId: number | null;
+}
+
+export interface PlayerMostPlayedCourse {
+  courseId: string;
+  courseName: string;
+  courseLabel: string | null;
+  systemName: string;
+  playCount: number;
+}
+
+export interface PlayerProfile {
+  userId: number;
+  username: string;
+  avatarUrl: string;
+  osuProfileUrl: string;
+  playCount: number;
+  highestOfficialDans: PlayerDanBadge[];
+  pinnedClears: PlayerPinnedClear[];
+  recentRuns: PlayerRecentRun[];
+  mostPlayedCourses: PlayerMostPlayedCourse[];
 }

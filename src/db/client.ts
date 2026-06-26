@@ -26,7 +26,9 @@ CREATE TABLE IF NOT EXISTS dan_systems (
   name TEXT NOT NULL,
   slug TEXT NOT NULL UNIQUE,
   description TEXT NOT NULL,
-  status TEXT NOT NULL DEFAULT 'current'
+  status TEXT NOT NULL DEFAULT 'current',
+  ladder TEXT,
+  ladder_order INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS courses (
@@ -38,6 +40,8 @@ CREATE TABLE IF NOT EXISTS courses (
   description TEXT NOT NULL DEFAULT '',
   tags TEXT NOT NULL DEFAULT '[]',
   ordinal INTEGER NOT NULL,
+  official INTEGER NOT NULL DEFAULT 0,
+  label TEXT,
   score_model TEXT NOT NULL DEFAULT 'scorev2',
   overall_pass_conditions TEXT NOT NULL DEFAULT '[]',
   created_at INTEGER NOT NULL DEFAULT (unixepoch() * 1000),
@@ -115,6 +119,9 @@ CREATE INDEX IF NOT EXISTS beatmaps_course_ordinal_idx
 CREATE INDEX IF NOT EXISTS runs_course_completed_idx
   ON runs(course_id, completed_at);
 
+CREATE INDEX IF NOT EXISTS runs_user_completed_idx
+  ON runs(user_id, completed_at);
+
 CREATE INDEX IF NOT EXISTS map_results_run_ordinal_idx
   ON map_results(run_id, ordinal);
 
@@ -176,12 +183,26 @@ function migrateDatabase(sqlite: BetterSqliteConnection) {
     systemColumns,
     "status TEXT NOT NULL DEFAULT 'current'",
   );
+  addColumnIfMissing(sqlite, "dan_systems", systemColumns, "ladder TEXT");
+  addColumnIfMissing(
+    sqlite,
+    "dan_systems",
+    systemColumns,
+    "ladder_order INTEGER NOT NULL DEFAULT 0",
+  );
 
   const courseColumns = (sqlite.pragma("table_info(courses)") as Array<{ name: string }>)
     .map((col) => col.name);
 
   addColumnIfMissing(sqlite, "courses", courseColumns, "creator_user_id INTEGER");
   addColumnIfMissing(sqlite, "courses", courseColumns, "tags TEXT NOT NULL DEFAULT '[]'");
+  addColumnIfMissing(
+    sqlite,
+    "courses",
+    courseColumns,
+    "official INTEGER NOT NULL DEFAULT 0",
+  );
+  addColumnIfMissing(sqlite, "courses", courseColumns, "label TEXT");
   addColumnIfMissing(
     sqlite,
     "courses",
@@ -578,6 +599,9 @@ function ensureIndexes(sqlite: BetterSqliteConnection) {
 
     CREATE INDEX IF NOT EXISTS runs_course_completed_idx
       ON runs(course_id, completed_at);
+
+    CREATE INDEX IF NOT EXISTS runs_user_completed_idx
+      ON runs(user_id, completed_at);
 
     CREATE INDEX IF NOT EXISTS map_results_run_ordinal_idx
       ON map_results(run_id, ordinal);
