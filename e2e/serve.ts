@@ -54,11 +54,19 @@ async function main() {
   await seedE2eDatabase(databaseUrl);
 
   const useBuild = process.env["E2E_USE_BUILD"] === "1";
-  const args = [nextCliPath, useBuild ? "start" : "dev", "-p", PORT];
+  const args = [nextCliPath, useBuild ? "start" : "dev", "-p", PORT, "-H", "127.0.0.1"];
   process.env["DATABASE_URL"] = databaseUrl;
 
   server = spawn(process.execPath, args, {
-    env: { ...process.env, DATABASE_URL: databaseUrl },
+    env: {
+      ...process.env,
+      DATABASE_URL: databaseUrl,
+      SESSION_SECRET: "osu-dojo-e2e-session-secret-32-bytes-minimum",
+      DOJO_SITE_URL: `http://127.0.0.1:${PORT}`,
+      DOJO_E2E_AUTH: "1",
+      OSU_OAUTH_CLIENT_ID: "",
+      OSU_OAUTH_CLIENT_SECRET: "",
+    },
     stdio: "inherit",
   });
 

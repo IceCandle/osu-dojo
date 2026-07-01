@@ -110,6 +110,30 @@ CREATE TABLE IF NOT EXISTS open_lobbies (
   opened_at INTEGER NOT NULL DEFAULT (unixepoch() * 1000)
 );
 
+CREATE TABLE IF NOT EXISTS oauth_states (
+  state_hash TEXT PRIMARY KEY,
+  nonce_hash TEXT NOT NULL,
+  return_to TEXT,
+  created_at INTEGER NOT NULL,
+  expires_at INTEGER NOT NULL,
+  consumed_at INTEGER
+);
+
+CREATE TABLE IF NOT EXISTS users (
+  osu_user_id INTEGER PRIMARY KEY,
+  username TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS sessions (
+  token_hash TEXT PRIMARY KEY,
+  user_id INTEGER NOT NULL,
+  created_at INTEGER NOT NULL,
+  expires_at INTEGER NOT NULL,
+  revoked_at INTEGER
+);
+
 CREATE INDEX IF NOT EXISTS courses_system_ordinal_idx
   ON courses(dan_system_id, ordinal);
 
@@ -124,6 +148,12 @@ CREATE INDEX IF NOT EXISTS runs_user_completed_idx
 
 CREATE INDEX IF NOT EXISTS map_results_run_ordinal_idx
   ON map_results(run_id, ordinal);
+
+CREATE INDEX IF NOT EXISTS oauth_states_expires_idx
+  ON oauth_states(expires_at);
+
+CREATE INDEX IF NOT EXISTS sessions_expires_idx
+  ON sessions(expires_at);
 
 `;
 
@@ -605,6 +635,12 @@ function ensureIndexes(sqlite: BetterSqliteConnection) {
 
     CREATE INDEX IF NOT EXISTS map_results_run_ordinal_idx
       ON map_results(run_id, ordinal);
+
+    CREATE INDEX IF NOT EXISTS oauth_states_expires_idx
+      ON oauth_states(expires_at);
+
+    CREATE INDEX IF NOT EXISTS sessions_expires_idx
+      ON sessions(expires_at);
   `);
 }
 

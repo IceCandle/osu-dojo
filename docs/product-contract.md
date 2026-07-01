@@ -136,4 +136,11 @@ CourseRun (id, userId, courseId, passed, timestamp, matchId?)
 - Player profile의 mode selector는 표시용 scaffold입니다. 현재 동작은 osu!standard만 지원합니다.
 - 전역 헤더 검색 버튼은 client component dialog를 열고, 읽기 전용 `/api/search?q=` JSON endpoint로 current/legacy 시스템과 코스를 display name 기준으로 찾고, 저장된 run의 과거 username 기준으로 player도 찾습니다. player 검색은 저장된 run만 사용합니다. `/api/search`는 osu! API나 외부 network를 호출하지 않습니다. osu! identity 보강이 필요하면 course import나 metadata refresh 때 처리하고, 검색 요청 중에는 하지 않습니다. 저장된 run이 없는 정확한 username은 현재 찾지 못하는 한계가 있습니다. system 결과는 `/dan/<systemNameKey>`, course 결과는 `/dan/<systemNameKey>?course=<courseNameKey>`, player 결과는 `/players/<userId>`로 이동합니다. system/course route key는 Public Name Key 규칙을 그대로 사용합니다.
 - `/api/search?q=&official=1`은 official course만 보여주는 catalog filter를 지원합니다. 이 filter는 system/course 결과에만 적용되고 player 결과에는 적용되지 않습니다.
-- 인증은 없습니다. 읽기 전용입니다. 기본은 SSR with server components이며, 전역 검색 dialog와 `/api/search` endpoint만 예외입니다.
+- osu! OAuth authorization code 방식으로 로그인합니다. scope는 `public identify`이며,
+  access token과 refresh token은 사용자 확인 뒤 저장하지 않습니다.
+- 브라우저에는 7일 고정 만료의 임의 session token만 HttpOnly cookie로 저장하고, DB에는
+  SHA-256 hash만 저장합니다. 로그아웃하면 서버 session도 폐기합니다.
+- `/settings`는 로그인한 사용자만 접근할 수 있습니다. 나머지 조회 화면과 검색,
+  leaderboard는 로그인 없이 사용할 수 있습니다.
+- 기본은 SSR with server components이며, 전역 검색 dialog, 인증 control, API endpoint만
+  필요한 client/route handler 예외를 사용합니다.

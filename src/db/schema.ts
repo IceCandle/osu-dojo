@@ -136,3 +136,35 @@ export const openLobbies = sqliteTable("open_lobbies", {
     .notNull()
     .default(sql`(unixepoch() * 1000)`),
 });
+
+export const oauthStates = sqliteTable(
+  "oauth_states",
+  {
+    stateHash: text("state_hash").primaryKey(),
+    nonceHash: text("nonce_hash").notNull(),
+    returnTo: text("return_to"),
+    createdAt: integer("created_at").notNull(),
+    expiresAt: integer("expires_at").notNull(),
+    consumedAt: integer("consumed_at"),
+  },
+  (table) => [index("oauth_states_expires_idx").on(table.expiresAt)],
+);
+
+export const users = sqliteTable("users", {
+  osuUserId: integer("osu_user_id").primaryKey(),
+  username: text("username").notNull(),
+  createdAt: integer("created_at").notNull(),
+  updatedAt: integer("updated_at").notNull(),
+});
+
+export const sessions = sqliteTable(
+  "sessions",
+  {
+    tokenHash: text("token_hash").primaryKey(),
+    userId: integer("user_id").notNull(),
+    createdAt: integer("created_at").notNull(),
+    expiresAt: integer("expires_at").notNull(),
+    revokedAt: integer("revoked_at"),
+  },
+  (table) => [index("sessions_expires_idx").on(table.expiresAt)],
+);

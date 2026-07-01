@@ -11,7 +11,7 @@ export default defineConfig({
     ["html", { open: "never", outputFolder: "playwright-report" }],
   ],
   use: {
-    baseURL: "http://localhost:3100",
+    baseURL: "http://127.0.0.1:3100",
     trace: "on-first-retry",
   },
   projects: [
@@ -22,7 +22,7 @@ export default defineConfig({
   ],
   webServer: {
     command: "node --import tsx e2e/serve.ts",
-    url: "http://localhost:3100",
+    url: "http://127.0.0.1:3100",
     reuseExistingServer: process.env["E2E_REUSE_SERVER"] === "1",
     timeout: 120_000,
   },

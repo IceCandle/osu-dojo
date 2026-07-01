@@ -48,7 +48,7 @@ pnpm test
 
 1. Node.js 20+와 `pnpm` 준비
 2. `pnpm install`
-3. `.env.example`을 `.env`로 복사하고 osu! IRC/API credential 입력
+3. `.env.example`을 `.env`로 복사하고 osu! IRC/API 및 OAuth credential 입력
 4. `pnpm typecheck`
 5. `pnpm test`
 6. `pnpm build`
