@@ -132,7 +132,20 @@ CourseRun (id, userId, courseId, passed, timestamp, matchId?)
 - draft detail page는 상응하는 정보를 표시하고, draft run은 저장되지 않는다고 안내합니다.
 - 리더보드의 `Course Acc`는 통과한 map accuracy의 합계입니다.
 - `/players/[userId]`는 저장된 `runs`의 `userId`와 최신 `username`만 사용합니다. osu! API 조회, profile cache, account linking은 없습니다. avatar는 `https://a.ppy.sh/{userId}`를 사용합니다. 이 규칙은 검색에서 player 결과를 만들 때도 같습니다.
-- Player profile은 최고 official dan badge, 자동 선택된 pinned clears 최대 5개, 최근 run, 많이 플레이한 course, play count를 보여줍니다. 최고 official dan은 통과한 official course만 대상으로 하며, 같은 ladder 안에서는 `(ladderOrder, course ordinal)`이 가장 큰 course 하나만 badge로 보여줍니다. badge 글자는 `course.label`이 있으면 그것을 쓰고, 없으면 course name을 씁니다.
+- Player profile은 최고 official dan badge, 대표 클리어 최대 5개, 최근 run, 많이 플레이한
+  course, play count를 보여줍니다. 최고 official dan은 통과한 official course만 대상으로
+  하며, 같은 ladder 안에서는 `(ladderOrder, course ordinal)`이 가장 큰 course 하나만
+  badge로 보여줍니다. badge 글자는 `course.label`이 있으면 그것을 쓰고, 없으면 course
+  name을 씁니다.
+- 대표 클리어는 기본으로 기존 자동 선택을 사용합니다. 로그인한 사용자는 `/settings`에서
+  자신의 pass run 0~5개를 직접 고르고 순서를 바꾸거나 자동 선택으로 돌아갈 수 있습니다.
+  대표 클리어에는 course/system, score 또는 accuracy, 완료 시간을 표시하고 leaderboard
+  rank는 표시하지 않습니다.
+- `profile_details_public`은 기본 true입니다. false여도 프로필 경로, username, avatar,
+  최고 official dan, player 검색, course leaderboard의 run과 순위는 계속 공개됩니다.
+  다른 사용자에게는 play count, 최근 run, 많이 플레이한 course, run의 score/accuracy/시간,
+  대표 클리어만 숨깁니다. 소유자는 자신의 상세를 항상 볼 수 있고, 다시 공개하면 저장된
+  상세 기록과 대표 클리어가 다시 표시됩니다.
 - Player profile의 mode selector는 표시용 scaffold입니다. 현재 동작은 osu!standard만 지원합니다.
 - 전역 헤더 검색 버튼은 client component dialog를 열고, 읽기 전용 `/api/search?q=` JSON endpoint로 current/legacy 시스템과 코스를 display name 기준으로 찾고, 저장된 run의 과거 username 기준으로 player도 찾습니다. player 검색은 저장된 run만 사용합니다. `/api/search`는 osu! API나 외부 network를 호출하지 않습니다. osu! identity 보강이 필요하면 course import나 metadata refresh 때 처리하고, 검색 요청 중에는 하지 않습니다. 저장된 run이 없는 정확한 username은 현재 찾지 못하는 한계가 있습니다. system 결과는 `/dan/<systemNameKey>`, course 결과는 `/dan/<systemNameKey>?course=<courseNameKey>`, player 결과는 `/players/<userId>`로 이동합니다. system/course route key는 Public Name Key 규칙을 그대로 사용합니다.
 - `/api/search?q=&official=1`은 official course만 보여주는 catalog filter를 지원합니다. 이 filter는 system/course 결과에만 적용되고 player 결과에는 적용되지 않습니다.

@@ -32,10 +32,14 @@ test("getPlayerProfile aggregates local runs and returns null for no-runs users"
     await storeCourseRunResult(passRun(44, "PlayerNew", secondCourse, 1_800_000_200_000), db);
     await storeCourseRunResult(dnfRun(44, "PlayerNew", firstCourse, 1_800_000_300_000), db);
 
-    const profile = await getPlayerProfile(44, db);
+    const profile = await getPlayerProfile(44, { db });
 
-    assert.equal(await getPlayerProfile(999_999, db), null);
+    assert.equal(await getPlayerProfile(999_999, { db }), null);
     assert.ok(profile);
+    assert.equal(profile.detailsVisible, true);
+    if (!profile.detailsVisible) {
+      assert.fail("Expected public profile details.");
+    }
     assert.equal(profile.username, "PlayerNew");
     assert.equal(profile.playCount, 4);
     assert.deepEqual(
@@ -109,7 +113,7 @@ test("getPlayerProfile merges official badges across systems sharing a ladder", 
     await storeCourseRunResult(passRun(55, "LadderPlayer", kyuCourse, 1_800_000_000_000), db);
     await storeCourseRunResult(passRun(55, "LadderPlayer", danCourse, 1_800_000_100_000), db);
 
-    const profile = await getPlayerProfile(55, db);
+    const profile = await getPlayerProfile(55, { db });
 
     assert.ok(profile);
     assert.deepEqual(

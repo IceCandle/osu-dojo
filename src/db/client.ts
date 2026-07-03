@@ -134,6 +134,23 @@ CREATE TABLE IF NOT EXISTS sessions (
   revoked_at INTEGER
 );
 
+CREATE TABLE IF NOT EXISTS user_settings (
+  user_id INTEGER PRIMARY KEY,
+  profile_details_public INTEGER NOT NULL DEFAULT 1
+    CHECK(profile_details_public IN (0, 1)),
+  pinned_mode TEXT NOT NULL DEFAULT 'auto'
+    CHECK(pinned_mode IN ('auto', 'manual')),
+  updated_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS pinned_clears (
+  user_id INTEGER NOT NULL,
+  run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+  ordinal INTEGER NOT NULL CHECK(ordinal BETWEEN 0 AND 4),
+  PRIMARY KEY (user_id, run_id),
+  UNIQUE (user_id, ordinal)
+);
+
 CREATE INDEX IF NOT EXISTS courses_system_ordinal_idx
   ON courses(dan_system_id, ordinal);
 

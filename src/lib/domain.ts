@@ -186,24 +186,29 @@ export interface PlayerDanBadge {
   ordinal: number;
 }
 
-export interface PlayerPinnedClear {
+export interface PinnedClearView {
   runId: string;
   courseId: string;
   courseName: string;
   courseLabel: string | null;
   official: boolean;
   systemName: string;
-  systemStatus: DanSystemStatus;
-  ladderKey: string;
-  ladderOrder: number;
   ordinal: number;
-  rank: number;
-  status: "pass" | "fail" | "dnf";
   scoreModel: DanScoreModel;
   summedAccuracy: number;
   totalScore: number;
   completedAt: number;
-  matchId: number | null;
+}
+
+export interface RunPick {
+  runId: string;
+  courseId: string;
+  courseName: string;
+  courseLabel: string | null;
+  systemName: string;
+  completedAt: number;
+  summedAccuracy: number;
+  totalScore: number;
 }
 
 export interface PlayerRecentRun {
@@ -225,14 +230,24 @@ export interface PlayerMostPlayedCourse {
   playCount: number;
 }
 
-export interface PlayerProfile {
+interface PlayerProfileIdentity {
   userId: number;
   username: string;
   avatarUrl: string;
   osuProfileUrl: string;
-  playCount: number;
   highestOfficialDans: PlayerDanBadge[];
-  pinnedClears: PlayerPinnedClear[];
+}
+
+export interface PlayerProfileWithDetails extends PlayerProfileIdentity {
+  detailsVisible: true;
+  playCount: number;
+  pinnedClears: PinnedClearView[];
   recentRuns: PlayerRecentRun[];
   mostPlayedCourses: PlayerMostPlayedCourse[];
 }
+
+export interface PlayerProfileWithoutDetails extends PlayerProfileIdentity {
+  detailsVisible: false;
+}
+
+export type PlayerProfile = PlayerProfileWithDetails | PlayerProfileWithoutDetails;

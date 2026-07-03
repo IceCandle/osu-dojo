@@ -18,11 +18,12 @@ import type {
   DanSystemDefinition,
   JudgedMapResult,
   MapPassCondition,
+  PinnedClearView,
   PlayerDanBadge,
   PlayerMostPlayedCourse,
-  PlayerPinnedClear,
   PlayerProfile,
   PlayerRecentRun,
+  RunPick,
 } from "@/lib/domain";
 import {
   catalogSystemStatuses,
@@ -43,6 +44,25 @@ import {
 } from "@/lib/search";
 
 type DerivedRunStatus = "pass" | "fail" | "dnf";
+
+export interface PlayerProfileOptions {
+  viewerUserId?: number | null;
+  db?: AppDatabase;
+}
+
+export interface UserProfileSettings {
+  profileDetailsPublic: boolean;
+  pinnedMode: "auto" | "manual";
+}
+
+interface AutoPinnedCandidate {
+  view: Omit<PinnedClearView, "ordinal">;
+  systemStatus: DanSystemDefinition["status"];
+  ladderKey: string;
+  ladderOrder: number;
+  courseOrdinal: number;
+  rank: number;
+}
 
 type CourseRow = {
   courseId: string;
@@ -594,9 +614,9 @@ export async function getRankingForCourse(
 
 export async function getPlayerProfile(
   userId: number,
-  db?: AppDatabase,
+  options: PlayerProfileOptions = {},
 ): Promise<PlayerProfile | null> {
-  const database = await useDb(db);
+  const database = await useDb(options.db);
   const latestRun = database.$client
     .prepare(
       `
@@ -613,29 +633,112 @@ export async function getPlayerProfile(
     return null;
   }
 
-  const playCountRow = database.$client
-    .prepare("SELECT COUNT(*) AS count FROM runs WHERE user_id = ?")
-    .get(userId) as { count: number };
-
-  const [mostPlayedCourses, recentRuns, highestOfficialDans, pinnedClears] =
-    await Promise.all([
-      getPlayerMostPlayedCourses(userId, database),
-      getPlayerRecentRuns(userId, database),
-      getPlayerHighestOfficialDans(userId, database),
-      getPlayerPinnedClears(userId, database),
-    ]);
-
-  return {
+  const highestOfficialDans = await getPlayerHighestOfficialDans(userId, database);
+  const detailsVisible =
+    options.viewerUserId === userId ||
+    (await isProfileDetailsPublic(userId, database));
+  const identity = {
     userId,
     username: latestRun.username,
     avatarUrl: playerAvatarUrl(userId),
     osuProfileUrl: `https://osu.ppy.sh/users/${userId}`,
-    playCount: playCountRow.count,
     highestOfficialDans,
+  };
+  if (!detailsVisible) {
+    return { ...identity, detailsVisible: false };
+  }
+
+  const playCountRow = database.$client
+    .prepare("SELECT COUNT(*) AS count FROM runs WHERE user_id = ?")
+    .get(userId) as { count: number };
+
+  const [mostPlayedCourses, recentRuns, pinnedClears] =
+    await Promise.all([
+      getPlayerMostPlayedCourses(userId, database),
+      getPlayerRecentRuns(userId, database),
+      getPlayerPinnedClears(userId, database),
+    ]);
+
+  return {
+    ...identity,
+    detailsVisible: true,
+    playCount: playCountRow.count,
     pinnedClears,
     recentRuns,
     mostPlayedCourses,
   };
+}
+
+export async function isProfileDetailsPublic(
+  userId: number,
+  db?: AppDatabase,
+) {
+  const settings = await getUserProfileSettings(userId, db);
+  return settings.profileDetailsPublic;
+}
+
+export async function getUserProfileSettings(
+  userId: number,
+  db?: AppDatabase,
+): Promise<UserProfileSettings> {
+  const database = await useDb(db);
+  const row = database.$client
+    .prepare(
+      `SELECT
+         profile_details_public AS profileDetailsPublic,
+         pinned_mode AS pinnedMode
+       FROM user_settings
+       WHERE user_id = ?`,
+    )
+    .get(userId) as
+    | { profileDetailsPublic: 0 | 1; pinnedMode: "auto" | "manual" }
+    | undefined;
+  return row
+    ? {
+        profileDetailsPublic: Boolean(row.profileDetailsPublic),
+        pinnedMode: row.pinnedMode,
+      }
+    : { profileDetailsPublic: true, pinnedMode: "auto" };
+}
+
+export async function setProfileDetailsPublic(
+  userId: number,
+  profileDetailsPublic: boolean,
+  db?: AppDatabase,
+  now = Date.now(),
+) {
+  const database = await useDb(db);
+  database.$client
+    .prepare(
+      `INSERT INTO user_settings
+        (user_id, profile_details_public, pinned_mode, updated_at)
+       VALUES (?, ?, 'auto', ?)
+       ON CONFLICT(user_id) DO UPDATE SET
+         profile_details_public = excluded.profile_details_public,
+         updated_at = excluded.updated_at`,
+    )
+    .run(userId, profileDetailsPublic ? 1 : 0, now);
+  return profileDetailsPublic;
+}
+
+export async function getManualPinnedClears(
+  userId: number,
+  db?: AppDatabase,
+) {
+  const database = await useDb(db);
+  const rows = database.$client
+    .prepare(
+      `SELECT run_id AS runId
+       FROM pinned_clears
+       WHERE user_id = ?
+       ORDER BY ordinal ASC`,
+    )
+    .all(userId) as Array<{ runId: string }>;
+  return hydratePinnedRuns(
+    userId,
+    rows.map((row) => row.runId),
+    database,
+  );
 }
 
 async function safeSearchPlayers(query: string, database: AppDatabase) {
@@ -836,7 +939,31 @@ async function getPlayerHighestOfficialDans(
 async function getPlayerPinnedClears(
   userId: number,
   database: AppDatabase,
-): Promise<PlayerPinnedClear[]> {
+): Promise<PinnedClearView[]> {
+  const settings = await getUserProfileSettings(userId, database);
+  if (settings.pinnedMode === "manual") {
+    const rows = database.$client
+      .prepare(
+        `SELECT run_id AS runId
+         FROM pinned_clears
+         WHERE user_id = ?
+         ORDER BY ordinal ASC`,
+      )
+      .all(userId) as Array<{ runId: string }>;
+    return hydratePinnedRuns(
+      userId,
+      rows.map((row) => row.runId),
+      database,
+    );
+  }
+
+  return getAutomaticPinnedClears(userId, database);
+}
+
+async function getAutomaticPinnedClears(
+  userId: number,
+  database: AppDatabase,
+): Promise<PinnedClearView[]> {
   const candidateRows = database.$client
     .prepare(
       `
@@ -874,7 +1001,7 @@ async function getPlayerPinnedClears(
   const candidateCourses = (await hydrateCourseRows(candidateRows, database))
     .sort(comparePinnedCoursePreRank)
     .slice(0, 25);
-  const pinnedClears: PlayerPinnedClear[] = [];
+  const pinnedClears: AutoPinnedCandidate[] = [];
 
   for (const course of candidateCourses) {
     const ranking = await getRankingForCourse(course, database);
@@ -884,56 +1011,266 @@ async function getPlayerPinnedClears(
     }
 
     pinnedClears.push({
-      runId: ownRow.id,
-      courseId: course.id,
-      courseName: course.name,
-      courseLabel: course.label,
-      official: course.official,
-      systemName: course.danSystemName,
+      view: {
+        runId: ownRow.id,
+        courseId: course.id,
+        courseName: course.name,
+        courseLabel: course.label,
+        official: course.official,
+        systemName: course.danSystemName,
+        scoreModel: course.scoreModel,
+        summedAccuracy: ownRow.summedAccuracy,
+        totalScore: ownRow.totalScore,
+        completedAt: ownRow.completedAt,
+      },
       systemStatus: course.danSystemStatus,
       ladderKey: course.danSystemLadder ?? course.danSystemId,
       ladderOrder: course.danSystemLadderOrder,
-      ordinal: course.ordinal,
+      courseOrdinal: course.ordinal,
       rank: ownRow.rank,
-      status: ownRow.status,
-      scoreModel: course.scoreModel,
-      summedAccuracy: ownRow.summedAccuracy,
-      totalScore: ownRow.totalScore,
-      completedAt: ownRow.completedAt,
-      matchId: ownRow.matchId,
     });
   }
 
-  return pinnedClears.sort(comparePinnedClears).slice(0, 5);
+  return pinnedClears
+    .sort(comparePinnedClears)
+    .slice(0, 5)
+    .map((candidate, ordinal) => ({ ...candidate.view, ordinal }));
+}
+
+export async function hydratePinnedRuns(
+  userId: number,
+  runIds: string[],
+  db?: AppDatabase,
+): Promise<PinnedClearView[]> {
+  if (runIds.length === 0) {
+    return [];
+  }
+  const database = await useDb(db);
+  const rows = database.$client
+    .prepare(
+      `SELECT
+         r.id AS runId,
+         r.course_id AS courseId,
+         c.name AS courseName,
+         c.label AS courseLabel,
+         c.official AS official,
+         c.score_model AS scoreModel,
+         ds.name AS systemName,
+         r.completed_at AS completedAt,
+         COALESCE(SUM(mr.accuracy), 0) AS summedAccuracy,
+         COALESCE(SUM(mr.score), 0) AS totalScore
+       FROM runs r
+       INNER JOIN courses c ON c.id = r.course_id
+       INNER JOIN dan_systems ds ON ds.id = c.dan_system_id
+       LEFT JOIN map_results mr ON mr.run_id = r.id
+       WHERE r.user_id = ?
+         AND r.passed = 1
+         AND r.id IN (${placeholders(runIds.length)})
+       GROUP BY r.id`,
+    )
+    .all(userId, ...runIds) as Array<{
+    runId: string;
+    courseId: string;
+    courseName: string;
+    courseLabel: string | null;
+    official: 0 | 1;
+    scoreModel: CourseDefinition["scoreModel"];
+    systemName: string;
+    completedAt: number;
+    summedAccuracy: number;
+    totalScore: number;
+  }>;
+  const byId = new Map(rows.map((row) => [row.runId, row]));
+  const hydrated: PinnedClearView[] = [];
+  for (const runId of runIds) {
+    const row = byId.get(runId);
+    if (!row) {
+      continue;
+    }
+    hydrated.push({
+      ...row,
+      official: Boolean(row.official),
+      ordinal: hydrated.length,
+    });
+  }
+  return hydrated;
+}
+
+export class SettingsValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "SettingsValidationError";
+  }
+}
+
+export async function savePinnedClears(
+  userId: number,
+  input: { mode: "auto" } | { mode: "manual"; runIds: string[] },
+  db?: AppDatabase,
+  now = Date.now(),
+) {
+  const database = await useDb(db);
+  const runIds = input.mode === "manual" ? input.runIds : [];
+  if (runIds.length > 5 || new Set(runIds).size !== runIds.length) {
+    throw new SettingsValidationError("Pinned run IDs are invalid.");
+  }
+
+  database.$client.transaction(() => {
+    if (input.mode === "manual" && runIds.length > 0) {
+      const ownedRows = database.$client
+        .prepare(
+          `SELECT id
+           FROM runs
+           WHERE user_id = ?
+             AND passed = 1
+             AND id IN (${placeholders(runIds.length)})`,
+        )
+        .all(userId, ...runIds) as Array<{ id: string }>;
+      if (ownedRows.length !== runIds.length) {
+        throw new SettingsValidationError(
+          "Every pinned run must be an owned passing run.",
+        );
+      }
+    }
+
+    database.$client
+      .prepare("DELETE FROM pinned_clears WHERE user_id = ?")
+      .run(userId);
+    if (input.mode === "manual") {
+      const insert = database.$client.prepare(
+        "INSERT INTO pinned_clears (user_id, run_id, ordinal) VALUES (?, ?, ?)",
+      );
+      runIds.forEach((runId, ordinal) => insert.run(userId, runId, ordinal));
+    }
+    database.$client
+      .prepare(
+        `INSERT INTO user_settings
+          (user_id, profile_details_public, pinned_mode, updated_at)
+         VALUES (?, 1, ?, ?)
+         ON CONFLICT(user_id) DO UPDATE SET
+           pinned_mode = excluded.pinned_mode,
+           updated_at = excluded.updated_at`,
+      )
+      .run(userId, input.mode, now);
+  })();
+
+  return {
+    mode: input.mode,
+    pinned:
+      input.mode === "manual"
+        ? await hydratePinnedRuns(userId, runIds, database)
+        : await getAutomaticPinnedClears(userId, database),
+  };
+}
+
+export async function getRunPickerPage(
+  userId: number,
+  cursor: string | null,
+  db?: AppDatabase,
+): Promise<{ runs: RunPick[]; nextCursor: string | null }> {
+  const database = await useDb(db);
+  const decoded = cursor === null ? null : decodeRunCursor(cursor);
+  const cursorWhere = decoded
+    ? "AND (r.completed_at < ? OR (r.completed_at = ? AND r.id < ?))"
+    : "";
+  const params: Array<string | number> = decoded
+    ? [userId, decoded.completedAt, decoded.completedAt, decoded.id]
+    : [userId];
+  const rows = database.$client
+    .prepare(
+      `SELECT
+         r.id AS runId,
+         r.course_id AS courseId,
+         c.name AS courseName,
+         c.label AS courseLabel,
+         ds.name AS systemName,
+         r.completed_at AS completedAt,
+         COALESCE(SUM(mr.accuracy), 0) AS summedAccuracy,
+         COALESCE(SUM(mr.score), 0) AS totalScore
+       FROM runs r
+       INNER JOIN courses c ON c.id = r.course_id
+       INNER JOIN dan_systems ds ON ds.id = c.dan_system_id
+       LEFT JOIN map_results mr ON mr.run_id = r.id
+       WHERE r.user_id = ?
+         AND r.passed = 1
+         ${cursorWhere}
+       GROUP BY r.id
+       ORDER BY r.completed_at DESC, r.id DESC
+       LIMIT 21`,
+    )
+    .all(...params) as RunPick[];
+  const hasMore = rows.length > 20;
+  const visibleRows = hasMore ? rows.slice(0, 20) : rows;
+  const last = visibleRows.at(-1);
+  return {
+    runs: visibleRows,
+    nextCursor:
+      hasMore && last ? encodeRunCursor(last.completedAt, last.runId) : null,
+  };
+}
+
+function encodeRunCursor(completedAt: number, id: string) {
+  return Buffer.from(JSON.stringify([completedAt, id]), "utf8").toString(
+    "base64url",
+  );
+}
+
+function decodeRunCursor(value: string) {
+  try {
+    const parsed: unknown = JSON.parse(
+      Buffer.from(value, "base64url").toString("utf8"),
+    );
+    if (
+      !Array.isArray(parsed) ||
+      parsed.length !== 2 ||
+      typeof parsed[0] !== "number" ||
+      !Number.isSafeInteger(parsed[0]) ||
+      parsed[0] < 0 ||
+      typeof parsed[1] !== "string" ||
+      parsed[1].length === 0
+    ) {
+      throw new Error();
+    }
+    return { completedAt: parsed[0], id: parsed[1] };
+  } catch {
+    throw new SettingsValidationError("Invalid run cursor.");
+  }
 }
 
 function comparePinnedCoursePreRank(left: CourseDefinition, right: CourseDefinition) {
   return comparePinnedCourseTier(left, right) || left.name.localeCompare(right.name) || left.id.localeCompare(right.id);
 }
 
-function comparePinnedClears(left: PlayerPinnedClear, right: PlayerPinnedClear) {
+function comparePinnedClears(left: AutoPinnedCandidate, right: AutoPinnedCandidate) {
   return (
     comparePinnedClearTier(left, right) ||
     left.rank - right.rank ||
     compareScoreQuality(left, right) ||
-    right.completedAt - left.completedAt
+    right.view.completedAt - left.view.completedAt
   );
 }
 
-function comparePinnedClearTier(left: PlayerPinnedClear, right: PlayerPinnedClear) {
-  if (left.official !== right.official) {
-    return left.official ? -1 : 1;
+function comparePinnedClearTier(left: AutoPinnedCandidate, right: AutoPinnedCandidate) {
+  if (left.view.official !== right.view.official) {
+    return left.view.official ? -1 : 1;
   }
 
-  if (left.official && right.official && left.ladderKey === right.ladderKey) {
-    return right.ladderOrder - left.ladderOrder || right.ordinal - left.ordinal;
+  if (
+    left.view.official &&
+    right.view.official &&
+    left.ladderKey === right.ladderKey
+  ) {
+    return (
+      right.ladderOrder - left.ladderOrder ||
+      right.courseOrdinal - left.courseOrdinal
+    );
   }
 
   return (
     getCatalogStatusWeight(left.systemStatus) -
       getCatalogStatusWeight(right.systemStatus) ||
-    left.systemName.localeCompare(right.systemName) ||
-    right.ordinal - left.ordinal
+    left.view.systemName.localeCompare(right.view.systemName) ||
+    right.courseOrdinal - left.courseOrdinal
   );
 }
 
@@ -959,12 +1296,18 @@ function comparePinnedCourseTier(left: CourseDefinition, right: CourseDefinition
   );
 }
 
-function compareScoreQuality(left: PlayerPinnedClear, right: PlayerPinnedClear) {
-  if (left.scoreModel === "scorev1" || right.scoreModel === "scorev1") {
-    return right.summedAccuracy - left.summedAccuracy;
+function compareScoreQuality(left: AutoPinnedCandidate, right: AutoPinnedCandidate) {
+  if (
+    left.view.scoreModel === "scorev1" ||
+    right.view.scoreModel === "scorev1"
+  ) {
+    return right.view.summedAccuracy - left.view.summedAccuracy;
   }
 
-  return right.totalScore - left.totalScore || right.summedAccuracy - left.summedAccuracy;
+  return (
+    right.view.totalScore - left.view.totalScore ||
+    right.view.summedAccuracy - left.view.summedAccuracy
+  );
 }
 
 function comparePlayerBadgeOrder(

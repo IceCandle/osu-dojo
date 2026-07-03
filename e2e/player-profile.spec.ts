@@ -8,9 +8,11 @@ test("player profile renders seeded full-map run aggregates", async ({ page }) =
   await expect(page.getByRole("heading", { name: "Highest official dan" })).toBeVisible();
   await expect(page.getByLabel("Acquired dan badges").getByText("1st")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Pinned clears" })).toBeVisible();
-  await expect(page.locator(".player-clear-card").filter({ hasText: "1st" })).toContainText("#1");
   await expect(page.locator(".player-clear-card").filter({ hasText: "1st" })).toContainText(
     "1,999,999",
+  );
+  await expect(page.locator(".player-clear-card").filter({ hasText: "1st" })).not.toContainText(
+    "#1",
   );
   await expect(page.getByRole("heading", { name: "Recent runs" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Most played courses" })).toBeVisible();

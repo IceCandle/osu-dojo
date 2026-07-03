@@ -168,3 +168,27 @@ export const sessions = sqliteTable(
   },
   (table) => [index("sessions_expires_idx").on(table.expiresAt)],
 );
+
+export const userSettings = sqliteTable("user_settings", {
+  userId: integer("user_id").primaryKey(),
+  profileDetailsPublic: integer("profile_details_public", { mode: "boolean" })
+    .notNull()
+    .default(true),
+  pinnedMode: text("pinned_mode").$type<"auto" | "manual">().notNull().default("auto"),
+  updatedAt: integer("updated_at").notNull(),
+});
+
+export const pinnedClears = sqliteTable(
+  "pinned_clears",
+  {
+    userId: integer("user_id").notNull(),
+    runId: text("run_id")
+      .notNull()
+      .references(() => runs.id, { onDelete: "cascade" }),
+    ordinal: integer("ordinal").notNull(),
+  },
+  (table) => [
+    uniqueIndex("pinned_clears_user_run_unique").on(table.userId, table.runId),
+    uniqueIndex("pinned_clears_user_ordinal_unique").on(table.userId, table.ordinal),
+  ],
+);

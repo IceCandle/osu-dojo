@@ -204,7 +204,7 @@ code {
   display: flex;
   justify-content: space-between;
   gap: 24px;
-  align-items: end;
+  align-items: flex-end;
 }
 
 .site-search {
@@ -1377,6 +1377,140 @@ code {
   color: var(--dnf);
 }
 
+.settings-grid {
+  display: grid;
+  gap: 24px;
+  margin-top: 24px;
+}
+
+.settings-card {
+  margin-top: 0;
+}
+
+.settings-toggle {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+  padding: 18px;
+  border: 1px solid var(--line-soft);
+  background: var(--bg);
+  cursor: pointer;
+}
+
+.settings-toggle input {
+  width: 20px;
+  height: 20px;
+  margin: 1px 0 0;
+  accent-color: var(--text);
+}
+
+.settings-toggle span,
+.settings-run-card > div:first-child,
+.settings-run-option > div {
+  display: grid;
+  gap: 6px;
+}
+
+.settings-toggle small,
+.settings-run-card span,
+.settings-run-option span,
+.settings-empty,
+.settings-notice {
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.settings-mode,
+.settings-run-actions button,
+.settings-run-option button,
+.settings-secondary-button {
+  font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.settings-mode {
+  color: var(--muted);
+}
+
+.settings-selected-runs,
+.settings-run-picker {
+  display: grid;
+  gap: 10px;
+}
+
+.settings-run-picker {
+  margin-top: 24px;
+  padding-top: 24px;
+  border-top: 1px solid var(--line-soft);
+}
+
+.settings-run-picker h3 {
+  margin: 0 0 4px;
+  font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 13px;
+  text-transform: uppercase;
+}
+
+.settings-run-card,
+.settings-run-option {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 16px;
+  align-items: center;
+  padding: 14px;
+  border: 1px solid var(--line-soft);
+  background: var(--bg);
+}
+
+.settings-run-actions,
+.settings-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.settings-run-actions button,
+.settings-run-option button,
+.settings-secondary-button {
+  min-height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.settings-run-actions button:disabled,
+.settings-run-option button:disabled,
+.settings-secondary-button:disabled {
+  color: var(--muted);
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.settings-actions {
+  margin-top: 24px;
+}
+
+.settings-actions .cta-link {
+  cursor: pointer;
+}
+
+.settings-notice {
+  margin: 0;
+  padding: 14px 16px;
+  border-left: 2px solid var(--text);
+  background: var(--panel);
+}
+
+.player-profile-private-note {
+  align-self: stretch;
+}
+
 @media (max-width: 900px) {
   .page-shell {
     width: min(100% - 24px, 1220px);
@@ -1455,6 +1589,16 @@ code {
   }
 
   .player-clear-card {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-header {
+    display: grid;
+    align-items: start;
+  }
+
+  .settings-run-card,
+  .settings-run-option {
     grid-template-columns: 1fr;
   }
 

@@ -2,8 +2,9 @@ import React from "react";
 import { notFound } from "next/navigation";
 import { LocalTime } from "@/app/LocalTime";
 import { getPlayerProfile } from "@/db/queries";
-import type { PlayerPinnedClear, PlayerRecentRun } from "@/lib/domain";
+import type { PinnedClearView, PlayerRecentRun } from "@/lib/domain";
 import { formatPercentage } from "@/lib/format";
+import { getSessionUser } from "@/lib/auth/session";
 
 export const dynamic = "force-dynamic";
 
@@ -17,6 +18,7 @@ export default async function PlayerProfilePage({
   params: Promise<{ userId: string }>;
   searchParams?: Promise<{ mode?: string | string[] }>;
 }) {
+  const sessionPromise = getSessionUser();
   const { userId: rawUserId } = await params;
   const userId = parseUserId(rawUserId);
   if (userId === null) {
@@ -28,7 +30,10 @@ export default async function PlayerProfilePage({
     ? resolvedSearchParams?.mode[0]
     : resolvedSearchParams?.mode;
   const selectedMode = resolveSelectedMode(requestedMode);
-  const profile = await getPlayerProfile(userId);
+  const sessionUser = await sessionPromise;
+  const profile = await getPlayerProfile(userId, {
+    viewerUserId: sessionUser?.userId ?? null,
+  });
   const avatarUrl = profile?.avatarUrl ?? `https://a.ppy.sh/${userId}`;
   const osuProfileUrl = profile?.osuProfileUrl ?? `https://osu.ppy.sh/users/${userId}`;
 
@@ -88,12 +93,14 @@ export default async function PlayerProfilePage({
           </div>
           <p className="detail-copy">Read-only profile from saved osu!dojo dan runs.</p>
         </div>
-        <div className="detail-stats player-header-stats">
-          <div>
-            <span>Play count</span>
-            <strong>{profile.playCount}</strong>
+        {profile.detailsVisible ? (
+          <div className="detail-stats player-header-stats">
+            <div>
+              <span>Play count</span>
+              <strong>{profile.playCount}</strong>
+            </div>
           </div>
-        </div>
+        ) : null}
       </section>
 
       <ModeTabs selectedMode={selectedMode} />
@@ -117,86 +124,106 @@ export default async function PlayerProfilePage({
           )}
         </section>
 
-        <section className="sequence-card player-profile-section">
-          <div className="section-heading">
-            <h2>Pinned clears</h2>
-          </div>
-          {profile.pinnedClears.length > 0 ? (
-            <div className="player-clear-list">
-              {profile.pinnedClears.map((clear) => (
-                <article className="player-clear-card" key={clear.runId}>
-                  <div>
-                    <h3>{clear.courseLabel ?? clear.courseName}</h3>
-                    <p>{clear.systemName}</p>
-                  </div>
-                  <div className="player-clear-meta">
-                    <span className={getRunStatusClassName(clear.status)}>{clear.status}</span>
-                    <strong>#{clear.rank}</strong>
-                    <span>{formatPinnedMetric(clear)}</span>
-                  </div>
-                </article>
-              ))}
-            </div>
-          ) : (
-            <EmptyPanel title="No pinned clears" body="Passing runs are selected automatically." />
-          )}
-        </section>
-
-        <section className="sequence-card player-profile-section">
-          <div className="section-heading">
-            <h2>Recent runs</h2>
-          </div>
-          {profile.recentRuns.length > 0 ? (
-            <div className="ranking-table-wrap">
-              <table className="ranking-table">
-                <thead>
-                  <tr>
-                    <th>Course</th>
-                    <th>Status</th>
-                    <th>Completed</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {profile.recentRuns.map((run) => (
-                    <RecentRunRow key={run.id} run={run} />
+        {profile.detailsVisible ? (
+          <>
+            <section className="sequence-card player-profile-section">
+              <div className="section-heading">
+                <h2>Pinned clears</h2>
+              </div>
+              {profile.pinnedClears.length > 0 ? (
+                <div className="player-clear-list">
+                  {profile.pinnedClears.map((clear) => (
+                    <article className="player-clear-card" key={clear.runId}>
+                      <div>
+                        <h3>{clear.courseLabel ?? clear.courseName}</h3>
+                        <p>{clear.systemName}</p>
+                      </div>
+                      <div className="player-clear-meta">
+                        <strong>{formatPinnedMetric(clear)}</strong>
+                        <LocalTime
+                          value={clear.completedAt}
+                          ssrFallback={formatDate(clear.completedAt)}
+                        />
+                      </div>
+                    </article>
                   ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <EmptyPanel title="No recent runs" body="Completed local runs will appear here." />
-          )}
-        </section>
+                </div>
+              ) : (
+                <EmptyPanel
+                  title="No pinned clears"
+                  body="Passing runs are selected automatically."
+                />
+              )}
+            </section>
 
-        <section className="sequence-card player-profile-section">
-          <div className="section-heading">
-            <h2>Most played courses</h2>
-          </div>
-          {profile.mostPlayedCourses.length > 0 ? (
-            <div className="ranking-table-wrap">
-              <table className="ranking-table">
-                <thead>
-                  <tr>
-                    <th>Course</th>
-                    <th>System</th>
-                    <th>Runs</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {profile.mostPlayedCourses.map((course) => (
-                    <tr key={course.courseId}>
-                      <td>{course.courseLabel ?? course.courseName}</td>
-                      <td>{course.systemName}</td>
-                      <td className="numeric-cell">{course.playCount}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <EmptyPanel title="No course history" body="Course counts are calculated from saved runs." />
-          )}
-        </section>
+            <section className="sequence-card player-profile-section">
+              <div className="section-heading">
+                <h2>Recent runs</h2>
+              </div>
+              {profile.recentRuns.length > 0 ? (
+                <div className="ranking-table-wrap">
+                  <table className="ranking-table">
+                    <thead>
+                      <tr>
+                        <th>Course</th>
+                        <th>Status</th>
+                        <th>Completed</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {profile.recentRuns.map((run) => (
+                        <RecentRunRow key={run.id} run={run} />
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <EmptyPanel
+                  title="No recent runs"
+                  body="Completed local runs will appear here."
+                />
+              )}
+            </section>
+
+            <section className="sequence-card player-profile-section">
+              <div className="section-heading">
+                <h2>Most played courses</h2>
+              </div>
+              {profile.mostPlayedCourses.length > 0 ? (
+                <div className="ranking-table-wrap">
+                  <table className="ranking-table">
+                    <thead>
+                      <tr>
+                        <th>Course</th>
+                        <th>System</th>
+                        <th>Runs</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {profile.mostPlayedCourses.map((course) => (
+                        <tr key={course.courseId}>
+                          <td>{course.courseLabel ?? course.courseName}</td>
+                          <td>{course.systemName}</td>
+                          <td className="numeric-cell">{course.playCount}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <EmptyPanel
+                  title="No course history"
+                  body="Course counts are calculated from saved runs."
+                />
+              )}
+            </section>
+          </>
+        ) : (
+          <section className="empty-card player-profile-private-note">
+            <h2>상세 기록 비공개</h2>
+            <p>프로필 상세 기록이 비공개입니다.</p>
+          </section>
+        )}
       </div>
     </main>
   );
@@ -259,7 +286,7 @@ function resolveSelectedMode(requestedMode: string | undefined) {
   return requestedMode === SUPPORTED_MODE ? requestedMode : SUPPORTED_MODE;
 }
 
-function formatPinnedMetric(clear: PlayerPinnedClear) {
+function formatPinnedMetric(clear: PinnedClearView) {
   if (clear.scoreModel === "scorev1") {
     return formatPercentage(clear.summedAccuracy);
   }
