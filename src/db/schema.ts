@@ -1,5 +1,13 @@
 import { sql } from "drizzle-orm";
-import { index, integer, real, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import {
+  index,
+  integer,
+  primaryKey,
+  real,
+  sqliteTable,
+  text,
+  uniqueIndex,
+} from "drizzle-orm/sqlite-core";
 import type { DanScoreModel, DanSystemStatus } from "@/lib/domain";
 
 export const danSystems = sqliteTable("dan_systems", {
@@ -174,7 +182,6 @@ export const userSettings = sqliteTable("user_settings", {
   profileDetailsPublic: integer("profile_details_public", { mode: "boolean" })
     .notNull()
     .default(true),
-  pinnedMode: text("pinned_mode").$type<"auto" | "manual">().notNull().default("auto"),
   updatedAt: integer("updated_at").notNull(),
 });
 
@@ -182,13 +189,13 @@ export const pinnedClears = sqliteTable(
   "pinned_clears",
   {
     userId: integer("user_id").notNull(),
+    courseId: text("course_id").notNull(),
     runId: text("run_id")
       .notNull()
       .references(() => runs.id, { onDelete: "cascade" }),
-    ordinal: integer("ordinal").notNull(),
+    pinnedAt: integer("pinned_at").notNull(),
   },
   (table) => [
-    uniqueIndex("pinned_clears_user_run_unique").on(table.userId, table.runId),
-    uniqueIndex("pinned_clears_user_ordinal_unique").on(table.userId, table.ordinal),
+    primaryKey({ columns: [table.userId, table.courseId] }),
   ],
 );

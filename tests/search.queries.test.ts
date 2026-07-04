@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createTestDatabase } from "@/db/client";
-import { courses, danSystems, runs } from "@/db/schema";
+import { courses, danSystems, runs, users } from "@/db/schema";
 import { searchDanCatalog } from "@/db/queries";
 import { createTempDatabaseUrl } from "./helpers/dbFixtures";
 
@@ -171,6 +171,12 @@ test("searchDanCatalog applies official filter only to catalog hits", async () =
       startedAt: 1_800_000_000_000,
       completedAt: 1_800_000_060_000,
       matchId: null,
+    });
+    await db.insert(users).values({
+      osuUserId: 9001,
+      username: "AlphaPlayer",
+      createdAt: 1_800_000_060_000,
+      updatedAt: 1_800_000_060_000,
     });
 
     const officialResults = await searchDanCatalog(

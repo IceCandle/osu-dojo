@@ -1,33 +1,32 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createTestDatabase } from "@/db/client";
+import { Worker } from "node:worker_threads";
+import { createTestDatabase, type AppDatabase } from "@/db/client";
 import {
   getCourseByNameKey,
   getPlayerProfile,
   getRankingForCourse,
-  getRunPickerPage,
   getUserProfileSettings,
-  hydratePinnedRuns,
-  savePinnedClears,
+  PinLimitError,
   searchPlayers,
   setProfileDetailsPublic,
   SettingsValidationError,
   storeCourseRunResult,
+  updatePinnedClear,
 } from "@/db/queries";
 import { createSession, SESSION_COOKIE_NAME } from "@/lib/auth/session";
 import { POST as updateVisibility } from "@/app/api/settings/visibility/route";
 import { POST as updatePinned } from "@/app/api/settings/pinned/route";
-import { GET as listRuns } from "@/app/api/settings/runs/route";
 import {
   createTempDatabaseUrl,
   SEEDED_COURSE_NAME_KEY,
   SEEDED_SYSTEM_NAME_KEY,
 } from "./helpers/dbFixtures";
-import { dnfRun, passRun } from "./helpers/runFixtures";
+import { passRun } from "./helpers/runFixtures";
 
 const SECRET = "osu-dojo-settings-test-secret-at-least-32-bytes";
 
-test("profile visibility hides only detailed queries and preserves search and ranks", async () => {
+test("profile visibility hides only details and preserves search and ranks", async () => {
   await withSettingsDatabase(async (db) => {
     const course = await getCourseByNameKey(
       SEEDED_SYSTEM_NAME_KEY,
@@ -35,12 +34,17 @@ test("profile visibility hides only detailed queries and preserves search and ra
       db,
     );
     assert.ok(course);
-    await storeCourseRunResult(passRun(77, "VisiblePlayer", course, 1_800_000_000_000), db);
-    await storeCourseRunResult(passRun(88, "OtherPlayer", course, 1_800_000_100_000), db);
+    await storeCourseRunResult(
+      passRun(77, "VisiblePlayer", course, 1_800_000_000_000),
+      db,
+    );
+    await storeCourseRunResult(
+      passRun(88, "OtherPlayer", course, 1_800_000_100_000),
+      db,
+    );
 
     assert.deepEqual(await getUserProfileSettings(77, db), {
       profileDetailsPublic: true,
-      pinnedMode: "auto",
     });
     const rankingBefore = await getRankingForCourse(course, db);
     const searchBefore = await searchPlayers("Visible", db);
@@ -56,246 +60,381 @@ test("profile visibility hides only detailed queries and preserves search and ra
     assert.equal(owner.detailsVisible, true);
     const rankingAfter = await getRankingForCourse(course, db);
     assert.deepEqual(
-      rankingAfter.results.map(({ id, rank, userId }) => ({ id, rank, userId })),
-      rankingBefore.results.map(({ id, rank, userId }) => ({ id, rank, userId })),
+      rankingAfter.results.map(({ id, rank, userId }) => ({
+        id,
+        rank,
+        userId,
+      })),
+      rankingBefore.results.map(({ id, rank, userId }) => ({
+        id,
+        rank,
+        userId,
+      })),
     );
     assert.deepEqual(await searchPlayers("Visible", db), searchBefore);
-
-    await setProfileDetailsPublic(77, true, db);
-    const restored = await getPlayerProfile(77, { viewerUserId: 88, db });
-    assert.ok(restored);
-    assert.equal(restored.detailsVisible, true);
   });
 });
 
-test("hidden non-owner profiles do not execute map-backed detail queries", async () => {
+test("course pins validate ownership and pass state, replace, unpin, cap, sort, and cascade", async () => {
   await withSettingsDatabase(async (db) => {
-    const course = await getCourseByNameKey(
-      SEEDED_SYSTEM_NAME_KEY,
-      SEEDED_COURSE_NAME_KEY,
-      db,
-    );
-    assert.ok(course);
-    await storeCourseRunResult(passRun(77, "HiddenPlayer", course, 1_800_000_000_000), db);
-    await setProfileDetailsPublic(77, false, db);
-    db.$client.exec("DROP TABLE map_results");
+    const runIds = seedPinRuns(db, 77, 7);
+    const otherRun = seedPinRuns(db, 88, 1, "other")[0]!;
+    db.$client
+      .prepare("UPDATE runs SET passed = 0 WHERE id = ?")
+      .run(runIds[6]);
 
-    const profile = await getPlayerProfile(77, { viewerUserId: 88, db });
-    assert.ok(profile);
-    assert.equal(profile.detailsVisible, false);
-    assert.equal(profile.username, "HiddenPlayer");
-  });
-});
-
-test("manual pinned clears enforce ownership/pass/duplicates and preserve order", async () => {
-  await withSettingsDatabase(async (db) => {
-    const course = await getCourseByNameKey(
-      SEEDED_SYSTEM_NAME_KEY,
-      SEEDED_COURSE_NAME_KEY,
-      db,
-    );
-    assert.ok(course);
-    const first = await storeCourseRunResult(
-      passRun(77, "PinPlayer", course, 1_800_000_000_000),
-      db,
-    );
-    const second = await storeCourseRunResult(
-      passRun(77, "PinPlayer", course, 1_800_000_100_000),
-      db,
-    );
-    const failed = await storeCourseRunResult(
-      dnfRun(77, "PinPlayer", course, 1_800_000_200_000),
-      db,
-    );
-    const other = await storeCourseRunResult(
-      passRun(88, "OtherPlayer", course, 1_800_000_300_000),
-      db,
-    );
-    const extraPasses: Awaited<
-      ReturnType<typeof storeCourseRunResult>
-    >[] = [];
-    for (let index = 0; index < 4; index += 1) {
-      extraPasses.push(
-        await storeCourseRunResult(
-          passRun(
-            77,
-            "PinPlayer",
-            course,
-            1_800_000_400_000 + index,
-          ),
-          db,
-        ),
-      );
-    }
-
-    const saved = await savePinnedClears(
-      77,
-      { mode: "manual", runIds: [first.run.id, second.run.id] },
-      db,
-    );
-    assert.equal(saved.mode, "manual");
-    assert.deepEqual(
-      saved.pinned.map((run) => run.runId),
-      [first.run.id, second.run.id],
-    );
-    assert.ok(saved.pinned.every((run) => !("rank" in run)));
-    assert.deepEqual(
-      (await hydratePinnedRuns(77, [second.run.id, first.run.id], db)).map(
-        (run) => run.runId,
-      ),
-      [second.run.id, first.run.id],
-    );
-
-    await assert.rejects(
-      () =>
-        savePinnedClears(
-          77,
-          {
-            mode: "manual",
-            runIds: [
-              first.run.id,
-              second.run.id,
-              ...extraPasses.map((result) => result.run.id),
-            ],
-          },
-          db,
-        ),
-      SettingsValidationError,
-    );
-    await assert.rejects(
-      () =>
-        savePinnedClears(
-          77,
-          { mode: "manual", runIds: [first.run.id, first.run.id] },
-          db,
-        ),
-      SettingsValidationError,
-    );
-    for (const runId of [failed.run.id, other.run.id, "missing"]) {
+    for (const invalidRunId of ["missing", otherRun, runIds[6]!]) {
       await assert.rejects(
-        () => savePinnedClears(77, { mode: "manual", runIds: [runId] }, db),
+        () =>
+          updatePinnedClear(
+            77,
+            { runId: invalidRunId, pinned: true },
+            db,
+          ),
         SettingsValidationError,
       );
     }
 
-    const directInsert = db.$client.prepare(
-      "INSERT INTO pinned_clears (user_id, run_id, ordinal) VALUES (?, ?, ?)",
-    );
-    assert.throws(() => directInsert.run(77, first.run.id, 2));
-    assert.throws(() => directInsert.run(77, extraPasses[0]!.run.id, 0));
-    assert.throws(() => directInsert.run(77, extraPasses[0]!.run.id, 5));
-
-    const empty = await savePinnedClears(
-      77,
-      { mode: "manual", runIds: [] },
-      db,
-    );
-    assert.deepEqual(empty.pinned, []);
-    const automatic = await savePinnedClears(77, { mode: "auto" }, db);
-    assert.equal(automatic.mode, "auto");
-    assert.ok(automatic.pinned.length > 0);
-
-    await savePinnedClears(
-      77,
-      { mode: "manual", runIds: [first.run.id] },
-      db,
-    );
-    db.$client
-      .prepare("DELETE FROM map_results WHERE run_id = ?")
-      .run(first.run.id);
-    db.$client.prepare("DELETE FROM runs WHERE id = ?").run(first.run.id);
-    const pinCount = db.$client
-      .prepare("SELECT COUNT(*) AS count FROM pinned_clears WHERE user_id = ?")
-      .get(77) as { count: number };
-    assert.equal(pinCount.count, 0);
-  });
-});
-
-test("run picker uses 20-row keyset pages and rejects malformed cursors", async () => {
-  await withSettingsDatabase(async (db) => {
-    const course = await getCourseByNameKey(
-      SEEDED_SYSTEM_NAME_KEY,
-      SEEDED_COURSE_NAME_KEY,
-      db,
-    );
-    assert.ok(course);
-    for (let index = 0; index < 21; index += 1) {
-      await storeCourseRunResult(
-        passRun(77, "PickerPlayer", course, 1_800_000_000_000 + index),
+    for (let index = 0; index < 5; index += 1) {
+      await updatePinnedClear(
+        77,
+        { runId: runIds[index]!, pinned: true },
         db,
+        100 + index,
       );
     }
-    const first = await getRunPickerPage(77, null, db);
-    assert.equal(first.runs.length, 20);
-    assert.ok(first.nextCursor);
-    const second = await getRunPickerPage(77, first.nextCursor, db);
-    assert.equal(second.runs.length, 1);
-    assert.equal(second.nextCursor, null);
-    assert.notEqual(first.runs.at(-1)?.runId, second.runs[0]?.runId);
     await assert.rejects(
-      () => getRunPickerPage(77, "not-a-cursor", db),
-      SettingsValidationError,
+      () =>
+        updatePinnedClear(77, { runId: runIds[5]!, pinned: true }, db, 200),
+      PinLimitError,
     );
+
+    const replacement = seedPinRuns(db, 77, 1, "replacement", "pin-course-0")[0]!;
+    await updatePinnedClear(
+      77,
+      { runId: replacement, pinned: true },
+      db,
+      300,
+    );
+    const storedReplacement = db.$client
+      .prepare(
+        "SELECT run_id AS runId, pinned_at AS pinnedAt FROM pinned_clears WHERE user_id = 77 AND course_id = 'pin-course-0'",
+      )
+      .get();
+    assert.deepEqual(storedReplacement, {
+      runId: replacement,
+      pinnedAt: 300,
+    });
+
+    const profile = await getPlayerProfile(77, { db });
+    assert.ok(profile?.detailsVisible);
+    if (!profile?.detailsVisible) {
+      assert.fail("Expected visible profile.");
+    }
+    assert.equal(profile.pinnedClears[0]?.runId, replacement);
+    assert.ok(profile.pinnedClears.every((clear) => !("ordinal" in clear)));
+
+    await updatePinnedClear(
+      77,
+      { runId: replacement, pinned: false },
+      db,
+    );
+    await updatePinnedClear(
+      77,
+      { runId: replacement, pinned: false },
+      db,
+    );
+    const afterUnpin = db.$client
+      .prepare(
+        "SELECT COUNT(*) AS count FROM pinned_clears WHERE user_id = 77",
+      )
+      .get() as { count: number };
+    assert.equal(afterUnpin.count, 4);
+
+    await updatePinnedClear(
+      77,
+      { runId: runIds[5]!, pinned: true },
+      db,
+    );
+    db.$client.prepare("DELETE FROM runs WHERE id = ?").run(runIds[5]);
+    const afterCascade = db.$client
+      .prepare(
+        "SELECT COUNT(*) AS count FROM pinned_clears WHERE user_id = 77",
+      )
+      .get() as { count: number };
+    assert.equal(afterCascade.count, 4);
   });
 });
 
-test("settings routes require origin/session and return private no-store responses", async () => {
+test("pin route checks session before Origin and returns private no-store statuses", async () => {
   await withSettingsDatabase(async (db) => {
-    db.$client
-      .prepare(
-        "INSERT INTO users (osu_user_id, username, created_at, updated_at) VALUES (?, ?, ?, ?)",
-      )
-      .run(77, "SettingsPlayer", 1, 1);
+    const runId = seedPinRuns(db, 77, 1)[0]!;
     const token = await createSession(77, db);
     const cookie = `${SESSION_COOKIE_NAME}=${token}`;
 
-    const forbidden = await updateVisibility(
-      jsonRequest("/api/settings/visibility", { profileDetailsPublic: false }, {
-        cookie,
-      }),
+    const unauthenticated = await updatePinned(
+      jsonRequest("/api/settings/pinned", { runId, pinned: true }, {}),
     );
-    assert.equal(forbidden.status, 403);
-    assert.equal(forbidden.headers.get("cache-control"), "private, no-store");
+    assert.equal(unauthenticated.status, 401);
 
-    const unauthorized = await updateVisibility(
+    const forbidden = await updatePinned(
       jsonRequest(
-        "/api/settings/visibility",
-        { profileDetailsPublic: false },
-        { origin: "http://127.0.0.1:3100" },
+        "/api/settings/pinned",
+        { runId, pinned: true },
+        { cookie },
       ),
     );
-    assert.equal(unauthorized.status, 401);
+    assert.equal(forbidden.status, 403);
 
-    const updated = await updateVisibility(
+    const invalid = await updatePinned(
       jsonRequest(
-        "/api/settings/visibility",
-        { profileDetailsPublic: false },
+        "/api/settings/pinned",
+        { runId: "missing", pinned: true },
         { cookie, origin: "http://127.0.0.1:3100" },
       ),
     );
-    assert.equal(updated.status, 200);
-    assert.deepEqual(await updated.json(), { profileDetailsPublic: false });
+    assert.equal(invalid.status, 400);
 
     const pinned = await updatePinned(
       jsonRequest(
         "/api/settings/pinned",
-        { mode: "manual", runIds: [] },
+        { runId, pinned: true },
         { cookie, origin: "http://127.0.0.1:3100" },
       ),
     );
     assert.equal(pinned.status, 200);
-    assert.deepEqual(await pinned.json(), { mode: "manual", pinned: [] });
+    assert.equal(pinned.headers.get("cache-control"), "private, no-store");
+    assert.deepEqual(await pinned.json(), {
+      runId,
+      courseId: "pin-course-0",
+      pinned: true,
+    });
 
-    const runs = await listRuns(
-      new Request("http://127.0.0.1:3100/api/settings/runs", {
-        headers: { cookie },
-      }),
+    const visibility = await updateVisibility(
+      jsonRequest(
+        "/api/settings/visibility",
+        { profileDetailsPublic: false },
+        { cookie, origin: "http://127.0.0.1:3100" },
+      ),
     );
-    assert.equal(runs.status, 200);
-    assert.equal(runs.headers.get("cache-control"), "private, no-store");
-    assert.deepEqual(await runs.json(), { runs: [], nextCursor: null });
+    assert.equal(visibility.status, 200);
+    assert.equal(visibility.headers.get("cache-control"), "private, no-store");
   });
 });
+
+test("separate worker connections keep concurrent course pins within the cap", async () => {
+  const temp = createTempDatabaseUrl();
+  try {
+    const bundle = await createTestDatabase(temp.url);
+    const runIds = seedPinRuns(bundle.db, 77, 7);
+
+    const sameCourseReplacement = seedPinRuns(
+      bundle.db,
+      77,
+      1,
+      "same-course",
+      "pin-course-0",
+    )[0]!;
+    const sameCourseResults = await runConcurrentPins(
+      temp.filePath,
+      runIds[0]!,
+      sameCourseReplacement,
+    );
+    assert.deepEqual(
+      sameCourseResults.map((result) => result.type),
+      ["result", "result"],
+    );
+    assert.equal(
+      (
+        bundle.db.$client
+          .prepare(
+            "SELECT COUNT(*) AS count FROM pinned_clears WHERE user_id = 77",
+          )
+          .get() as { count: number }
+      ).count,
+      1,
+    );
+
+    bundle.db.$client
+      .prepare("DELETE FROM pinned_clears WHERE user_id = 77")
+      .run();
+    for (let index = 0; index < 4; index += 1) {
+      await updatePinnedClear(
+        77,
+        { runId: runIds[index]!, pinned: true },
+        bundle.db,
+        index,
+      );
+    }
+
+    const competing = await runConcurrentPins(
+      temp.filePath,
+      runIds[4]!,
+      runIds[5]!,
+    );
+    assert.equal(
+      competing.filter((result) => result.type === "result").length,
+      1,
+    );
+    assert.equal(
+      competing.filter(
+        (result) => result.type === "error" && result.name === "PinLimitError",
+      ).length,
+      1,
+    );
+    assert.equal(
+      (
+        bundle.db.$client
+          .prepare(
+            "SELECT COUNT(*) AS count FROM pinned_clears WHERE user_id = 77",
+          )
+          .get() as { count: number }
+      ).count,
+      5,
+    );
+  } finally {
+    temp.cleanup();
+  }
+});
+
+function seedPinRuns(
+  db: AppDatabase,
+  userId: number,
+  count: number,
+  prefix = "pin",
+  fixedCourseId?: string,
+) {
+  db.$client
+    .prepare(
+      `INSERT INTO users (osu_user_id, username, created_at, updated_at)
+       VALUES (?, ?, 1, 1)
+       ON CONFLICT(osu_user_id) DO NOTHING`,
+    )
+    .run(userId, `Player${userId}`);
+  const insertCourse = db.$client.prepare(
+    `INSERT OR IGNORE INTO courses (
+       id, dan_system_id, name, slug, description, ordinal, official,
+       score_model, overall_pass_conditions, created_at, updated_at
+     ) VALUES (?, 'system-test', ?, ?, '', ?, 0, 'scorev2', '[]', 1, 1)`,
+  );
+  const insertRun = db.$client.prepare(
+    `INSERT INTO runs (
+       id, user_id, username, course_id, passed, started_at, completed_at, match_id
+     ) VALUES (?, ?, ?, ?, 1, ?, ?, NULL)`,
+  );
+  return Array.from({ length: count }, (_, index) => {
+    const courseId = fixedCourseId ?? `pin-course-${index}`;
+    const runId = `${prefix}-run-${index}`;
+    insertCourse.run(courseId, `Pin Course ${index}`, courseId, index + 1);
+    insertRun.run(
+      runId,
+      userId,
+      `Player${userId}`,
+      courseId,
+      10 + index,
+      20 + index,
+    );
+    return runId;
+  });
+}
+
+type WorkerResult =
+  | { type: "result"; result: unknown }
+  | { type: "error"; name: string; message: string };
+
+async function runConcurrentPins(
+  filePath: string,
+  firstRunId: string,
+  secondRunId: string,
+): Promise<WorkerResult[]> {
+  const workers = [firstRunId, secondRunId].map(
+    (runId, index) =>
+      new Worker(PIN_WORKER_SOURCE, {
+        eval: true,
+        workerData: {
+          filePath,
+          userId: 77,
+          runId,
+          now: 1_000 + index,
+        },
+      }),
+  );
+  await Promise.all(
+    workers.map(
+      (worker) =>
+        new Promise<void>((resolve, reject) => {
+          worker.once("error", reject);
+          worker.once("message", (message: { type: string }) => {
+            if (message.type === "ready") {
+              resolve();
+            }
+          });
+        }),
+    ),
+  );
+  const results = workers.map(
+    (worker) =>
+      new Promise<WorkerResult>((resolve, reject) => {
+        worker.once("error", reject);
+        worker.once("message", (message: WorkerResult) => resolve(message));
+        worker.postMessage("start");
+      }),
+  );
+  return Promise.all(results);
+}
+
+const PIN_WORKER_SOURCE = String.raw`
+  const { parentPort, workerData } = require("node:worker_threads");
+  const Database = require("better-sqlite3");
+  const sqlite = new Database(workerData.filePath);
+  sqlite.pragma("foreign_keys = ON");
+  sqlite.pragma("journal_mode = WAL");
+  sqlite.pragma("busy_timeout = 5000");
+
+  parentPort.postMessage({ type: "ready" });
+  parentPort.once("message", (message) => {
+    if (message !== "start") return;
+    try {
+      const transaction = sqlite.transaction(() => {
+        const run = sqlite.prepare(
+          "SELECT id, course_id AS courseId FROM runs WHERE id = ? AND user_id = ? AND passed = 1"
+        ).get(workerData.runId, workerData.userId);
+        if (!run) {
+          const error = new Error("invalid run");
+          error.name = "SettingsValidationError";
+          throw error;
+        }
+        const existing = sqlite.prepare(
+          "SELECT 1 FROM pinned_clears WHERE user_id = ? AND course_id = ?"
+        ).get(workerData.userId, run.courseId);
+        if (!existing) {
+          const count = sqlite.prepare(
+            "SELECT COUNT(*) AS count FROM pinned_clears WHERE user_id = ?"
+          ).get(workerData.userId);
+          if (count.count >= 5) {
+            const error = new Error("pin limit");
+            error.name = "PinLimitError";
+            throw error;
+          }
+        }
+        sqlite.prepare(
+          "INSERT INTO pinned_clears (user_id, course_id, run_id, pinned_at) VALUES (?, ?, ?, ?) " +
+          "ON CONFLICT(user_id, course_id) DO UPDATE SET run_id = excluded.run_id, pinned_at = excluded.pinned_at"
+        ).run(workerData.userId, run.courseId, run.id, workerData.now);
+        return { runId: run.id, courseId: run.courseId, pinned: true };
+      });
+      parentPort.postMessage({ type: "result", result: transaction.immediate() });
+    } catch (error) {
+      parentPort.postMessage({
+        type: "error",
+        name: error.name,
+        message: error.message,
+      });
+    } finally {
+      sqlite.close();
+    }
+  });
+`;
 
 function jsonRequest(
   path: string,
@@ -310,7 +449,7 @@ function jsonRequest(
 }
 
 async function withSettingsDatabase(
-  callbackFn: (db: Awaited<ReturnType<typeof createTestDatabase>>["db"]) => Promise<void>,
+  callbackFn: (db: AppDatabase) => Promise<void>,
 ) {
   const temp = createTempDatabaseUrl();
   const previousDatabaseUrl = process.env["DATABASE_URL"];

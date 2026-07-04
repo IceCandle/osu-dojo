@@ -1,7 +1,13 @@
 import React from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getDanSystemDetailByNameKey, getRankingForCourse } from "@/db/queries";
+import { PinnedClearControl } from "@/app/dan/[systemNameKey]/PinnedClearControl";
+import {
+  getDanSystemDetailByNameKey,
+  getPinnedClearForCourse,
+  getRankingForCourse,
+} from "@/db/queries";
+import { getSessionUser } from "@/lib/auth/session";
 import {
   formatConditionCompact,
   formatPercentage,
@@ -20,6 +26,7 @@ export default async function DanSystemPage({
   params: Promise<{ systemNameKey: string }>;
   searchParams?: Promise<{ course?: string | string[] }>;
 }) {
+  const sessionPromise = getSessionUser();
   const { systemNameKey } = await params;
   const detail = await getDanSystemDetailByNameKey(systemNameKey);
   const courses = detail?.courses ?? [];
@@ -74,7 +81,17 @@ export default async function DanSystemPage({
     notFound();
   }
 
-  const ranking = await getRankingForCourse(selectedCourse);
+  const [ranking, sessionUser] = await Promise.all([
+    getRankingForCourse(selectedCourse),
+    sessionPromise,
+  ]);
+  const viewerBestRun = sessionUser
+    ? ranking.results.find((result) => result.userId === sessionUser.userId) ??
+      null
+    : null;
+  const pinnedClear = sessionUser
+    ? await getPinnedClearForCourse(sessionUser.userId, selectedCourse.id)
+    : null;
   const systemNameKeyForLinks = kebabizeName(system.name);
   const command = `!dojo start ${systemNameKeyForLinks} ${kebabizeName(selectedCourse.name)}`;
   const topResults = ranking.results.slice(0, 10);
@@ -130,6 +147,36 @@ export default async function DanSystemPage({
           </p>
           <p className="course-description">{selectedCourse.description}</p>
         </div>
+
+        {sessionUser ? (
+          <section className="course-pin-panel" aria-labelledby="course-pin-heading">
+            <div>
+              <p className="eyebrow">Your best run</p>
+              <h2 id="course-pin-heading">Pinned clear</h2>
+              <p>
+                Pin your best passing run for this course to your player profile.
+              </p>
+            </div>
+            <PinnedClearControl
+              bestRun={
+                viewerBestRun
+                  ? {
+                      id: viewerBestRun.id,
+                      status: viewerBestRun.status,
+                      metric:
+                        selectedCourse.scoreModel === "scorev1"
+                          ? formatPercentage(viewerBestRun.summedAccuracy)
+                          : new Intl.NumberFormat("en-US").format(
+                              Math.round(viewerBestRun.totalScore),
+                            ),
+                    }
+                  : null
+              }
+              courseName={selectedCourse.name}
+              initialPinnedRunId={pinnedClear?.runId ?? null}
+            />
+          </section>
+        ) : null}
 
         <div className="results-layout">
           <section className="course-beatmap-section">

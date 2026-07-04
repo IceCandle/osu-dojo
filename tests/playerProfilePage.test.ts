@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createTestDatabase } from "@/db/client";
 import { getCourseByNameKey, storeCourseRunResult } from "@/db/queries";
+import { users } from "@/db/schema";
 import PlayerProfilePage from "@/app/players/[userId]/page";
 import {
   createTempDatabaseUrl,
@@ -57,7 +58,7 @@ test("player profile page renders saved local runs", async () => {
   }
 });
 
-test("player profile page renders safe empty state for numeric no-runs users", async () => {
+test("player profile page renders empty sections for users-only profiles", async () => {
   const temp = createTempDatabaseUrl();
   const previousDatabaseUrl = process.env["DATABASE_URL"];
   const previousBundle = globalThis.__osuDojoDatabaseBundle;
@@ -65,6 +66,12 @@ test("player profile page renders safe empty state for numeric no-runs users", a
   try {
     process.env["DATABASE_URL"] = temp.url;
     globalThis.__osuDojoDatabaseBundle = await createTestDatabase(temp.url);
+    await globalThis.__osuDojoDatabaseBundle.db.insert(users).values({
+      osuUserId: 888888,
+      username: "LoginOnlyPage",
+      createdAt: 1,
+      updatedAt: 1,
+    });
 
     const html = renderToStaticMarkup(
       await PlayerProfilePage({
@@ -73,10 +80,35 @@ test("player profile page renders safe empty state for numeric no-runs users", a
       }),
     );
 
-    assert.match(html, /User 888888/);
-    assert.match(html, /aria-label="User 888888 osu! profile"/);
-    assert.match(html, /No saved runs/);
+    assert.match(html, /LoginOnlyPage/);
+    assert.match(html, /No official dan yet/);
+    assert.match(html, /No pinned clears/);
+    assert.match(html, /No recent runs/);
+    assert.match(html, /No course history/);
     assert.doesNotMatch(html, /undefined/);
+  } finally {
+    process.env["DATABASE_URL"] = previousDatabaseUrl;
+    globalThis.__osuDojoDatabaseBundle = previousBundle;
+    temp.cleanup();
+  }
+});
+
+test("player profile page rejects numeric ids without a users row", async () => {
+  const temp = createTempDatabaseUrl();
+  const previousDatabaseUrl = process.env["DATABASE_URL"];
+  const previousBundle = globalThis.__osuDojoDatabaseBundle;
+
+  try {
+    process.env["DATABASE_URL"] = temp.url;
+    globalThis.__osuDojoDatabaseBundle = await createTestDatabase(temp.url);
+    await assert.rejects(
+      () =>
+        PlayerProfilePage({
+          params: Promise.resolve({ userId: "888888" }),
+          searchParams: Promise.resolve({}),
+        }),
+      isNotFoundError,
+    );
   } finally {
     process.env["DATABASE_URL"] = previousDatabaseUrl;
     globalThis.__osuDojoDatabaseBundle = previousBundle;
@@ -107,6 +139,12 @@ test("player profile mode tabs clamp unsupported modes to osu", async () => {
   try {
     process.env["DATABASE_URL"] = temp.url;
     globalThis.__osuDojoDatabaseBundle = await createTestDatabase(temp.url);
+    await globalThis.__osuDojoDatabaseBundle.db.insert(users).values({
+      osuUserId: 888888,
+      username: "ModePlayer",
+      createdAt: 1,
+      updatedAt: 1,
+    });
 
     const html = renderToStaticMarkup(
       await PlayerProfilePage({
@@ -131,3 +169,12 @@ test("player profile mode tabs clamp unsupported modes to osu", async () => {
     temp.cleanup();
   }
 });
+
+function isNotFoundError(error: unknown) {
+  return (
+    error instanceof Error &&
+    (error.message === "NEXT_NOT_FOUND" ||
+      ("digest" in error &&
+        String(error.digest).includes("NEXT_HTTP_ERROR_FALLBACK;404")))
+  );
+}

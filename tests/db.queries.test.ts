@@ -118,6 +118,146 @@ test("course queries hydrate and normalize beatmap total object counts", async (
   }
 });
 
+test("createTestDatabase backfills run users without overwriting existing users", async () => {
+  const temp = createTempDatabaseUrl();
+
+  try {
+    const initial = await createTestDatabase(temp.url);
+    initial.sqlite
+      .prepare(
+        "INSERT INTO users (osu_user_id, username, created_at, updated_at) VALUES (?, ?, ?, ?)",
+      )
+      .run(99, "ExistingCurrent", 10, 20);
+    const insertRun = initial.sqlite.prepare(
+      `INSERT INTO runs
+        (id, user_id, username, course_id, passed, started_at, completed_at, match_id)
+       VALUES (?, ?, ?, ?, 1, ?, ?, NULL)`,
+    );
+    insertRun.run("run-a", 77, "OlderAlias", "course-test-1dan", 50, 200);
+    insertRun.run("run-z", 77, "TieBreakAlias", "course-test-1dan", 100, 200);
+    insertRun.run("run-existing", 99, "HistoricalAlias", "course-test-1dan", 1, 999);
+    initial.sqlite.close();
+
+    const migrated = await createTestDatabase(temp.url);
+    assert.deepEqual(
+      migrated.sqlite
+        .prepare(
+          `SELECT
+             osu_user_id AS userId,
+             username,
+             created_at AS createdAt,
+             updated_at AS updatedAt
+           FROM users
+           WHERE osu_user_id IN (77, 99)
+           ORDER BY osu_user_id`,
+        )
+        .all(),
+      [
+        {
+          userId: 77,
+          username: "TieBreakAlias",
+          createdAt: 50,
+          updatedAt: 200,
+        },
+        {
+          userId: 99,
+          username: "ExistingCurrent",
+          createdAt: 10,
+          updatedAt: 20,
+        },
+      ],
+    );
+    migrated.sqlite.close();
+
+    const migratedAgain = await createTestDatabase(temp.url);
+    const userCount = migratedAgain.sqlite
+      .prepare("SELECT COUNT(*) AS count FROM users WHERE osu_user_id = 77")
+      .get() as { count: number };
+    assert.equal(userCount.count, 1);
+    migratedAgain.sqlite.close();
+  } finally {
+    temp.cleanup();
+  }
+});
+
+test("createTestDatabase rebuilds legacy pin settings and preserves visibility", async () => {
+  const temp = createTempDatabaseUrl();
+
+  try {
+    const sqlite = new Database(temp.filePath);
+    sqlite.exec(`
+      CREATE TABLE user_settings (
+        user_id INTEGER PRIMARY KEY,
+        profile_details_public INTEGER NOT NULL DEFAULT 1,
+        pinned_mode TEXT NOT NULL DEFAULT 'auto',
+        updated_at INTEGER NOT NULL
+      );
+      INSERT INTO user_settings
+        (user_id, profile_details_public, pinned_mode, updated_at)
+      VALUES (77, 0, 'manual', 1234);
+
+      CREATE TABLE pinned_clears (
+        user_id INTEGER NOT NULL,
+        run_id TEXT NOT NULL,
+        ordinal INTEGER NOT NULL,
+        PRIMARY KEY (user_id, run_id),
+        UNIQUE (user_id, ordinal)
+      );
+    `);
+    sqlite.close();
+
+    const migrated = await createTestDatabase(temp.url);
+    assert.deepEqual(
+      (
+        migrated.sqlite.pragma("table_info(user_settings)") as Array<{
+          name: string;
+        }>
+      ).map((column) => column.name),
+      ["user_id", "profile_details_public", "updated_at"],
+    );
+    assert.deepEqual(
+      migrated.sqlite
+        .prepare(
+          "SELECT user_id AS userId, profile_details_public AS profileDetailsPublic, updated_at AS updatedAt FROM user_settings",
+        )
+        .get(),
+      { userId: 77, profileDetailsPublic: 0, updatedAt: 1234 },
+    );
+    assertCurrentPinnedShape(migrated.sqlite);
+    migrated.sqlite.close();
+
+    const migratedAgain = await createTestDatabase(temp.url);
+    assertCurrentPinnedShape(migratedAgain.sqlite);
+    migratedAgain.sqlite.close();
+  } finally {
+    temp.cleanup();
+  }
+});
+
+test("createTestDatabase rebuilds exact-column pin tables with the wrong FK action", async () => {
+  const temp = createTempDatabaseUrl();
+
+  try {
+    const sqlite = new Database(temp.filePath);
+    sqlite.exec(`
+      CREATE TABLE pinned_clears (
+        user_id INTEGER NOT NULL,
+        course_id TEXT NOT NULL,
+        run_id TEXT NOT NULL REFERENCES runs(id),
+        pinned_at INTEGER NOT NULL,
+        PRIMARY KEY (user_id, course_id)
+      );
+    `);
+    sqlite.close();
+
+    const migrated = await createTestDatabase(temp.url);
+    assertCurrentPinnedShape(migrated.sqlite);
+    migrated.sqlite.close();
+  } finally {
+    temp.cleanup();
+  }
+});
+
 test("createTestDatabase migrates old beatmaps tables with total object counts", async () => {
   const temp = createTempDatabaseUrl();
 
@@ -158,6 +298,46 @@ test("createTestDatabase migrates old beatmaps tables with total object counts",
     temp.cleanup();
   }
 });
+
+function assertCurrentPinnedShape(sqlite: InstanceType<typeof Database>) {
+  const columns = sqlite.pragma("table_info(pinned_clears)") as Array<{
+    name: string;
+    pk: number;
+  }>;
+  assert.deepEqual(
+    columns.map((column) => column.name),
+    ["user_id", "course_id", "run_id", "pinned_at"],
+  );
+  assert.deepEqual(
+    columns
+      .filter((column) => column.pk > 0)
+      .sort((left, right) => left.pk - right.pk)
+      .map((column) => column.name),
+    ["user_id", "course_id"],
+  );
+  const foreignKey = (
+    sqlite.pragma("foreign_key_list(pinned_clears)") as Array<{
+      table: string;
+      from: string;
+      to: string;
+      on_delete: string;
+    }>
+  ).find((candidate) => candidate.from === "run_id");
+  assert.deepEqual(foreignKey, {
+    id: 0,
+    seq: 0,
+    table: "runs",
+    from: "run_id",
+    to: "id",
+    on_update: "NO ACTION",
+    on_delete: "CASCADE",
+    match: "NONE",
+  });
+  const index = (
+    sqlite.pragma("index_list(pinned_clears)") as Array<{ name: string }>
+  ).find((candidate) => candidate.name === "pinned_clears_user_pinned_idx");
+  assert.ok(index);
+}
 
 test("createTestDatabase backfills legacy pass condition columns", async () => {
   const temp = createTempDatabaseUrl();
@@ -388,4 +568,3 @@ test("course reads reject map-only types in course pass conditions", async () =>
     temp.cleanup();
   }
 });
-

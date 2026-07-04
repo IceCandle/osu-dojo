@@ -196,6 +196,37 @@ test("dummy OAuth completes the real state flow and logout revokes a copied cook
     );
     assert.equal(reused.status, 400);
 
+    const secondLogin = await login(
+      new Request("http://127.0.0.1:3100/api/auth/osu/login"),
+    );
+    const secondNonce = extractCookie(secondLogin, "dojo_oauth_nonce");
+    assert.ok(secondNonce);
+    const secondAuthorize = dummyAuthorize(
+      new Request(secondLogin.headers.get("location")!, {
+        headers: { cookie: `dojo_oauth_nonce=${secondNonce}` },
+      }),
+    );
+    const futureUpdatedAt = Date.now() + 60_000;
+    db.$client
+      .prepare(
+        "UPDATE users SET username = ?, updated_at = ? WHERE osu_user_id = ?",
+      )
+      .run("FutureName", futureUpdatedAt, 77);
+    const secondCallback = await callback(
+      new Request(secondAuthorize.headers.get("location")!, {
+        headers: { cookie: `dojo_oauth_nonce=${secondNonce}` },
+      }),
+    );
+    assert.equal(secondCallback.status, 302);
+    assert.deepEqual(
+      db.$client
+        .prepare(
+          "SELECT username, updated_at AS updatedAt FROM users WHERE osu_user_id = ?",
+        )
+        .get(77),
+      { username: "FutureName", updatedAt: futureUpdatedAt },
+    );
+
     const missingOrigin = await logout(
       new Request("http://127.0.0.1:3100/api/auth/logout", {
         method: "POST",

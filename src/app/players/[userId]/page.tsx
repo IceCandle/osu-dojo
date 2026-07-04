@@ -34,35 +34,9 @@ export default async function PlayerProfilePage({
   const profile = await getPlayerProfile(userId, {
     viewerUserId: sessionUser?.userId ?? null,
   });
-  const avatarUrl = profile?.avatarUrl ?? `https://a.ppy.sh/${userId}`;
-  const osuProfileUrl = profile?.osuProfileUrl ?? `https://osu.ppy.sh/users/${userId}`;
 
   if (!profile) {
-    return (
-      <main className="page-shell">
-        <section className="detail-header player-header">
-          <a
-            aria-label={`User ${userId} osu! profile`}
-            className="player-avatar-link"
-            href={osuProfileUrl}
-            rel="noreferrer"
-            target="_blank"
-          >
-            <img alt="" className="player-avatar" src={avatarUrl} />
-          </a>
-          <div className="player-header-copy">
-            <p className="eyebrow">Player</p>
-            <h1>User {userId}</h1>
-            <p className="detail-copy">No local dan runs have been saved for this player.</p>
-          </div>
-        </section>
-        <ModeTabs selectedMode={selectedMode} />
-        <section className="empty-card player-empty-card">
-          <h2>No saved runs</h2>
-          <p>This page only uses osu!dojo runs stored in the local database.</p>
-        </section>
-      </main>
-    );
+    notFound();
   }
 
   return (
@@ -151,7 +125,7 @@ export default async function PlayerProfilePage({
               ) : (
                 <EmptyPanel
                   title="No pinned clears"
-                  body="Passing runs are selected automatically."
+                  body="Pinned clears selected from course pages will appear here."
                 />
               )}
             </section>

@@ -193,22 +193,10 @@ export interface PinnedClearView {
   courseLabel: string | null;
   official: boolean;
   systemName: string;
-  ordinal: number;
   scoreModel: DanScoreModel;
   summedAccuracy: number;
   totalScore: number;
   completedAt: number;
-}
-
-export interface RunPick {
-  runId: string;
-  courseId: string;
-  courseName: string;
-  courseLabel: string | null;
-  systemName: string;
-  completedAt: number;
-  summedAccuracy: number;
-  totalScore: number;
 }
 
 export interface PlayerRecentRun {

@@ -1507,6 +1507,80 @@ code {
   background: var(--panel);
 }
 
+.course-pin-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, auto);
+  gap: 24px;
+  align-items: center;
+  margin-top: 24px;
+  padding: 20px;
+  border: 1px solid var(--line);
+  background:
+    linear-gradient(120deg, rgba(120, 214, 154, 0.08), transparent 48%),
+    var(--bg);
+}
+
+.course-pin-panel h2,
+.course-pin-panel p {
+  margin: 0;
+}
+
+.course-pin-panel > div:first-child {
+  display: grid;
+  gap: 8px;
+}
+
+.course-pin-panel > div:first-child > p:last-child,
+.course-pin-empty,
+.course-pin-notice {
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.course-pin-control {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px 14px;
+  align-items: center;
+}
+
+.course-pin-control > div {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.course-pin-status,
+.course-pin-button {
+  font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.course-pin-button {
+  min-height: 38px;
+  padding: 0 14px;
+  border: 1px solid var(--text);
+  border-radius: 2px;
+  background: var(--text);
+  color: var(--bg);
+  cursor: pointer;
+}
+
+.course-pin-button:disabled {
+  border-color: var(--line);
+  background: transparent;
+  color: var(--muted);
+  cursor: not-allowed;
+}
+
+.course-pin-notice {
+  grid-column: 1 / -1;
+  margin: 0;
+  font-size: 13px;
+}
+
 .player-profile-private-note {
   align-self: stretch;
 }
@@ -1554,6 +1628,11 @@ code {
   .systems-grid-index,
   .course-beatmap-card,
   .detail-stats {
+    grid-template-columns: 1fr;
+  }
+
+  .course-pin-panel,
+  .course-pin-control {
     grid-template-columns: 1fr;
   }
 

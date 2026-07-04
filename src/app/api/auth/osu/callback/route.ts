@@ -68,7 +68,8 @@ export async function GET(request: Request) {
          VALUES (?, ?, ?, ?)
          ON CONFLICT(osu_user_id) DO UPDATE SET
            username = excluded.username,
-           updated_at = excluded.updated_at`,
+           updated_at = excluded.updated_at
+         WHERE excluded.updated_at >= users.updated_at`,
       )
       .run(user.id, user.username, now, now);
     const sessionToken = await createSession(user.id, database, now);

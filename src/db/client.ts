@@ -138,17 +138,15 @@ CREATE TABLE IF NOT EXISTS user_settings (
   user_id INTEGER PRIMARY KEY,
   profile_details_public INTEGER NOT NULL DEFAULT 1
     CHECK(profile_details_public IN (0, 1)),
-  pinned_mode TEXT NOT NULL DEFAULT 'auto'
-    CHECK(pinned_mode IN ('auto', 'manual')),
   updated_at INTEGER NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS pinned_clears (
   user_id INTEGER NOT NULL,
+  course_id TEXT NOT NULL,
   run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
-  ordinal INTEGER NOT NULL CHECK(ordinal BETWEEN 0 AND 4),
-  PRIMARY KEY (user_id, run_id),
-  UNIQUE (user_id, ordinal)
+  pinned_at INTEGER NOT NULL,
+  PRIMARY KEY (user_id, course_id)
 );
 
 CREATE INDEX IF NOT EXISTS courses_system_ordinal_idx
@@ -358,7 +356,145 @@ function migrateDatabase(sqlite: BetterSqliteConnection) {
       opened_at INTEGER NOT NULL DEFAULT (unixepoch() * 1000)
     );
   `);
+  backfillUsersFromRuns(sqlite);
+  migrateSettingsTables(sqlite);
   ensureIndexes(sqlite);
+}
+
+function backfillUsersFromRuns(sqlite: BetterSqliteConnection) {
+  sqlite.transaction(() => {
+    sqlite.exec(`
+      INSERT INTO users (osu_user_id, username, created_at, updated_at)
+      SELECT
+        r.user_id,
+        (
+          SELECT latest.username
+          FROM runs latest
+          WHERE latest.user_id = r.user_id
+          ORDER BY latest.completed_at DESC, latest.id DESC
+          LIMIT 1
+        ),
+        MIN(r.started_at),
+        MAX(r.completed_at)
+      FROM runs r
+      LEFT JOIN users u ON u.osu_user_id = r.user_id
+      WHERE u.osu_user_id IS NULL
+      GROUP BY r.user_id
+      ON CONFLICT(osu_user_id) DO NOTHING;
+    `);
+  })();
+}
+
+function migrateSettingsTables(sqlite: BetterSqliteConnection) {
+  const userSettingsColumns = getColumnNames(sqlite, "user_settings");
+  const pinnedClearsIsCurrent = hasCurrentPinnedClearsShape(sqlite);
+  if (!userSettingsColumns.includes("pinned_mode") && pinnedClearsIsCurrent) {
+    return;
+  }
+
+  sqlite.transaction(() => {
+    if (userSettingsColumns.includes("pinned_mode")) {
+      sqlite.exec(`
+        CREATE TABLE user_settings_new (
+          user_id INTEGER PRIMARY KEY,
+          profile_details_public INTEGER NOT NULL DEFAULT 1
+            CHECK(profile_details_public IN (0, 1)),
+          updated_at INTEGER NOT NULL
+        );
+        INSERT INTO user_settings_new (
+          user_id,
+          profile_details_public,
+          updated_at
+        )
+        SELECT
+          user_id,
+          profile_details_public,
+          updated_at
+        FROM user_settings;
+        DROP TABLE user_settings;
+        ALTER TABLE user_settings_new RENAME TO user_settings;
+      `);
+    }
+
+    if (!pinnedClearsIsCurrent) {
+      sqlite.exec(`
+        DROP TABLE IF EXISTS pinned_clears;
+        CREATE TABLE pinned_clears (
+          user_id INTEGER NOT NULL,
+          course_id TEXT NOT NULL,
+          run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+          pinned_at INTEGER NOT NULL,
+          PRIMARY KEY (user_id, course_id)
+        );
+      `);
+    }
+  })();
+}
+
+function hasCurrentPinnedClearsShape(sqlite: BetterSqliteConnection) {
+  const columns = sqlite.pragma("table_info(pinned_clears)") as Array<{
+    name: string;
+    pk: number;
+  }>;
+  if (
+    columns.length !== 4 ||
+    !["user_id", "course_id", "run_id", "pinned_at"].every((name) =>
+      columns.some((column) => column.name === name),
+    )
+  ) {
+    return false;
+  }
+
+  const primaryKeyColumns = columns
+    .filter((column) => column.pk > 0)
+    .sort((left, right) => left.pk - right.pk)
+    .map((column) => column.name);
+  if (
+    primaryKeyColumns.length !== 2 ||
+    primaryKeyColumns[0] !== "user_id" ||
+    primaryKeyColumns[1] !== "course_id"
+  ) {
+    return false;
+  }
+
+  const primaryKeyIndex = (
+    sqlite.pragma("index_list(pinned_clears)") as Array<{
+      name: string;
+      origin: string;
+    }>
+  ).find((index) => index.origin === "pk");
+  if (!primaryKeyIndex) {
+    return false;
+  }
+  const indexedColumns = (
+    sqlite.pragma(`index_info(${primaryKeyIndex.name})`) as Array<{
+      seqno: number;
+      name: string;
+    }>
+  )
+    .sort((left, right) => left.seqno - right.seqno)
+    .map((column) => column.name);
+  if (
+    indexedColumns.length !== 2 ||
+    indexedColumns[0] !== "user_id" ||
+    indexedColumns[1] !== "course_id"
+  ) {
+    return false;
+  }
+
+  const runForeignKey = (
+    sqlite.pragma("foreign_key_list(pinned_clears)") as Array<{
+      table: string;
+      from: string;
+      to: string;
+      on_delete: string;
+    }>
+  ).find((foreignKey) => foreignKey.from === "run_id");
+  return (
+    runForeignKey?.table === "runs" &&
+    runForeignKey.to === "id" &&
+    runForeignKey.on_delete.toUpperCase() === "CASCADE"
+  );
 }
 
 function backfillCoursePassConditions(
@@ -658,6 +794,9 @@ function ensureIndexes(sqlite: BetterSqliteConnection) {
 
     CREATE INDEX IF NOT EXISTS sessions_expires_idx
       ON sessions(expires_at);
+
+    CREATE INDEX IF NOT EXISTS pinned_clears_user_pinned_idx
+      ON pinned_clears(user_id, pinned_at DESC);
   `);
 }
 
