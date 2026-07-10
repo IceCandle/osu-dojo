@@ -81,9 +81,7 @@ export default async function PlayerProfilePage({
 
       <div className="player-profile-grid">
         <section className="sequence-card player-profile-section">
-          <div className="section-heading">
-            <h2>Highest official dan</h2>
-          </div>
+          <SectionHeading title="Highest official dan" />
           {profile.highestOfficialDans.length > 0 ? (
             <div className="player-badge-list">
               {profile.highestOfficialDans.map((badge) => (
@@ -93,17 +91,13 @@ export default async function PlayerProfilePage({
                 </article>
               ))}
             </div>
-          ) : (
-            <EmptyPanel title="No official dan yet" body="Passed official courses will appear here." />
-          )}
+          ) : null}
         </section>
 
         {profile.detailsVisible ? (
           <>
             <section className="sequence-card player-profile-section">
-              <div className="section-heading">
-                <h2>Pinned clears</h2>
-              </div>
+              <SectionHeading count={profile.pinnedClears.length} title="Pinned clears" />
               {profile.pinnedClears.length > 0 ? (
                 <div className="player-clear-list">
                   {profile.pinnedClears.map((clear) => (
@@ -122,18 +116,11 @@ export default async function PlayerProfilePage({
                     </article>
                   ))}
                 </div>
-              ) : (
-                <EmptyPanel
-                  title="No pinned clears"
-                  body="Pinned clears selected from course pages will appear here."
-                />
-              )}
+              ) : null}
             </section>
 
             <section className="sequence-card player-profile-section">
-              <div className="section-heading">
-                <h2>Recent runs</h2>
-              </div>
+              <SectionHeading count={profile.recentRuns.length} title="Recent runs" />
               {profile.recentRuns.length > 0 ? (
                 <div className="ranking-table-wrap">
                   <table className="ranking-table">
@@ -151,18 +138,11 @@ export default async function PlayerProfilePage({
                     </tbody>
                   </table>
                 </div>
-              ) : (
-                <EmptyPanel
-                  title="No recent runs"
-                  body="Completed local runs will appear here."
-                />
-              )}
+              ) : null}
             </section>
 
             <section className="sequence-card player-profile-section">
-              <div className="section-heading">
-                <h2>Most played courses</h2>
-              </div>
+              <SectionHeading count={profile.mostPlayedCourses.length} title="Most played courses" />
               {profile.mostPlayedCourses.length > 0 ? (
                 <div className="ranking-table-wrap">
                   <table className="ranking-table">
@@ -184,20 +164,10 @@ export default async function PlayerProfilePage({
                     </tbody>
                   </table>
                 </div>
-              ) : (
-                <EmptyPanel
-                  title="No course history"
-                  body="Course counts are calculated from saved runs."
-                />
-              )}
+              ) : null}
             </section>
           </>
-        ) : (
-          <section className="empty-card player-profile-private-note">
-            <h2>상세 기록 비공개</h2>
-            <p>프로필 상세 기록이 비공개입니다.</p>
-          </section>
-        )}
+        ) : null}
       </div>
     </main>
   );
@@ -238,12 +208,16 @@ function RecentRunRow({ run }: { run: PlayerRecentRun }) {
   );
 }
 
-function EmptyPanel({ title, body }: { title: string; body: string }) {
+function SectionHeading({ count, title }: { count?: number; title: string }) {
   return (
-    <article className="empty-card compact-empty-card">
+    <div className="section-heading">
       <h2>{title}</h2>
-      <p>{body}</p>
-    </article>
+      {count === undefined ? null : (
+        <span aria-label={`${count} items`} className="player-section-count">
+          {count}
+        </span>
+      )}
+    </div>
   );
 }
 

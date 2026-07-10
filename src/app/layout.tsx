@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import SearchOverlay from "@/app/SearchOverlay";
 import { LoginControl } from "@/app/LoginControl";
-import { LogoutControl } from "@/app/LogoutControl";
+import { AccountDisclosure } from "@/app/AccountDisclosure";
 import { getSessionUser } from "@/lib/auth/session";
 import "./globals.css";
 
@@ -37,11 +37,11 @@ export default async function RootLayout({
 
             <div className="site-header-tools">
               <SearchOverlay />
-              <button className="site-action" disabled type="button">
-                Upload
-              </button>
               {sessionUser ? (
-                <LogoutControl username={sessionUser.username} />
+                <AccountDisclosure
+                  userId={sessionUser.userId}
+                  username={sessionUser.username}
+                />
               ) : (
                 <LoginControl />
               )}

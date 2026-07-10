@@ -81,10 +81,12 @@ test("player profile page renders empty sections for users-only profiles", async
     );
 
     assert.match(html, /LoginOnlyPage/);
-    assert.match(html, /No official dan yet/);
-    assert.match(html, /No pinned clears/);
-    assert.match(html, /No recent runs/);
-    assert.match(html, /No course history/);
+    assert.match(html, /Highest official dan/);
+    assert.match(html, /Pinned clears/);
+    assert.match(html, /Recent runs/);
+    assert.match(html, /Most played courses/);
+    assert.equal(html.match(/aria-label="0 items"/g)?.length, 3);
+    assert.doesNotMatch(html, /No official dan yet|No pinned clears|No recent runs|No course history/);
     assert.doesNotMatch(html, /undefined/);
   } finally {
     process.env["DATABASE_URL"] = previousDatabaseUrl;

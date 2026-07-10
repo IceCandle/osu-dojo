@@ -5,8 +5,8 @@ export default function PlayerNotFound() {
     <main className="page-shell">
       <section className="empty-card player-empty-card">
         <p className="eyebrow">404</p>
-        <h1>로컬 osu!dojo 기록이 없습니다</h1>
-        <p>이 사용자에 대해 로컬에 저장된 로그인 또는 run 기록을 찾지 못했습니다.</p>
+        <h1>No local osu!dojo record</h1>
+        <p>We couldn't find any locally saved login or run history for this user.</p>
         <Link className="results-link" href="/">
           Back home
         </Link>

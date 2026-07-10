@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 interface SettingsClientProps {
   initialProfileDetailsPublic: boolean;
@@ -14,6 +14,9 @@ export function SettingsClient({
   );
   const [pending, setPending] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => setReady(true), []);
 
   async function updateVisibility(nextValue: boolean) {
     const previous = profileDetailsPublic;
@@ -29,22 +32,22 @@ export function SettingsClient({
       if (!response.ok) {
         throw new Error();
       }
-      setNotice("공개 설정을 저장했습니다.");
+      setNotice("Saved visibility settings.");
     } catch {
       setProfileDetailsPublic(previous);
-      setNotice("공개 설정을 저장하지 못했습니다.");
+      setNotice("Couldn't save visibility settings.");
     } finally {
       setPending(false);
     }
   }
 
   return (
-    <div className="settings-grid">
+    <div className="settings-grid" data-ready={ready ? "true" : undefined}>
       <section className="sequence-card settings-card">
         <div className="section-heading">
           <div>
             <p className="eyebrow">Visibility</p>
-            <h2>프로필 상세 기록</h2>
+            <h2>Profile details</h2>
           </div>
         </div>
         <label className="settings-toggle">
@@ -55,9 +58,9 @@ export function SettingsClient({
             type="checkbox"
           />
           <span>
-            <strong>프로필 상세 기록 공개</strong>
+            <strong>Show detailed profile history</strong>
             <small>
-              끄면 다른 사용자에게 최근 run, 점수, 대표 클리어를 숨깁니다.
+              Turn this off to hide recent runs, scores, and pinned clears from other users.
             </small>
           </span>
         </label>

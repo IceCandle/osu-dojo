@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 interface PinnedClearControlProps {
   courseName: string;
@@ -20,10 +20,13 @@ export function PinnedClearControl({
   const [pinnedRunId, setPinnedRunId] = useState(initialPinnedRunId);
   const [pending, setPending] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => setReady(true), []);
 
   if (!bestRun) {
     return (
-      <p className="course-pin-empty">
+      <p className="course-pin-empty" data-ready={ready ? "true" : undefined}>
         Complete this course to choose a pinned clear.
       </p>
     );
@@ -74,7 +77,7 @@ export function PinnedClearControl({
   }
 
   return (
-    <div className="course-pin-control">
+    <div className="course-pin-control" data-ready={ready ? "true" : undefined}>
       <div>
         <span className={`course-pin-status status-${bestRun.status}`}>
           {bestRun.status}

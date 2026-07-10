@@ -4,7 +4,7 @@ test("player profile renders seeded full-map run aggregates", async ({ page }) =
   await page.goto("/players/77");
 
   await expect(page.getByRole("heading", { name: "E2EPlayer" })).toBeVisible();
-  await expect(page.getByText("Play count").locator("..")).toContainText("7");
+  await expect(page.getByText("Play count").locator("..")).toContainText("9");
   await expect(page.getByRole("heading", { name: "Highest official dan" })).toBeVisible();
   await expect(page.getByLabel("Acquired dan badges").getByText("1st")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Pinned clears" })).toBeVisible();

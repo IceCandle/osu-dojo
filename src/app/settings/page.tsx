@@ -19,9 +19,7 @@ export default async function SettingsPage() {
         <div>
           <p className="eyebrow">Account settings</p>
           <h1>{user.username}</h1>
-          <p className="detail-copy">
-            프로필 상세 기록 공개 여부를 관리합니다.
-          </p>
+          <p className="detail-copy">Choose whether other users can see your detailed history.</p>
         </div>
       </section>
       <SettingsClient

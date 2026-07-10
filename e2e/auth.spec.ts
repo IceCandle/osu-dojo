@@ -8,17 +8,20 @@ test("dummy OAuth login, authenticated settings, and server-side logout revocati
   await page.getByRole("button", { name: "osu!auth Login" }).click();
 
   await expect(page).toHaveURL(/\/dan\?q=1st$/);
-  await expect(page.getByRole("link", { name: "E2EPlayer" })).toBeVisible();
+  const account = page.locator(".account-disclosure");
+  await expect(account).toHaveAttribute("data-ready", "true");
   const sessionCookie = (await context.cookies()).find(
     (cookie) => cookie.name === "dojo_session",
   );
   expect(sessionCookie).toBeDefined();
 
-  await page.getByRole("link", { name: "E2EPlayer" }).click();
+  await page.getByRole("button", { name: "E2EPlayer" }).click();
+  await page.getByRole("link", { name: "Settings" }).click();
   await expect(page).toHaveURL(/\/settings$/);
   await expect(page.getByRole("heading", { name: "E2EPlayer" })).toBeVisible();
 
-  await page.getByRole("button", { name: "Logout" }).first().click();
+  await page.getByRole("button", { name: "E2EPlayer" }).click();
+  await page.getByRole("button", { name: "Log out" }).click();
   await expect(page).toHaveURL(/\/$/);
   await expect(page.getByRole("button", { name: "osu!auth Login" })).toBeVisible();
 

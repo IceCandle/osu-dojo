@@ -12,7 +12,7 @@ import {
   SEEDED_SYSTEM_NAME_KEY,
   addSampleBeatmapMetadata,
 } from "../../tests/helpers/dbFixtures";
-import { passRun } from "../../tests/helpers/runFixtures";
+import { dnfRun, passRun } from "../../tests/helpers/runFixtures";
 
 const COURSE_DATA_DIR = path.join(process.cwd(), "data/courses");
 const E2E_LIMIT_SYSTEM_NAME_KEY = "e2e-pins";
@@ -33,10 +33,32 @@ export async function seedE2eDatabase(url: string) {
       bundle.db,
     );
     const secondCourse = await getCourseByNameKey(SEEDED_SYSTEM_NAME_KEY, "2nd", bundle.db);
+    const failOnlyCourse = await getCourseByNameKey(
+      E2E_LIMIT_SYSTEM_NAME_KEY,
+      "Fail only",
+      bundle.db,
+    );
+    const crowdedCourse = await getCourseByNameKey(
+      E2E_LIMIT_SYSTEM_NAME_KEY,
+      "Crowded",
+      bundle.db,
+    );
+    const historyCourse = await getCourseByNameKey(
+      E2E_LIMIT_SYSTEM_NAME_KEY,
+      "History",
+      bundle.db,
+    );
 
-    if (!firstCourse || !secondCourse) {
+    if (!firstCourse || !secondCourse || !failOnlyCourse || !crowdedCourse || !historyCourse) {
       throw new Error("Missing canonical seeded e2e courses.");
     }
+
+    bundle.sqlite
+      .prepare(
+        `INSERT INTO users (osu_user_id, username, created_at, updated_at)
+         VALUES (?, ?, ?, ?)`,
+      )
+      .run(88, "UsersOnly88", 1_799_999_000_000, 1_799_999_000_000);
 
     const olderFirst = await storeCourseRunResult(
       passRun(77, "E2EPlayer", firstCourse, 1_799_999_900_000),
@@ -73,6 +95,37 @@ export async function seedE2eDatabase(url: string) {
         ),
       );
     }
+
+    await storeCourseRunResult(
+      dnfRun(77, "E2EPlayer", failOnlyCourse, 1_800_000_700_000),
+      bundle.db,
+    );
+    await storeCourseRunResult(
+      passRun(77, "E2EPlayer", crowdedCourse, 1_800_000_800_000, {
+        score: 500_000,
+      }),
+      bundle.db,
+    );
+    for (let index = 0; index < 10; index += 1) {
+      await storeCourseRunResult(
+        passRun(
+          200 + index,
+          `Crowded${index + 1}`,
+          crowdedCourse,
+          1_800_000_810_000 + index * 1_000,
+          { score: 600_000 + index * 10_000 },
+        ),
+        bundle.db,
+      );
+    }
+    await storeCourseRunResult(
+      passRun(99, "OldName99", historyCourse, 1_800_000_600_000),
+      bundle.db,
+    );
+    await storeCourseRunResult(
+      passRun(99, "NewName99", historyCourse, 1_800_000_650_000),
+      bundle.db,
+    );
 
     await updatePinnedClear(
       77,
@@ -179,7 +232,15 @@ function addE2eLimitCourses(
     WHERE course_id = 'course-test-1dan'
   `);
 
-  for (const [index, name] of ["3rd", "4th", "5th", "6th"].entries()) {
+  for (const [index, name] of [
+    "3rd",
+    "4th",
+    "5th",
+    "6th",
+    "Fail only",
+    "Crowded",
+    "History",
+  ].entries()) {
     const courseId = `course-test-${name}`;
     insertCourse.run(courseId, name, courseId, index + 3);
     insertBeatmaps.run(`-${name}`, courseId);

@@ -129,10 +129,11 @@ CourseRun (id, userId, courseId, passed, timestamp, matchId?)
 - `/`와 `/dan`은 current와 legacy system을 보여줍니다.
 - legacy system은 badge를 표시하고 current 아래에 정렬됩니다.
 - `/dan/[systemNameKey]`는 playable system의 모든 course, beatmap 목록, 통과 조건, 통합 리더보드, `?course=<courseNameKey>` anchor 이동을 렌더링합니다.
+- 로그인 사용자의 course 최고 기록에는 전체 순위를 함께 표시합니다. 내 기록이 상위 10개 안이면 해당 leaderboard 행을 강조하고, 10위 밖이면 기존 상위 10개 아래에 내 기록을 한 번 더 표시합니다. 익명 사용자와 다른 사용자의 leaderboard 표시 규칙은 바뀌지 않습니다.
 - draft detail page는 상응하는 정보를 표시하고, draft run은 저장되지 않는다고 안내합니다.
 - 리더보드의 `Course Acc`는 통과한 map accuracy의 합계입니다.
 - `users`는 OAuth 로그인 또는 run 저장으로 로컬에서 확인한 사용자의 현재 이름과 프로필 존재 여부의 기준입니다. 기존 run 사용자 중 `users` 행이 없는 사용자는 DB 이전에서 채웁니다. OAuth callback과 run 저장은 더 오래된 확인 시각이 현재 username을 되돌리지 않도록 확인 시각이 같거나 더 새로운 경우에만 `users.username`을 갱신합니다.
-- `/players/[userId]`는 `users` 행이 있으면 정상 프로필을 표시하고 username은 항상 `users.username`을 사용합니다. run이 없는 사용자는 최고 official dan, 대표 클리어, 최근 run, 많이 플레이한 course의 빈 상태를 봅니다. `users` 행이 없거나 `userId`가 숫자가 아니면 로컬 기록이 없다는 404를 표시합니다. osu! API 조회, profile cache, account linking은 없습니다. avatar는 `https://a.ppy.sh/{userId}`를 사용합니다.
+- `/players/[userId]`는 `users` 행이 있으면 정상 프로필을 표시하고 username은 항상 `users.username`을 사용합니다. 대표 클리어·최근 run·많이 플레이한 course section은 제목 바로 옆에 항목 수를 표시하며 데이터가 없어도 `0`으로 남겨 두고 별도 빈 상태 문구는 표시하지 않습니다. 최고 official dan section은 항목 수 없이 상세 공개 설정과 관계없이 항상 표시하고, 나머지 세 section은 상세가 공개되는 viewer에게만 표시합니다. `users` 행이 없거나 `userId`가 숫자가 아니면 로컬 기록이 없다는 404를 표시합니다. osu! API 조회, profile cache, account linking은 없습니다. avatar는 `https://a.ppy.sh/{userId}`를 사용합니다.
 - Player profile은 최고 official dan badge, 대표 클리어 최대 5개, 최근 run, 많이 플레이한
   course, play count를 보여줍니다. 최고 official dan은 통과한 official course만 대상으로
   하며, 같은 ladder 안에서는 `(ladderOrder, course ordinal)`이 가장 큰 course 하나만
@@ -159,5 +160,7 @@ CourseRun (id, userId, courseId, passed, timestamp, matchId?)
 - `/settings`는 로그인한 사용자만 접근할 수 있으며 프로필 상세 공개 설정만 제공합니다.
   대표 클리어는 course 상세 페이지에서 관리합니다. 나머지 조회 화면과 검색,
   leaderboard는 로그인 없이 사용할 수 있습니다.
+- 로그인한 헤더 username은 My profile, 비활성 My uploads, Settings, Log out을 일반 링크와 버튼으로 제공하는 계정 disclosure를 엽니다. 익명 사용자의 Login 버튼은 그대로 유지합니다.
+- `/settings`와 player 404는 영어로 표시합니다. player 404는 실제 osu! 계정 여부가 아니라 로컬 로그인 또는 run 기록이 없다는 뜻만 전달합니다.
 - 기본은 SSR with server components이며, 전역 검색 dialog, 인증 control, API endpoint만
   필요한 client/route handler 예외를 사용합니다.
