@@ -11,6 +11,7 @@ interface AccountDisclosureProps {
 export function AccountDisclosure({ userId, username }: AccountDisclosureProps) {
   const [open, setOpen] = useState(false);
   const [pending, setPending] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
@@ -26,10 +27,9 @@ export function AccountDisclosure({ userId, username }: AccountDisclosureProps) 
 
     function onKeyDown(event: KeyboardEvent) {
       if (event.key !== "Escape") return;
-      const held = rootRef.current?.contains(document.activeElement);
       setOpen(false);
       // The panel unmounts this commit, dropping focus to body; restore next frame.
-      if (held) window.requestAnimationFrame(() => triggerRef.current?.focus());
+      window.requestAnimationFrame(() => triggerRef.current?.focus());
     }
 
     document.addEventListener("pointerdown", onPointerDown);
@@ -41,11 +41,19 @@ export function AccountDisclosure({ userId, username }: AccountDisclosureProps) 
   }, [open]);
 
   async function logout() {
+    if (pending) return;
+
     setPending(true);
+    setNotice(null);
     try {
       const response = await fetch("/api/auth/logout", { method: "POST" });
-      if (!response.ok) throw new Error("Logout failed.");
+      if (!response.ok) {
+        setNotice("Couldn't log out. Try again.");
+        return;
+      }
       window.location.assign("/");
+    } catch {
+      setNotice("Couldn't log out. Try again.");
     } finally {
       setPending(false);
     }
@@ -65,7 +73,10 @@ export function AccountDisclosure({ userId, username }: AccountDisclosureProps) 
         aria-controls="account-disclosure"
         aria-expanded={open}
         className="site-action account-menu-trigger"
-        onClick={() => setOpen((current) => !current)}
+        onClick={() => {
+          if (!open) setNotice(null);
+          setOpen(!open);
+        }}
         ref={triggerRef}
         type="button"
       >
@@ -83,6 +94,11 @@ export function AccountDisclosure({ userId, username }: AccountDisclosureProps) 
           <button disabled={pending} onClick={() => void logout()} type="button">
             {pending ? "Signing out" : "Log out"}
           </button>
+          {notice ? (
+            <p className="account-disclosure-notice" role="status">
+              {notice}
+            </p>
+          ) : null}
         </div>
       ) : null}
     </div>

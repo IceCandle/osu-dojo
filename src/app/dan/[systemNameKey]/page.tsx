@@ -26,7 +26,6 @@ export default async function DanSystemPage({
   params: Promise<{ systemNameKey: string }>;
   searchParams?: Promise<{ course?: string | string[] }>;
 }) {
-  const sessionPromise = getSessionUser();
   const { systemNameKey } = await params;
   const detail = await getDanSystemDetailByNameKey(systemNameKey);
   const courses = detail?.courses ?? [];
@@ -83,7 +82,7 @@ export default async function DanSystemPage({
 
   const [ranking, sessionUser] = await Promise.all([
     getRankingForCourse(selectedCourse),
-    sessionPromise,
+    getSessionUser(),
   ]);
   const viewerBestRun = sessionUser
     ? ranking.results.find((result) => result.userId === sessionUser.userId) ??

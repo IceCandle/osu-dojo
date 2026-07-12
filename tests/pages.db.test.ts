@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
 import { renderToStaticMarkup } from "react-dom/server";
+import "./helpers/nextTestEnvironment";
 import { createTestDatabase } from "@/db/client";
 import { loadCoursesFromDir } from "@/db/courseLoader";
 import { formatConditionCompact, formatScoreModel } from "@/lib/format";
@@ -20,6 +21,7 @@ import {
   SEEDED_COURSE_NAME_KEY,
   SEEDED_SYSTEM_NAME_KEY,
 } from "./helpers/dbFixtures";
+import { withAnonymousRequestScope } from "./helpers/requestScope";
 
 test("pages render seeded course data from SQLite", async () => {
   const temp = createTempDatabaseUrl();
@@ -41,14 +43,14 @@ test("pages render seeded course data from SQLite", async () => {
     const homeHtml = renderToStaticMarkup(await HomePage());
     const systemsHtml = renderToStaticMarkup(await DanSystemsPage());
     const courseHtml = renderToStaticMarkup(
-      await DanCoursePage({
+      await withAnonymousRequestScope(() => DanCoursePage({
         params: Promise.resolve({
           systemNameKey: SEEDED_SYSTEM_NAME_KEY,
         }),
         searchParams: Promise.resolve({
           course: SEEDED_COURSE_NAME_KEY,
         }),
-      }),
+      })),
     );
     const course = await getCourseByNameKey(
       SEEDED_SYSTEM_NAME_KEY,
@@ -150,10 +152,10 @@ test("catalog hides drafts but exact-key draft detail renders", async () => {
 
     const systemsHtml = renderToStaticMarkup(await DanSystemsPage());
     const draftHtml = renderToStaticMarkup(
-      await DanCoursePage({
+      await withAnonymousRequestScope(() => DanCoursePage({
         params: Promise.resolve({ systemNameKey: "beta" }),
         searchParams: Promise.resolve({ course: SEEDED_COURSE_NAME_KEY }),
-      }),
+      })),
     );
     const draftCourse = await getCourseByNameKey("beta", SEEDED_COURSE_NAME_KEY);
     const archivedCourse = await getCourseByNameKey("archive", SEEDED_COURSE_NAME_KEY);
@@ -241,14 +243,14 @@ test("course run queries and page derive DNF for interrupted partial runs", asyn
     globalThis.__osuDojoDatabaseBundle = databaseBundle;
 
     const resultsHtml = renderToStaticMarkup(
-      await DanCoursePage({
+      await withAnonymousRequestScope(() => DanCoursePage({
         params: Promise.resolve({
           systemNameKey: SEEDED_SYSTEM_NAME_KEY,
         }),
         searchParams: Promise.resolve({
           course: SEEDED_COURSE_NAME_KEY,
         }),
-      }),
+      })),
     );
 
     assert.match(resultsHtml, /DNFPlayer/);

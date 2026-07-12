@@ -18,19 +18,18 @@ export default async function PlayerProfilePage({
   params: Promise<{ userId: string }>;
   searchParams?: Promise<{ mode?: string | string[] }>;
 }) {
-  const sessionPromise = getSessionUser();
   const { userId: rawUserId } = await params;
   const userId = parseUserId(rawUserId);
   if (userId === null) {
     notFound();
   }
 
+  const sessionUser = await getSessionUser();
   const resolvedSearchParams = searchParams ? await searchParams : undefined;
   const requestedMode = Array.isArray(resolvedSearchParams?.mode)
     ? resolvedSearchParams?.mode[0]
     : resolvedSearchParams?.mode;
   const selectedMode = resolveSelectedMode(requestedMode);
-  const sessionUser = await sessionPromise;
   const profile = await getPlayerProfile(userId, {
     viewerUserId: sessionUser?.userId ?? null,
   });

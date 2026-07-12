@@ -48,3 +48,23 @@ test("account disclosure stays open while focus is inside and closes when focus 
   await expect(trigger).not.toBeFocused();
   await expect(profileLink).toHaveCount(0);
 });
+
+test("account disclosure keeps a failed logout visible and allows retry", async ({ page }) => {
+  await page.route("**/api/auth/logout", (route) => route.fulfill({ status: 500 }));
+  await page.getByRole("button", { name: "E2EPlayer" }).click();
+
+  const logout = page.getByRole("button", { name: "Log out" });
+  await logout.click();
+  await expect(page.getByRole("status")).toHaveText("Couldn't log out. Try again.");
+  await expect(page.getByRole("link", { name: "My profile" })).toBeVisible();
+  await expect(page).toHaveURL(/\/$/);
+  await expect(logout).toBeEnabled();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("button", { name: "E2EPlayer" })).toBeFocused();
+
+  await page.unroute("**/api/auth/logout");
+  await page.getByRole("button", { name: "E2EPlayer" }).click();
+  await logout.click();
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page.getByRole("button", { name: "osu!auth Login" })).toBeVisible();
+});

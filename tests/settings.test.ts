@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { Worker } from "node:worker_threads";
+import { fork, type ChildProcess } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { createTestDatabase, type AppDatabase } from "@/db/client";
 import {
   getCourseByNameKey,
@@ -236,7 +237,7 @@ test("separate worker connections keep concurrent course pins within the cap", a
       "pin-course-0",
     )[0]!;
     const sameCourseResults = await runConcurrentPins(
-      temp.filePath,
+      temp.url,
       runIds[0]!,
       sameCourseReplacement,
     );
@@ -268,7 +269,7 @@ test("separate worker connections keep concurrent course pins within the cap", a
     }
 
     const competing = await runConcurrentPins(
-      temp.filePath,
+      temp.url,
       runIds[4]!,
       runIds[5]!,
     );
@@ -306,6 +307,13 @@ function seedPinRuns(
 ) {
   db.$client
     .prepare(
+      `INSERT OR IGNORE INTO dan_systems (
+         id, name, slug, description, status, ladder, ladder_order
+       ) VALUES ('pin-system', 'pin system', 'pin-system', '', 'draft', NULL, 0)`,
+    )
+    .run();
+  db.$client
+    .prepare(
       `INSERT INTO users (osu_user_id, username, created_at, updated_at)
        VALUES (?, ?, 1, 1)
        ON CONFLICT(osu_user_id) DO NOTHING`,
@@ -315,7 +323,7 @@ function seedPinRuns(
     `INSERT OR IGNORE INTO courses (
        id, dan_system_id, name, slug, description, ordinal, official,
        score_model, overall_pass_conditions, created_at, updated_at
-     ) VALUES (?, 'system-test', ?, ?, '', ?, 0, 'scorev2', '[]', 1, 1)`,
+     ) VALUES (?, 'pin-system', ?, ?, '', ?, 0, 'scorev2', '[]', 1, 1)`,
   );
   const insertRun = db.$client.prepare(
     `INSERT INTO runs (
@@ -338,103 +346,106 @@ function seedPinRuns(
   });
 }
 
-type WorkerResult =
+type PinProcessResult =
   | { type: "result"; result: unknown }
   | { type: "error"; name: string; message: string };
 
+type PinProcessMessage =
+  | { type: "ready" }
+  | { type: "result"; result: PinProcessResult }
+  | { type: "error"; name: string; message: string };
+
+const pinProcessPath = fileURLToPath(new URL("./helpers/pinProcess.ts", import.meta.url));
+
 async function runConcurrentPins(
-  filePath: string,
+  databaseUrl: string,
   firstRunId: string,
   secondRunId: string,
-): Promise<WorkerResult[]> {
-  const workers = [firstRunId, secondRunId].map(
-    (runId, index) =>
-      new Worker(PIN_WORKER_SOURCE, {
-        eval: true,
-        workerData: {
-          filePath,
-          userId: 77,
-          runId,
-          now: 1_000 + index,
-        },
-      }),
-  );
-  await Promise.all(
-    workers.map(
-      (worker) =>
-        new Promise<void>((resolve, reject) => {
-          worker.once("error", reject);
-          worker.once("message", (message: { type: string }) => {
-            if (message.type === "ready") {
-              resolve();
-            }
-          });
-        }),
-    ),
-  );
-  const results = workers.map(
-    (worker) =>
-      new Promise<WorkerResult>((resolve, reject) => {
-        worker.once("error", reject);
-        worker.once("message", (message: WorkerResult) => resolve(message));
-        worker.postMessage("start");
-      }),
-  );
-  return Promise.all(results);
+): Promise<PinProcessResult[]> {
+  const children: ChildProcess[] = [];
+  try {
+    for (const [index, runId] of [firstRunId, secondRunId].entries()) {
+      const child = fork(pinProcessPath, [databaseUrl, "77", runId, String(1_000 + index)], {
+        execArgv: ["--import", "tsx"],
+      });
+      children.push(child);
+      await waitForPinProcessMessage(child, "ready");
+    }
+
+    const results = children.map((child) => waitForPinProcessMessage(child, "result"));
+    for (const child of children) {
+      child.send({ type: "start" });
+    }
+    return (await Promise.all(results)).map((message) => message.result);
+  } finally {
+    terminatePinProcesses(children);
+  }
 }
 
-const PIN_WORKER_SOURCE = String.raw`
-  const { parentPort, workerData } = require("node:worker_threads");
-  const Database = require("better-sqlite3");
-  const sqlite = new Database(workerData.filePath);
-  sqlite.pragma("foreign_keys = ON");
-  sqlite.pragma("journal_mode = WAL");
-  sqlite.pragma("busy_timeout = 5000");
+function waitForPinProcessMessage<T extends PinProcessMessage["type"]>(
+  child: ChildProcess,
+  expectedType: T,
+): Promise<Extract<PinProcessMessage, { type: T }>> {
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      finish(new Error(`Pin process timed out while waiting for ${expectedType}.`));
+    }, 10_000);
 
-  parentPort.postMessage({ type: "ready" });
-  parentPort.once("message", (message) => {
-    if (message !== "start") return;
-    try {
-      const transaction = sqlite.transaction(() => {
-        const run = sqlite.prepare(
-          "SELECT id, course_id AS courseId FROM runs WHERE id = ? AND user_id = ? AND passed = 1"
-        ).get(workerData.runId, workerData.userId);
-        if (!run) {
-          const error = new Error("invalid run");
-          error.name = "SettingsValidationError";
-          throw error;
-        }
-        const existing = sqlite.prepare(
-          "SELECT 1 FROM pinned_clears WHERE user_id = ? AND course_id = ?"
-        ).get(workerData.userId, run.courseId);
-        if (!existing) {
-          const count = sqlite.prepare(
-            "SELECT COUNT(*) AS count FROM pinned_clears WHERE user_id = ?"
-          ).get(workerData.userId);
-          if (count.count >= 5) {
-            const error = new Error("pin limit");
-            error.name = "PinLimitError";
-            throw error;
-          }
-        }
-        sqlite.prepare(
-          "INSERT INTO pinned_clears (user_id, course_id, run_id, pinned_at) VALUES (?, ?, ?, ?) " +
-          "ON CONFLICT(user_id, course_id) DO UPDATE SET run_id = excluded.run_id, pinned_at = excluded.pinned_at"
-        ).run(workerData.userId, run.courseId, run.id, workerData.now);
-        return { runId: run.id, courseId: run.courseId, pinned: true };
-      });
-      parentPort.postMessage({ type: "result", result: transaction.immediate() });
-    } catch (error) {
-      parentPort.postMessage({
-        type: "error",
-        name: error.name,
-        message: error.message,
-      });
-    } finally {
-      sqlite.close();
+    function finish(error?: Error, message?: Extract<PinProcessMessage, { type: T }>) {
+      clearTimeout(timeout);
+      child.off("error", onError);
+      child.off("exit", onExit);
+      child.off("message", onMessage);
+      if (error) {
+        reject(error);
+      } else if (message) {
+        resolve(message);
+      }
     }
+
+    function onError(error: Error) {
+      finish(error);
+    }
+
+    function onExit(code: number | null, signal: NodeJS.Signals | null) {
+      finish(
+        new Error(
+          `Pin process exited before ${expectedType}: code=${code ?? "null"} signal=${signal ?? "null"}.`,
+        ),
+      );
+    }
+
+    function onMessage(message: unknown) {
+      if (!isPinProcessMessage(message)) return;
+      if (message.type === "error") {
+        finish(new Error(`${message.name}: ${message.message}`));
+      } else if (message.type === expectedType) {
+        finish(undefined, message as Extract<PinProcessMessage, { type: T }>);
+      }
+    }
+
+    child.on("error", onError);
+    child.once("exit", onExit);
+    child.on("message", onMessage);
   });
-`;
+}
+
+function isPinProcessMessage(message: unknown): message is PinProcessMessage {
+  return (
+    typeof message === "object" &&
+    message !== null &&
+    "type" in message &&
+    (message.type === "ready" || message.type === "result" || message.type === "error")
+  );
+}
+
+function terminatePinProcesses(children: ChildProcess[]) {
+  for (const child of children) {
+    if (child.exitCode === null && !child.killed) {
+      child.kill();
+    }
+  }
+}
 
 function jsonRequest(
   path: string,

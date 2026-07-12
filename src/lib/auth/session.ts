@@ -34,11 +34,7 @@ export async function createSession(
 }
 
 export async function getSessionUser(): Promise<SessionUser | null> {
-  try {
-    return getSessionUserFromToken(cookies().get(SESSION_COOKIE_NAME)?.value);
-  } catch {
-    return null;
-  }
+  return getSessionUserFromToken(cookies().get(SESSION_COOKIE_NAME)?.value);
 }
 
 export async function getSessionUserFromRequest(

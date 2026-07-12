@@ -160,7 +160,7 @@ CourseRun (id, userId, courseId, passed, timestamp, matchId?)
 - `/settings`는 로그인한 사용자만 접근할 수 있으며 프로필 상세 공개 설정만 제공합니다.
   대표 클리어는 course 상세 페이지에서 관리합니다. 나머지 조회 화면과 검색,
   leaderboard는 로그인 없이 사용할 수 있습니다.
-- 로그인한 헤더 username은 My profile, 비활성 My uploads, Settings, Log out을 일반 링크와 버튼으로 제공하는 계정 disclosure를 엽니다. 익명 사용자의 Login 버튼은 그대로 유지합니다.
+- 로그인한 헤더 username은 My profile, 비활성 My uploads, Settings, Log out을 일반 링크와 버튼으로 제공하는 계정 disclosure를 엽니다. 로그아웃 요청이 실패하면 계정 메뉴를 유지하고 오류를 안내한 뒤 다시 시도할 수 있습니다. 익명 사용자의 Login 버튼은 그대로 유지합니다.
 - `/settings`와 player 404는 영어로 표시합니다. player 404는 실제 osu! 계정 여부가 아니라 로컬 로그인 또는 run 기록이 없다는 뜻만 전달합니다.
 - 기본은 SSR with server components이며, 전역 검색 dialog, 인증 control, API endpoint만
   필요한 client/route handler 예외를 사용합니다.

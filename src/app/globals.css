@@ -1626,7 +1626,8 @@ code {
 
 .course-pin-panel > div:first-child > p:last-child,
 .course-pin-empty,
-.course-pin-notice {
+.course-pin-notice,
+.account-disclosure-notice {
   color: var(--muted);
   line-height: 1.5;
 }
@@ -1680,10 +1681,15 @@ code {
   cursor: not-allowed;
 }
 
-.course-pin-notice {
+.course-pin-notice,
+.account-disclosure-notice {
   grid-column: 1 / -1;
   margin: 0;
   font-size: 13px;
+}
+
+.account-disclosure-notice {
+  overflow-wrap: anywhere;
 }
 
 @media (max-width: 900px) {

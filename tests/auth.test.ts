@@ -8,6 +8,7 @@ import { POST as logout } from "@/app/api/auth/logout/route";
 import { validateAuthEnv } from "@/lib/auth/env";
 import {
   createSession,
+  getSessionUser,
   getSessionUserFromToken,
   hashToken,
   SESSION_COOKIE_NAME,
@@ -72,6 +73,10 @@ test("return_to preserves encoded query semantics and rejects unsafe paths", asy
     assert.equal(sanitizeReturnTo("/bad\u0000path"), "/");
     assert.equal(sanitizeReturnTo(`/${"x".repeat(512)}`), "/");
   });
+});
+
+test("getSessionUser propagates request-scope errors", async () => {
+  await assert.rejects(() => getSessionUser());
 });
 
 test("sessions store only hashes, rotate, expire, and revoke immediately", async () => {

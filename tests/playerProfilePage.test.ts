@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { renderToStaticMarkup } from "react-dom/server";
+import "./helpers/nextTestEnvironment";
 import { createTestDatabase } from "@/db/client";
 import { getCourseByNameKey, storeCourseRunResult } from "@/db/queries";
 import { users } from "@/db/schema";
@@ -10,6 +11,7 @@ import {
   SEEDED_COURSE_NAME_KEY,
   SEEDED_SYSTEM_NAME_KEY,
 } from "./helpers/dbFixtures";
+import { withAnonymousRequestScope } from "./helpers/requestScope";
 import { passRun } from "./helpers/runFixtures";
 
 test("player profile page renders saved local runs", async () => {
@@ -31,10 +33,10 @@ test("player profile page renders saved local runs", async () => {
     await storeCourseRunResult(passRun(77, "PagePlayer", course, 1_800_000_000_000), databaseBundle.db);
 
     const html = renderToStaticMarkup(
-      await PlayerProfilePage({
+      await withAnonymousRequestScope(() => PlayerProfilePage({
         params: Promise.resolve({ userId: "77" }),
         searchParams: Promise.resolve({ mode: "osu" }),
-      }),
+      })),
     );
 
     assert.match(html, /PagePlayer/);
@@ -74,10 +76,10 @@ test("player profile page renders empty sections for users-only profiles", async
     });
 
     const html = renderToStaticMarkup(
-      await PlayerProfilePage({
+      await withAnonymousRequestScope(() => PlayerProfilePage({
         params: Promise.resolve({ userId: "888888" }),
         searchParams: Promise.resolve({}),
-      }),
+      })),
     );
 
     assert.match(html, /LoginOnlyPage/);
@@ -105,10 +107,10 @@ test("player profile page rejects numeric ids without a users row", async () => 
     globalThis.__osuDojoDatabaseBundle = await createTestDatabase(temp.url);
     await assert.rejects(
       () =>
-        PlayerProfilePage({
+        withAnonymousRequestScope(() => PlayerProfilePage({
           params: Promise.resolve({ userId: "888888" }),
           searchParams: Promise.resolve({}),
-        }),
+        })),
       isNotFoundError,
     );
   } finally {
@@ -149,10 +151,10 @@ test("player profile mode tabs clamp unsupported modes to osu", async () => {
     });
 
     const html = renderToStaticMarkup(
-      await PlayerProfilePage({
+      await withAnonymousRequestScope(() => PlayerProfilePage({
         params: Promise.resolve({ userId: "888888" }),
         searchParams: Promise.resolve({ mode: "taiko" }),
-      }),
+      })),
     );
 
     assert.match(html, /role="tablist"/);
