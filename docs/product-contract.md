@@ -72,7 +72,7 @@ CourseRun (id, userId, courseId, passed, timestamp, matchId?)
 - `/dan` — current와 legacy system catalog
 - `/api/search?q=` — 전역 헤더 검색 dialog가 조회하는 읽기 전용 JSON endpoint
 - `/dan/[systemNameKey]?course=<courseNameKey>` — playable system 상세 페이지. draft는 exact key로만 접근됩니다.
-- `/players/[userId]` — 저장된 run만으로 만든 읽기 전용 페이지. 숫자가 아닌 `userId`는 404이고, 숫자지만 저장된 run이 없으면 빈 상태를 보여줍니다.
+- `/players/[userId]` — 로컬 `users` 정보를 기준으로 만든 읽기 전용 페이지. 숫자가 아닌 `userId`나 `users` 행이 없는 ID는 404이고, `users` 행은 있지만 run이 없으면 각 영역의 빈 상태를 보여줍니다.
 
 ## Acceptance Criteria
 
@@ -129,11 +129,38 @@ CourseRun (id, userId, courseId, passed, timestamp, matchId?)
 - `/`와 `/dan`은 current와 legacy system을 보여줍니다.
 - legacy system은 badge를 표시하고 current 아래에 정렬됩니다.
 - `/dan/[systemNameKey]`는 playable system의 모든 course, beatmap 목록, 통과 조건, 통합 리더보드, `?course=<courseNameKey>` anchor 이동을 렌더링합니다.
+- 로그인 사용자의 course 최고 기록에는 전체 순위를 함께 표시합니다. 내 기록이 상위 10개 안이면 해당 leaderboard 행을 강조하고, 10위 밖이면 기존 상위 10개 아래에 내 기록을 한 번 더 표시합니다. 익명 사용자와 다른 사용자의 leaderboard 표시 규칙은 바뀌지 않습니다.
 - draft detail page는 상응하는 정보를 표시하고, draft run은 저장되지 않는다고 안내합니다.
 - 리더보드의 `Course Acc`는 통과한 map accuracy의 합계입니다.
-- `/players/[userId]`는 저장된 `runs`의 `userId`와 최신 `username`만 사용합니다. osu! API 조회, profile cache, account linking은 없습니다. avatar는 `https://a.ppy.sh/{userId}`를 사용합니다. 이 규칙은 검색에서 player 결과를 만들 때도 같습니다.
-- Player profile은 최고 official dan badge, 자동 선택된 pinned clears 최대 5개, 최근 run, 많이 플레이한 course, play count를 보여줍니다. 최고 official dan은 통과한 official course만 대상으로 하며, 같은 ladder 안에서는 `(ladderOrder, course ordinal)`이 가장 큰 course 하나만 badge로 보여줍니다. badge 글자는 `course.label`이 있으면 그것을 쓰고, 없으면 course name을 씁니다.
+- `users`는 OAuth 로그인 또는 run 저장으로 로컬에서 확인한 사용자의 현재 이름과 프로필 존재 여부의 기준입니다. 기존 run 사용자 중 `users` 행이 없는 사용자는 DB 이전에서 채웁니다. OAuth callback과 run 저장은 더 오래된 확인 시각이 현재 username을 되돌리지 않도록 확인 시각이 같거나 더 새로운 경우에만 `users.username`을 갱신합니다.
+- `/players/[userId]`는 `users` 행이 있으면 정상 프로필을 표시하고 username은 항상 `users.username`을 사용합니다. 대표 클리어·최근 run·많이 플레이한 course section은 제목 바로 옆에 항목 수를 표시하며 데이터가 없어도 `0`으로 남겨 두고 별도 빈 상태 문구는 표시하지 않습니다. 최고 official dan section은 항목 수 없이 상세 공개 설정과 관계없이 항상 표시하고, 나머지 세 section은 상세가 공개되는 viewer에게만 표시합니다. `users` 행이 없거나 `userId`가 숫자가 아니면 로컬 기록이 없다는 404를 표시합니다. osu! API 조회, profile cache, account linking은 없습니다. avatar는 `https://a.ppy.sh/{userId}`를 사용합니다.
+- Player profile은 최고 official dan badge, 대표 클리어 최대 5개, 최근 run, 많이 플레이한
+  course, play count를 보여줍니다. 최고 official dan은 통과한 official course만 대상으로
+  하며, 같은 ladder 안에서는 `(ladderOrder, course ordinal)`이 가장 큰 course 하나만
+  badge로 보여줍니다. badge 글자는 `course.label`이 있으면 그것을 쓰고, 없으면 course
+  name을 씁니다.
+- 대표 클리어는 각 course 상세 페이지에서 로그인 사용자의 해당 course 최고 pass run을
+  지정하거나 교체·해제합니다. 사용자와 course 조합마다 하나만 저장하고, 사용자당 서로
+  다른 course는 최대 5개입니다. 프로필에서는 최근 지정 시각인 `pinned_at DESC`로
+  표시합니다. 자동 선택과 수동 순서 변경은 없으며 `/settings`에는 대표 클리어 run
+  선택 화면을 두지 않습니다. 대표 클리어에는 course/system, score 또는 accuracy, 완료
+  시간을 표시하고 leaderboard rank는 표시하지 않습니다.
+- `profile_details_public`은 기본 true입니다. false여도 프로필 경로, username, avatar,
+  최고 official dan, player 검색, course leaderboard의 run과 순위는 계속 공개됩니다.
+  다른 사용자에게는 play count, 최근 run, 많이 플레이한 course, run의 score/accuracy/시간,
+  대표 클리어만 숨깁니다. 소유자는 자신의 상세를 항상 볼 수 있고, 다시 공개하면 저장된
+  상세 기록과 대표 클리어가 다시 표시됩니다.
 - Player profile의 mode selector는 표시용 scaffold입니다. 현재 동작은 osu!standard만 지원합니다.
-- 전역 헤더 검색 버튼은 client component dialog를 열고, 읽기 전용 `/api/search?q=` JSON endpoint로 current/legacy 시스템과 코스를 display name 기준으로 찾고, 저장된 run의 과거 username 기준으로 player도 찾습니다. player 검색은 저장된 run만 사용합니다. `/api/search`는 osu! API나 외부 network를 호출하지 않습니다. osu! identity 보강이 필요하면 course import나 metadata refresh 때 처리하고, 검색 요청 중에는 하지 않습니다. 저장된 run이 없는 정확한 username은 현재 찾지 못하는 한계가 있습니다. system 결과는 `/dan/<systemNameKey>`, course 결과는 `/dan/<systemNameKey>?course=<courseNameKey>`, player 결과는 `/players/<userId>`로 이동합니다. system/course route key는 Public Name Key 규칙을 그대로 사용합니다.
+- 전역 헤더 검색 버튼은 client component dialog를 열고, 읽기 전용 `/api/search?q=` JSON endpoint로 current/legacy 시스템과 코스를 display name 기준으로 찾습니다. 유저 검색은 현재 `users.username`과 과거 `runs.username`을 모두 검색 별칭으로 사용하고, 같은 osu! user ID는 한 번만 현재 `users.username`으로 표시합니다. run이 없는 `users` 사용자도 검색할 수 있습니다. `/api/search`는 osu! API나 외부 network를 호출하지 않습니다. system 결과는 `/dan/<systemNameKey>`, course 결과는 `/dan/<systemNameKey>?course=<courseNameKey>`, player 결과는 `/players/<userId>`로 이동합니다. system/course route key는 Public Name Key 규칙을 그대로 사용합니다.
 - `/api/search?q=&official=1`은 official course만 보여주는 catalog filter를 지원합니다. 이 filter는 system/course 결과에만 적용되고 player 결과에는 적용되지 않습니다.
-- 인증은 없습니다. 읽기 전용입니다. 기본은 SSR with server components이며, 전역 검색 dialog와 `/api/search` endpoint만 예외입니다.
+- osu! OAuth authorization code 방식으로 로그인합니다. scope는 `public identify`이며,
+  access token과 refresh token은 사용자 확인 뒤 저장하지 않습니다.
+- 브라우저에는 7일 고정 만료의 임의 session token만 HttpOnly cookie로 저장하고, DB에는
+  SHA-256 hash만 저장합니다. 로그아웃하면 서버 session도 폐기합니다.
+- `/settings`는 로그인한 사용자만 접근할 수 있으며 프로필 상세 공개 설정만 제공합니다.
+  대표 클리어는 course 상세 페이지에서 관리합니다. 나머지 조회 화면과 검색,
+  leaderboard는 로그인 없이 사용할 수 있습니다.
+- 로그인한 헤더 username은 My profile, 비활성 My uploads, Settings, Log out을 일반 링크와 버튼으로 제공하는 계정 disclosure를 엽니다. 로그아웃 요청이 실패하면 계정 메뉴를 유지하고 오류를 안내한 뒤 다시 시도할 수 있습니다. 익명 사용자의 Login 버튼은 그대로 유지합니다.
+- `/settings`와 player 404는 영어로 표시합니다. player 404는 실제 osu! 계정 여부가 아니라 로컬 로그인 또는 run 기록이 없다는 뜻만 전달합니다.
+- 기본은 SSR with server components이며, 전역 검색 dialog, 인증 control, API endpoint만
+  필요한 client/route handler 예외를 사용합니다.

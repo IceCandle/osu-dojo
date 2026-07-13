@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
 import { renderToStaticMarkup } from "react-dom/server";
+import "./helpers/nextTestEnvironment";
 import { createTestDatabase } from "@/db/client";
 import { loadCoursesFromDir, type DanSystemSeed } from "@/db/courseLoader";
 import {
@@ -13,6 +14,7 @@ import { clearAllData, cloneCourseSystems, seedDatabase } from "@/db/seed";
 import DanCoursePage from "@/app/dan/[systemNameKey]/page";
 import type { CourseDefinition, JudgedMapResult } from "@/lib/domain";
 import { createTempDatabaseUrl as createTempDatabaseUrlWithPrefix } from "./helpers/tempDatabase";
+import { withAnonymousRequestScope } from "./helpers/requestScope";
 
 const SEEDED_SYSTEM_NAME_KEY = "test";
 const SEEDED_COURSE_SLUG = "test-1dan";
@@ -700,34 +702,34 @@ test("DanCoursePage renders the integrated leaderboard and empty state on the sy
     globalThis.__osuDojoDatabaseBundle = databaseBundle;
 
     const courseHtml = renderToStaticMarkup(
-      await DanCoursePage({
+      await withAnonymousRequestScope(() => DanCoursePage({
         params: Promise.resolve({
           systemNameKey: SEEDED_SYSTEM_NAME_KEY,
         }),
         searchParams: Promise.resolve({
           course: "ranking-acc",
         }),
-      }),
+      })),
     );
     const sv2Html = renderToStaticMarkup(
-      await DanCoursePage({
+      await withAnonymousRequestScope(() => DanCoursePage({
         params: Promise.resolve({
           systemNameKey: SEEDED_SYSTEM_NAME_KEY,
         }),
         searchParams: Promise.resolve({
           course: "ranking-sv2",
         }),
-      }),
+      })),
     );
     const emptyHtml = renderToStaticMarkup(
-      await DanCoursePage({
+      await withAnonymousRequestScope(() => DanCoursePage({
         params: Promise.resolve({
           systemNameKey: SEEDED_SYSTEM_NAME_KEY,
         }),
         searchParams: Promise.resolve({
           course: "ranking-empty",
         }),
-      }),
+      })),
     );
 
     assert.match(courseHtml, /Course sequence/);
@@ -785,11 +787,11 @@ test("DanCoursePage renders an empty state for systems with no courses", async (
     globalThis.__osuDojoDatabaseBundle = databaseBundle;
 
     const html = renderToStaticMarkup(
-      await DanCoursePage({
+      await withAnonymousRequestScope(() => DanCoursePage({
         params: Promise.resolve({
           systemNameKey: "empty",
         }),
-      }),
+      })),
     );
 
     assert.match(html, /empty/);

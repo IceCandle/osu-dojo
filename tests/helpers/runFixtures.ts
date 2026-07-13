@@ -5,7 +5,10 @@ export function passRun(
   username: string,
   course: CourseDefinition,
   completedAt: number,
+  metrics: { score?: number; accuracy?: number } = {},
 ) {
+  const score = metrics.score ?? 1_000_000;
+  const accuracy = metrics.accuracy ?? 99;
   return {
     userId,
     username,
@@ -20,10 +23,10 @@ export function passRun(
       mods: beatmap.mods,
       passConditions: beatmap.passConditions,
       ordinal: beatmap.ordinal,
-      score: 1_000_000 - index,
-      rawScore: 1_000_000 - index,
+      score: score - index,
+      rawScore: score - index,
       playedMods: beatmap.mods,
-      accuracy: 99 - index,
+      accuracy: accuracy - index,
       maxCombo: 1_000,
       count300: 1_000,
       count100: 0,

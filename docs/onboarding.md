@@ -29,7 +29,17 @@
    OSU_IRC_PASSWORD=
    OSU_API_KEY=
    DATABASE_URL=file:./dojo.db
+   DOJO_SITE_URL=http://localhost:3000
+   SESSION_SECRET=
+   OSU_OAUTH_CLIENT_ID=
+   OSU_OAUTH_CLIENT_SECRET=
    ```
+
+   `SESSION_SECRET`은 UTF-8 기준 32 byte 이상이어야 합니다. `DOJO_SITE_URL`은
+   경로나 query가 없는 현재 사이트 origin입니다. osu! account settings에서 OAuth
+   application을 만들고 callback URL을
+   `http://localhost:3000/api/auth/osu/callback`으로 정확히 등록한 뒤 client ID와
+   secret을 입력합니다.
 
 4. Run checks and site.
 
@@ -49,6 +59,12 @@
    - `http://localhost:3000/dan`
    - `http://localhost:3000/dan/test?course=1st`
    - `http://localhost:3000/players/<userId>`
+   - `http://localhost:3000/settings` (로그인 필요)
+
+웹 서버는 시작할 때 인증 환경 변수를 검사합니다. Next.js 14의
+`instrumentation.ts`와 `experimental.instrumentationHook`을 사용하므로 잘못된 값이
+있으면 첫 인증 요청까지 기다리지 않고 서버 시작이 실패합니다. Bot 실행에는 이 웹
+인증 환경 변수가 필요하지 않습니다.
 
 ## 봇 확인
 

@@ -59,11 +59,15 @@ browser verification, link check, browser-driven flow는 Playwright 기반 brows
 
 웹 route나 browser-visible behavior를 바꾸면 검토로 넘기기 전에 `pnpm test:e2e`를 실행합니다. 이 명령은 임시 SQLite DB를 만들고 player/run fixture를 자동으로 seed한 뒤 Next server를 그 DB로 실행합니다. "local DB에 데이터가 없다"는 browser 검증 생략 사유가 아닙니다.
 
-## Branches and PRs
+## Commits, Branches, and PRs
 
-Issue가 있는 작업은 짧은 설명형 branch를 씁니다. 예: `bot/abort-reasons`, `web/dan-search`, `docs/course-edit-policy`.
+issue 또는 task마다 변경 범위가 분명하게 나뉜 commit을 만듭니다.
 
-한 PR에는 하나의 범위가 정해진 issue 또는 task만 담습니다. 둘 이상의 area를 바꾸거나, 검증 경로가 둘 이상 필요하거나, 동작 변경과 docs 정리가 섞이면 PR을 나눌지 먼저 판단합니다.
+별도 branch는 선택 사항입니다. 작업을 곧바로 commit할 때는 branch를 따로 만들지 않아도 됩니다. PR을 열 때는 PR용 작업 branch가 필요합니다. branch를 쓸 때는 `bot/abort-reasons`, `web/dan-search`, `docs/course-edit-policy`처럼 짧고 설명이 되는 이름을 권장합니다.
+
+한 PR에 여러 issue를 담을 수 있습니다. 여러 issue를 담을 때는 서로 의존하거나 하나의 결과로 함께 검토할 수 있어야 합니다. PR 설명에는 issue별 변경 내용과 검증 결과를 구분해서 적습니다. 관련 없는 issue를 편의상 같은 PR에 넣지 않습니다.
+
+`pnpm typecheck && pnpm build && pnpm test`와 필요한 수동 확인은 branch나 PR 유무와 관계없이 각 issue 또는 task에 적용합니다.
 
 ### Documentation Sweep
 
@@ -81,4 +85,4 @@ PR description에는 관련 issue, 실행한 명령어, 수동 확인을 적습�
 
 reviewer는 스타일보다 사양 준수, 검증 강도, 범위 관리를 먼저 봅니다. 새로운 아이디어는 진행 중인 PR을 키우지 말고 새 issue로 보냅니다.
 
-작업 완료 기준은 acceptance criteria 통과, `pnpm typecheck && pnpm build && pnpm test` 성공, unrelated file 변경 없음, 새 dependency justification, 그리고 필요한 수동 확인 기록입니다.
+작업 완료 기준은 각 issue 또는 task 기준으로 acceptance criteria 통과, `pnpm typecheck && pnpm build && pnpm test` 성공, unrelated file 변경 없음, 새 dependency justification, 그리고 필요한 수동 확인 기록입니다.

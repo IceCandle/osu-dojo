@@ -1,5 +1,13 @@
 import { sql } from "drizzle-orm";
-import { index, integer, real, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import {
+  index,
+  integer,
+  primaryKey,
+  real,
+  sqliteTable,
+  text,
+  uniqueIndex,
+} from "drizzle-orm/sqlite-core";
 import type { DanScoreModel, DanSystemStatus } from "@/lib/domain";
 
 export const danSystems = sqliteTable("dan_systems", {
@@ -136,3 +144,58 @@ export const openLobbies = sqliteTable("open_lobbies", {
     .notNull()
     .default(sql`(unixepoch() * 1000)`),
 });
+
+export const oauthStates = sqliteTable(
+  "oauth_states",
+  {
+    stateHash: text("state_hash").primaryKey(),
+    nonceHash: text("nonce_hash").notNull(),
+    returnTo: text("return_to"),
+    createdAt: integer("created_at").notNull(),
+    expiresAt: integer("expires_at").notNull(),
+    consumedAt: integer("consumed_at"),
+  },
+  (table) => [index("oauth_states_expires_idx").on(table.expiresAt)],
+);
+
+export const users = sqliteTable("users", {
+  osuUserId: integer("osu_user_id").primaryKey(),
+  username: text("username").notNull(),
+  createdAt: integer("created_at").notNull(),
+  updatedAt: integer("updated_at").notNull(),
+});
+
+export const sessions = sqliteTable(
+  "sessions",
+  {
+    tokenHash: text("token_hash").primaryKey(),
+    userId: integer("user_id").notNull(),
+    createdAt: integer("created_at").notNull(),
+    expiresAt: integer("expires_at").notNull(),
+    revokedAt: integer("revoked_at"),
+  },
+  (table) => [index("sessions_expires_idx").on(table.expiresAt)],
+);
+
+export const userSettings = sqliteTable("user_settings", {
+  userId: integer("user_id").primaryKey(),
+  profileDetailsPublic: integer("profile_details_public", { mode: "boolean" })
+    .notNull()
+    .default(true),
+  updatedAt: integer("updated_at").notNull(),
+});
+
+export const pinnedClears = sqliteTable(
+  "pinned_clears",
+  {
+    userId: integer("user_id").notNull(),
+    courseId: text("course_id").notNull(),
+    runId: text("run_id")
+      .notNull()
+      .references(() => runs.id, { onDelete: "cascade" }),
+    pinnedAt: integer("pinned_at").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.userId, table.courseId] }),
+  ],
+);

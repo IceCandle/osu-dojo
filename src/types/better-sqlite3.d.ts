@@ -12,12 +12,18 @@ declare module "better-sqlite3" {
     all(...params: unknown[]): unknown[];
   }
 
+  export type Transaction<T extends (...args: never[]) => unknown> = T & {
+    deferred: T;
+    immediate: T;
+    exclusive: T;
+  };
+
   export default class Database {
     constructor(filename?: string, options?: Options);
     pragma(source: string): unknown;
     exec(source: string): this;
     prepare(source: string): Statement;
-    transaction<T extends (...args: never[]) => unknown>(fn: T): T;
+    transaction<T extends (...args: never[]) => unknown>(fn: T): Transaction<T>;
     close(): void;
   }
 }
