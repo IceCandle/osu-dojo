@@ -1,8 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createTestDatabase } from "@/db/client";
-import { GET as login } from "@/app/api/auth/osu/login/route";
-import { GET as callback } from "@/app/api/auth/osu/callback/route";
+import {
+  dynamic as loginDynamic,
+  GET as login,
+} from "@/app/api/auth/osu/login/route";
+import {
+  dynamic as callbackDynamic,
+  GET as callback,
+} from "@/app/api/auth/osu/callback/route";
 import { GET as dummyAuthorize } from "@/app/api/auth/osu/dummy-authorize/route";
 import { POST as logout } from "@/app/api/auth/logout/route";
 import { validateAuthEnv } from "@/lib/auth/env";
@@ -25,6 +31,11 @@ const AUTH_KEYS = [
   "OSU_OAUTH_CLIENT_SECRET",
 ] as const;
 const SECRET = "osu-dojo-test-session-secret-at-least-32-bytes";
+
+test("OAuth GET routes opt out of static generation", () => {
+  assert.equal(loginDynamic, "force-dynamic");
+  assert.equal(callbackDynamic, "force-dynamic");
+});
 
 test("validateAuthEnv rejects missing or unsafe configuration", () => {
   assert.throws(() => validateAuthEnv({}), /SESSION_SECRET/);

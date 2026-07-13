@@ -13,6 +13,8 @@ import {
 } from "@/lib/auth/osuOAuth";
 import { createSession, setSessionCookie } from "@/lib/auth/session";
 
+export const dynamic = "force-dynamic";
+
 export async function GET(request: Request) {
   const auth = validateAuthEnv();
   try {
