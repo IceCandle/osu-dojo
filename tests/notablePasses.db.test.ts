@@ -3,6 +3,7 @@ import test from "node:test";
 import { createTestDatabase } from "@/db/client";
 import {
   getCourseByNameKey,
+  LIST_NOTABLE_PASSES_SQL,
   listNotablePasses,
   storeCourseRunResult,
 } from "@/db/queries";
@@ -30,17 +31,14 @@ test("database indexes passed runs by completion time", async () => {
     );
 
     const queryPlan = sqlite
-      .prepare(
-        `EXPLAIN QUERY PLAN
-         SELECT id
-         FROM runs
-         WHERE passed = 1
-           AND completed_at >= ?`,
-      )
-      .all(NOW - NOTABLE_PASS_WINDOW_MS) as Array<{ detail: string }>;
+      .prepare(`EXPLAIN QUERY PLAN ${LIST_NOTABLE_PASSES_SQL}`)
+      .all(
+        NOW - NOTABLE_PASS_WINDOW_MS,
+        NOTABLE_PASS_LIMIT,
+      ) as Array<{ detail: string }>;
     assert.match(
       queryPlan.map((step) => step.detail).join("\n"),
-      /USING INDEX runs_passed_completed_idx/,
+      /SEARCH r USING INDEX runs_passed_completed_idx/,
     );
   });
 });

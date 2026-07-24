@@ -9,7 +9,10 @@ test("home page shows a recent pass from a featured official course", async ({ p
   ).toBeVisible();
   await expect(section.getByText("osu!standard")).toBeVisible();
 
-  const card = section.locator(".notable-pass-card").first();
+  const cards = section.locator(".notable-pass-card");
+  await expect(cards.filter({ hasText: "NotableE2E" })).toHaveCount(1);
+
+  const card = cards.first();
   await expect(card.getByRole("link", { name: "NotableE2E" })).toHaveAttribute(
     "href",
     "/players/451",

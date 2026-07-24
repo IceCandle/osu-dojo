@@ -20,6 +20,7 @@ const E2E_LIMIT_SYSTEM_NAME_KEY = "e2e-pins";
 export async function seedE2eDatabase(url: string) {
   const bundle = await createTestDatabase(url);
   const now = Date.now();
+  const seedTimelineBase = now - 24 * 60 * 60 * 1000;
 
   try {
     const systems = addSampleBeatmapMetadata(
@@ -75,18 +76,23 @@ export async function seedE2eDatabase(url: string) {
         `INSERT INTO users (osu_user_id, username, created_at, updated_at)
          VALUES (?, ?, ?, ?)`,
       )
-      .run(88, "UsersOnly88", 1_799_999_000_000, 1_799_999_000_000);
+      .run(
+        88,
+        "UsersOnly88",
+        seedTimelineBase - 1_000_000,
+        seedTimelineBase - 1_000_000,
+      );
 
     const olderFirst = await storeCourseRunResult(
-      passRun(77, "E2EPlayer", firstCourse, now - 4 * 60 * 60 * 1000),
+      passRun(77, "E2EPlayer", firstCourse, seedTimelineBase - 100_000),
       bundle.db,
     );
     await storeCourseRunResult(
-      passRun(77, "E2EPlayer", firstCourse, now - 3 * 60 * 60 * 1000),
+      passRun(77, "E2EPlayer", firstCourse, seedTimelineBase),
       bundle.db,
     );
     await storeCourseRunResult(
-      passRun(77, "E2EPlayer", secondCourse, 1_800_000_200_000),
+      passRun(77, "E2EPlayer", secondCourse, seedTimelineBase + 200_000),
       bundle.db,
     );
 
@@ -106,7 +112,7 @@ export async function seedE2eDatabase(url: string) {
             77,
             "E2EPlayer",
             course,
-            1_800_000_300_000 + index * 100_000,
+            seedTimelineBase + 300_000 + index * 100_000,
           ),
           bundle.db,
         ),
@@ -114,11 +120,11 @@ export async function seedE2eDatabase(url: string) {
     }
 
     await storeCourseRunResult(
-      dnfRun(77, "E2EPlayer", failOnlyCourse, 1_800_000_700_000),
+      dnfRun(77, "E2EPlayer", failOnlyCourse, seedTimelineBase + 700_000),
       bundle.db,
     );
     await storeCourseRunResult(
-      passRun(77, "E2EPlayer", crowdedCourse, 1_800_000_800_000, {
+      passRun(77, "E2EPlayer", crowdedCourse, seedTimelineBase + 800_000, {
         score: 500_000,
       }),
       bundle.db,
@@ -129,18 +135,18 @@ export async function seedE2eDatabase(url: string) {
           200 + index,
           `Crowded${index + 1}`,
           crowdedCourse,
-          1_800_000_810_000 + index * 1_000,
+          seedTimelineBase + 810_000 + index * 1_000,
           { score: 600_000 + index * 10_000 },
         ),
         bundle.db,
       );
     }
     await storeCourseRunResult(
-      passRun(99, "OldName99", historyCourse, 1_800_000_600_000),
+      passRun(99, "OldName99", historyCourse, seedTimelineBase + 600_000),
       bundle.db,
     );
     await storeCourseRunResult(
-      passRun(99, "NewName99", historyCourse, 1_800_000_650_000),
+      passRun(99, "NewName99", historyCourse, seedTimelineBase + 650_000),
       bundle.db,
     );
 
