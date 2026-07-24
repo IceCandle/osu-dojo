@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { LocalTime } from "@/app/LocalTime";
 import { getPlayerProfile } from "@/db/queries";
 import type { PinnedClearView, PlayerRecentRun } from "@/lib/domain";
-import { formatPercentage } from "@/lib/format";
+import { formatPercentage, formatUtcDateTime } from "@/lib/format";
 import { getSessionUser } from "@/lib/auth/session";
 
 export const dynamic = "force-dynamic";
@@ -109,7 +109,7 @@ export default async function PlayerProfilePage({
                         <strong>{formatPinnedMetric(clear)}</strong>
                         <LocalTime
                           value={clear.completedAt}
-                          ssrFallback={formatDate(clear.completedAt)}
+                          ssrFallback={formatUtcDateTime(clear.completedAt)}
                         />
                       </div>
                     </article>
@@ -201,7 +201,10 @@ function RecentRunRow({ run }: { run: PlayerRecentRun }) {
       </td>
       <td className={getRunStatusClassName(run.status)}>{run.status}</td>
       <td>
-        <LocalTime value={run.completedAt} ssrFallback={formatDate(run.completedAt)} />
+        <LocalTime
+          value={run.completedAt}
+          ssrFallback={formatUtcDateTime(run.completedAt)}
+        />
       </td>
     </tr>
   );
@@ -239,14 +242,6 @@ function formatPinnedMetric(clear: PinnedClearView) {
   }
 
   return new Intl.NumberFormat("en-US").format(Math.round(clear.totalScore));
-}
-
-function formatDate(value: number) {
-  return new Intl.DateTimeFormat("en-US", {
-    dateStyle: "medium",
-    timeStyle: "short",
-    timeZone: "UTC",
-  }).format(new Date(value));
 }
 
 function getRunStatusClassName(status: "pass" | "fail" | "dnf") {

@@ -1,5 +1,30 @@
 import type { DanScoreModel, PassConditionType } from "@/lib/domain";
 
+const DATE_TIME_FORMAT_OPTIONS = {
+  dateStyle: "medium",
+  timeStyle: "short",
+} as const;
+
+export function formatDateTime(
+  value: number,
+  {
+    locale,
+    timeZone,
+  }: {
+    locale?: string;
+    timeZone?: string;
+  } = {},
+): string {
+  return new Intl.DateTimeFormat(locale, {
+    ...DATE_TIME_FORMAT_OPTIONS,
+    timeZone,
+  }).format(new Date(value));
+}
+
+export function formatUtcDateTime(value: number): string {
+  return formatDateTime(value, { locale: "en-US", timeZone: "UTC" });
+}
+
 export function formatPercentage(value: number): string {
   return `${value.toFixed(2)}%`;
 }

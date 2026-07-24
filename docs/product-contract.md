@@ -41,6 +41,8 @@ DanSystem (id, name, slug, description, status: "draft"|"current"|"legacy"|"arch
 
 BeatmapMetadata (beatmapId, title, artist, difficultyName, mapper, coverUrl, totalObjects)
 
+HomepageFeaturedCourse (courseId, position)
+
 CourseRun (id, userId, courseId, passed, timestamp, matchId?)
   has many MapResult (id, runId, gameId?, beatmapId, score, rawScore, playedMods, accuracy, passed)
 ```
@@ -58,6 +60,8 @@ CourseRun (id, userId, courseId, passed, timestamp, matchId?)
 
 `official`, `label`, `ladder`, `ladderOrder`는 표시용 메타데이터입니다. gameplay 판정, 명령어 key, Public Name Key 규칙에는 쓰지 않습니다. 같은 `ladder`를 가진 여러 시스템은 player 프로필에서 하나의 진행도로 합쳐 보이며, 더 큰 `ladderOrder`가 더 높은 단계입니다.
 
+`HomepageFeaturedCourse.position`은 운영자가 메인에 공개할 course 순서를 기록하는 큐레이션 메타데이터입니다. 최근 통과 기록의 표시 순서를 정하는 값은 아닙니다.
+
 ## Public Name Key
 
 - 플레이어는 내부 `slug`가 아니라 display-name key로 system과 course를 지정합니다.
@@ -73,6 +77,12 @@ CourseRun (id, userId, courseId, passed, timestamp, matchId?)
 - `/api/search?q=` — 전역 헤더 검색 dialog가 조회하는 읽기 전용 JSON endpoint
 - `/dan/[systemNameKey]?course=<courseNameKey>` — playable system 상세 페이지. draft는 exact key로만 접근됩니다.
 - `/players/[userId]` — 로컬 `users` 정보를 기준으로 만든 읽기 전용 페이지. 숫자가 아닌 `userId`나 `users` 행이 없는 ID는 404이고, `users` 행은 있지만 run이 없으면 각 영역의 빈 상태를 보여줍니다.
+- `/settings` — 로그인 사용자가 프로필 상세 공개 여부를 바꾸는 설정 페이지
+- `GET /api/auth/osu/login` — osu! OAuth 로그인을 시작하고 authorization 화면으로 이동
+- `GET /api/auth/osu/callback` — osu! OAuth 응답을 확인하고 로컬 session을 생성
+- `POST /api/auth/logout` — 현재 server session을 폐기하고 session cookie를 제거
+- `POST /api/settings/pinned` — 로그인 사용자의 course 대표 클리어를 지정·교체·해제
+- `POST /api/settings/visibility` — 로그인 사용자의 프로필 상세 공개 여부를 저장
 
 ## Acceptance Criteria
 
@@ -127,6 +137,7 @@ CourseRun (id, userId, courseId, passed, timestamp, matchId?)
 ### AC5: Website
 
 - `/`와 `/dan`은 current와 legacy system을 보여줍니다.
+- `/`는 최근 30일 안에 통과한 featured official course를 최대 3개 보여줍니다. 같은 사용자와 course의 통과는 가장 최근 것 하나만 남기고, `completedAt DESC, runId DESC` 순서로 표시합니다. mode는 `osu!standard`로 고정하며 결과가 없으면 조용한 빈 상태를 보여줍니다.
 - legacy system은 badge를 표시하고 current 아래에 정렬됩니다.
 - `/dan/[systemNameKey]`는 playable system의 모든 course, beatmap 목록, 통과 조건, 통합 리더보드, `?course=<courseNameKey>` anchor 이동을 렌더링합니다.
 - 로그인 사용자의 course 최고 기록에는 전체 순위를 함께 표시합니다. 내 기록이 상위 10개 안이면 해당 leaderboard 행을 강조하고, 10위 밖이면 기존 상위 10개 아래에 내 기록을 한 번 더 표시합니다. 익명 사용자와 다른 사용자의 leaderboard 표시 규칙은 바뀌지 않습니다.

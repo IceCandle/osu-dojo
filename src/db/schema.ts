@@ -53,6 +53,13 @@ export const courses = sqliteTable(
   ],
 );
 
+export const homepageFeaturedCourses = sqliteTable("homepage_featured_courses", {
+  courseId: text("course_id")
+    .primaryKey()
+    .references(() => courses.id, { onDelete: "cascade" }),
+  position: integer("position").notNull(),
+});
+
 export const beatmaps = sqliteTable(
   "beatmaps",
   {
@@ -102,6 +109,7 @@ export const runs = sqliteTable(
   (table) => [
     index("runs_course_completed_idx").on(table.courseId, table.completedAt),
     index("runs_user_completed_idx").on(table.userId, table.completedAt),
+    index("runs_passed_completed_idx").on(table.passed, table.completedAt),
   ],
 );
 

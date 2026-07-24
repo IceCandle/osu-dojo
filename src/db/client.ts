@@ -149,6 +149,11 @@ CREATE TABLE IF NOT EXISTS pinned_clears (
   PRIMARY KEY (user_id, course_id)
 );
 
+CREATE TABLE IF NOT EXISTS homepage_featured_courses (
+  course_id TEXT PRIMARY KEY REFERENCES courses(id) ON DELETE CASCADE,
+  position INTEGER NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS courses_system_ordinal_idx
   ON courses(dan_system_id, ordinal);
 
@@ -160,6 +165,9 @@ CREATE INDEX IF NOT EXISTS runs_course_completed_idx
 
 CREATE INDEX IF NOT EXISTS runs_user_completed_idx
   ON runs(user_id, completed_at);
+
+CREATE INDEX IF NOT EXISTS runs_passed_completed_idx
+  ON runs(passed, completed_at);
 
 CREATE INDEX IF NOT EXISTS map_results_run_ordinal_idx
   ON map_results(run_id, ordinal);
@@ -623,6 +631,8 @@ function rebuildCoursesTable(sqlite: BetterSqliteConnection) {
       description TEXT NOT NULL DEFAULT '',
       tags TEXT NOT NULL DEFAULT '[]',
       ordinal INTEGER NOT NULL,
+      official INTEGER NOT NULL DEFAULT 0,
+      label TEXT,
       score_model TEXT NOT NULL DEFAULT 'scorev2',
       overall_pass_conditions TEXT NOT NULL DEFAULT '[]',
       created_at INTEGER NOT NULL DEFAULT (unixepoch() * 1000),
@@ -638,6 +648,8 @@ function rebuildCoursesTable(sqlite: BetterSqliteConnection) {
       description,
       tags,
       ordinal,
+      official,
+      label,
       score_model,
       overall_pass_conditions,
       created_at,
@@ -652,6 +664,8 @@ function rebuildCoursesTable(sqlite: BetterSqliteConnection) {
       description,
       tags,
       ordinal,
+      COALESCE(official, 0),
+      label,
       score_model,
       COALESCE(overall_pass_conditions, '[]'),
       COALESCE(created_at, unixepoch() * 1000),
@@ -785,6 +799,9 @@ function ensureIndexes(sqlite: BetterSqliteConnection) {
 
     CREATE INDEX IF NOT EXISTS runs_user_completed_idx
       ON runs(user_id, completed_at);
+
+    CREATE INDEX IF NOT EXISTS runs_passed_completed_idx
+      ON runs(passed, completed_at);
 
     CREATE INDEX IF NOT EXISTS map_results_run_ordinal_idx
       ON map_results(run_id, ordinal);

@@ -199,6 +199,17 @@ export interface PinnedClearView {
   completedAt: number;
 }
 
+export interface NotablePassView {
+  runId: string;
+  userId: number;
+  username: string;
+  courseId: string;
+  courseName: string;
+  courseLabel: string | null;
+  systemName: string;
+  completedAt: number;
+}
+
 export interface PlayerRecentRun {
   id: string;
   courseId: string;

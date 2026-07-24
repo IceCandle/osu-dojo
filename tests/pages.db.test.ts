@@ -22,6 +22,7 @@ import {
   SEEDED_SYSTEM_NAME_KEY,
 } from "./helpers/dbFixtures";
 import { withAnonymousRequestScope } from "./helpers/requestScope";
+import { passRun } from "./helpers/runFixtures";
 
 test("pages render seeded course data from SQLite", async () => {
   const temp = createTempDatabaseUrl();
@@ -60,6 +61,9 @@ test("pages render seeded course data from SQLite", async () => {
     assert.ok(course);
 
     assert.match(homeHtml, /View dan systems/);
+    assert.match(homeHtml, /Recent notable passes/);
+    assert.match(homeHtml, /osu!standard/);
+    assert.match(homeHtml, /No recent passes yet\./);
     assert.doesNotMatch(homeHtml, /Open system/);
     assert.match(systemsHtml, /test/i);
     assert.match(systemsHtml, /\/dan\/test/);
@@ -98,6 +102,47 @@ test("pages render seeded course data from SQLite", async () => {
     }
     assert.match(courseHtml, /No runs saved yet/);
     assert.doesNotMatch(courseHtml, /\b\d{1,2}:\d{2}\b/);
+  } finally {
+    process.env["DATABASE_URL"] = previousDatabaseUrl;
+    globalThis.__osuDojoDatabaseBundle = previousBundle;
+    temp.cleanup();
+  }
+});
+
+test("home page renders a featured official notable pass", async () => {
+  const temp = createTempDatabaseUrl();
+  const previousDatabaseUrl = process.env["DATABASE_URL"];
+  const previousBundle = globalThis.__osuDojoDatabaseBundle;
+
+  try {
+    process.env["DATABASE_URL"] = temp.url;
+    const databaseBundle = await createTestDatabase(temp.url);
+    globalThis.__osuDojoDatabaseBundle = databaseBundle;
+    const course = await getCourseByNameKey(
+      SEEDED_SYSTEM_NAME_KEY,
+      SEEDED_COURSE_NAME_KEY,
+      databaseBundle.db,
+    );
+    assert.ok(course);
+
+    databaseBundle.sqlite
+      .prepare(
+        `INSERT INTO homepage_featured_courses (course_id, position)
+         VALUES (?, ?)`,
+      )
+      .run(course.id, 1);
+    await storeCourseRunResult(
+      passRun(450, "NotablePlayer", course, Date.now() - 60_000),
+      databaseBundle.db,
+    );
+
+    const homeHtml = renderToStaticMarkup(await HomePage());
+
+    assert.match(homeHtml, /NotablePlayer/);
+    assert.match(homeHtml, /href="\/players\/450"/);
+    assert.match(homeHtml, new RegExp(course.label ?? course.name));
+    assert.match(homeHtml, /osu!standard/);
+    assert.doesNotMatch(homeHtml, /No recent passes yet\./);
   } finally {
     process.env["DATABASE_URL"] = previousDatabaseUrl;
     globalThis.__osuDojoDatabaseBundle = previousBundle;
