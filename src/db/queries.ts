@@ -19,6 +19,7 @@ import type {
   DanSystemDefinition,
   JudgedMapResult,
   MapPassCondition,
+  NotablePassView,
   PinnedClearView,
   PlayerDanBadge,
   PlayerMostPlayedCourse,
@@ -32,6 +33,10 @@ import {
   playableSystemStatuses,
 } from "@/lib/domain";
 import { kebabizeName } from "@/lib/format";
+import {
+  NOTABLE_PASS_LIMIT,
+  NOTABLE_PASS_WINDOW_MS,
+} from "@/lib/notablePasses";
 import {
   emptySearchResults,
   isValidQuery,
@@ -76,6 +81,46 @@ type CourseRow = {
 
 async function useDb(db?: AppDatabase): Promise<AppDatabase> {
   return db ?? getDatabase();
+}
+
+export async function listNotablePasses(
+  now = Date.now(),
+  db?: AppDatabase,
+): Promise<NotablePassView[]> {
+  const database = await useDb(db);
+  return database.$client
+    .prepare(
+      `
+      SELECT
+        ranked.id AS runId,
+        ranked.user_id AS userId,
+        ranked.username AS username,
+        c.id AS courseId,
+        c.name AS courseName,
+        c.label AS courseLabel,
+        ds.name AS systemName,
+        ranked.completed_at AS completedAt
+      FROM (
+        SELECT
+          r.*,
+          ROW_NUMBER() OVER (
+            PARTITION BY r.user_id, r.course_id
+            ORDER BY r.completed_at DESC, r.id DESC
+          ) AS rn
+        FROM runs r
+        WHERE r.passed = 1
+          AND r.completed_at >= ?
+      ) ranked
+      INNER JOIN homepage_featured_courses f ON f.course_id = ranked.course_id
+      INNER JOIN courses c ON c.id = ranked.course_id
+      INNER JOIN dan_systems ds ON ds.id = c.dan_system_id
+      WHERE ranked.rn = 1
+        AND c.official = 1
+      ORDER BY ranked.completed_at DESC, ranked.id DESC
+      LIMIT ?
+      `,
+    )
+    .all(now - NOTABLE_PASS_WINDOW_MS, NOTABLE_PASS_LIMIT) as NotablePassView[];
 }
 
 export async function listDanSystemsWithCourses(db?: AppDatabase) {

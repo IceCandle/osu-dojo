@@ -53,6 +53,13 @@ export const courses = sqliteTable(
   ],
 );
 
+export const homepageFeaturedCourses = sqliteTable("homepage_featured_courses", {
+  courseId: text("course_id")
+    .primaryKey()
+    .references(() => courses.id, { onDelete: "cascade" }),
+  position: integer("position").notNull(),
+});
+
 export const beatmaps = sqliteTable(
   "beatmaps",
   {

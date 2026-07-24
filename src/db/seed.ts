@@ -8,6 +8,7 @@ import {
   beatmaps,
   courses,
   danSystems,
+  homepageFeaturedCourses,
   mapResults,
   runs,
 } from "@/db/schema";
@@ -232,6 +233,7 @@ export async function clearAllData(
   await db.delete(runs);
   await db.delete(beatmaps);
   await db.delete(beatmapMetadata);
+  await db.delete(homepageFeaturedCourses);
   await db.delete(courses);
   await db.delete(danSystems);
 }

@@ -28,7 +28,10 @@ test("player search returns seeded local-run players", async ({ page }) => {
   await page.getByLabel("Search dan systems, courses, and players").fill("E2EPlayer");
 
   await expect(page.getByRole("heading", { name: "Players" })).toBeVisible();
-  const playerLink = page.locator('a[href="/players/77"]').filter({ hasText: "E2EPlayer" });
+  const playerLink = page
+    .locator(".search-dialog")
+    .locator('a[href="/players/77"]')
+    .filter({ hasText: "E2EPlayer" });
   await expect(playerLink).toBeVisible();
 
   await playerLink.click();

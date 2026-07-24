@@ -149,6 +149,11 @@ CREATE TABLE IF NOT EXISTS pinned_clears (
   PRIMARY KEY (user_id, course_id)
 );
 
+CREATE TABLE IF NOT EXISTS homepage_featured_courses (
+  course_id TEXT PRIMARY KEY REFERENCES courses(id) ON DELETE CASCADE,
+  position INTEGER NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS courses_system_ordinal_idx
   ON courses(dan_system_id, ordinal);
 

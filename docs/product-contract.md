@@ -41,6 +41,8 @@ DanSystem (id, name, slug, description, status: "draft"|"current"|"legacy"|"arch
 
 BeatmapMetadata (beatmapId, title, artist, difficultyName, mapper, coverUrl, totalObjects)
 
+HomepageFeaturedCourse (courseId, position)
+
 CourseRun (id, userId, courseId, passed, timestamp, matchId?)
   has many MapResult (id, runId, gameId?, beatmapId, score, rawScore, playedMods, accuracy, passed)
 ```
@@ -57,6 +59,8 @@ CourseRun (id, userId, courseId, passed, timestamp, matchId?)
 `current`와 `legacy`는 기능적으로 같습니다. 둘 다 플레이 가능하고 결과를 저장하며 gameplay field는 frozen입니다. 차이는 catalog 정렬과 badge뿐입니다. `draft`는 exact key로 접근할 수 있지만 단 리스트에는 공개하지 않고, 플레이 결과도 저장하지 않습니다.
 
 `official`, `label`, `ladder`, `ladderOrder`는 표시용 메타데이터입니다. gameplay 판정, 명령어 key, Public Name Key 규칙에는 쓰지 않습니다. 같은 `ladder`를 가진 여러 시스템은 player 프로필에서 하나의 진행도로 합쳐 보이며, 더 큰 `ladderOrder`가 더 높은 단계입니다.
+
+`HomepageFeaturedCourse.position`은 운영자가 메인에 공개할 course 순서를 기록하는 큐레이션 메타데이터입니다. 최근 통과 기록의 표시 순서를 정하는 값은 아닙니다.
 
 ## Public Name Key
 
@@ -127,6 +131,7 @@ CourseRun (id, userId, courseId, passed, timestamp, matchId?)
 ### AC5: Website
 
 - `/`와 `/dan`은 current와 legacy system을 보여줍니다.
+- `/`는 최근 30일 안에 통과한 featured official course를 최대 3개 보여줍니다. 같은 사용자와 course의 통과는 가장 최근 것 하나만 남기고, `completedAt DESC, runId DESC` 순서로 표시합니다. mode는 `osu!standard`로 고정하며 결과가 없으면 조용한 빈 상태를 보여줍니다.
 - legacy system은 badge를 표시하고 current 아래에 정렬됩니다.
 - `/dan/[systemNameKey]`는 playable system의 모든 course, beatmap 목록, 통과 조건, 통합 리더보드, `?course=<courseNameKey>` anchor 이동을 렌더링합니다.
 - 로그인 사용자의 course 최고 기록에는 전체 순위를 함께 표시합니다. 내 기록이 상위 10개 안이면 해당 leaderboard 행을 강조하고, 10위 밖이면 기존 상위 10개 아래에 내 기록을 한 번 더 표시합니다. 익명 사용자와 다른 사용자의 leaderboard 표시 규칙은 바뀌지 않습니다.

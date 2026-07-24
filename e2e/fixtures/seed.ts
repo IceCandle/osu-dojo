@@ -55,6 +55,22 @@ export async function seedE2eDatabase(url: string) {
 
     bundle.sqlite
       .prepare(
+        `INSERT INTO homepage_featured_courses (course_id, position)
+         VALUES (?, ?)`,
+      )
+      .run(firstCourse.id, 1);
+    await storeCourseRunResult(
+      passRun(
+        451,
+        "NotableE2E",
+        firstCourse,
+        Date.now() - 2 * 60 * 60 * 1000,
+      ),
+      bundle.db,
+    );
+
+    bundle.sqlite
+      .prepare(
         `INSERT INTO users (osu_user_id, username, created_at, updated_at)
          VALUES (?, ?, ?, ?)`,
       )
