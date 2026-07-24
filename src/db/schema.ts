@@ -109,6 +109,7 @@ export const runs = sqliteTable(
   (table) => [
     index("runs_course_completed_idx").on(table.courseId, table.completedAt),
     index("runs_user_completed_idx").on(table.userId, table.completedAt),
+    index("runs_passed_completed_idx").on(table.passed, table.completedAt),
   ],
 );
 

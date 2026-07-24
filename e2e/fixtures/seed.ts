@@ -19,6 +19,7 @@ const E2E_LIMIT_SYSTEM_NAME_KEY = "e2e-pins";
 
 export async function seedE2eDatabase(url: string) {
   const bundle = await createTestDatabase(url);
+  const now = Date.now();
 
   try {
     const systems = addSampleBeatmapMetadata(
@@ -64,7 +65,7 @@ export async function seedE2eDatabase(url: string) {
         451,
         "NotableE2E",
         firstCourse,
-        Date.now() - 2 * 60 * 60 * 1000,
+        now - 2 * 60 * 60 * 1000,
       ),
       bundle.db,
     );
@@ -77,11 +78,11 @@ export async function seedE2eDatabase(url: string) {
       .run(88, "UsersOnly88", 1_799_999_000_000, 1_799_999_000_000);
 
     const olderFirst = await storeCourseRunResult(
-      passRun(77, "E2EPlayer", firstCourse, 1_799_999_900_000),
+      passRun(77, "E2EPlayer", firstCourse, now - 4 * 60 * 60 * 1000),
       bundle.db,
     );
     await storeCourseRunResult(
-      passRun(77, "E2EPlayer", firstCourse, 1_800_000_000_000),
+      passRun(77, "E2EPlayer", firstCourse, now - 3 * 60 * 60 * 1000),
       bundle.db,
     );
     await storeCourseRunResult(

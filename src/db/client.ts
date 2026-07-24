@@ -166,6 +166,9 @@ CREATE INDEX IF NOT EXISTS runs_course_completed_idx
 CREATE INDEX IF NOT EXISTS runs_user_completed_idx
   ON runs(user_id, completed_at);
 
+CREATE INDEX IF NOT EXISTS runs_passed_completed_idx
+  ON runs(passed, completed_at);
+
 CREATE INDEX IF NOT EXISTS map_results_run_ordinal_idx
   ON map_results(run_id, ordinal);
 
@@ -796,6 +799,9 @@ function ensureIndexes(sqlite: BetterSqliteConnection) {
 
     CREATE INDEX IF NOT EXISTS runs_user_completed_idx
       ON runs(user_id, completed_at);
+
+    CREATE INDEX IF NOT EXISTS runs_passed_completed_idx
+      ON runs(passed, completed_at);
 
     CREATE INDEX IF NOT EXISTS map_results_run_ordinal_idx
       ON map_results(run_id, ordinal);

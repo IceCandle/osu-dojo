@@ -2,6 +2,7 @@ import React from "react";
 import Link from "next/link";
 import { LocalTime } from "@/app/LocalTime";
 import { listNotablePasses } from "@/db/queries";
+import { formatUtcDateTime } from "@/lib/format";
 import { SUPPORTED_MODE_LABEL } from "@/lib/notablePasses";
 
 export const dynamic = "force-dynamic";
@@ -66,7 +67,7 @@ export default async function HomePage() {
                   <span>Passed</span>
                   <LocalTime
                     value={pass.completedAt}
-                    ssrFallback={formatDate(pass.completedAt)}
+                    ssrFallback={formatUtcDateTime(pass.completedAt)}
                   />
                 </div>
               </article>
@@ -78,12 +79,4 @@ export default async function HomePage() {
       </section>
     </main>
   );
-}
-
-function formatDate(value: number) {
-  return new Intl.DateTimeFormat("en-US", {
-    dateStyle: "medium",
-    timeStyle: "short",
-    timeZone: "UTC",
-  }).format(new Date(value));
 }

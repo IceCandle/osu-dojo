@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
+import { formatDateTime } from "@/lib/format";
 
 export function LocalTime({
   value,
@@ -13,12 +14,7 @@ export function LocalTime({
   const date = new Date(value);
 
   useEffect(() => {
-    setLabel(
-      new Intl.DateTimeFormat(undefined, {
-        dateStyle: "medium",
-        timeStyle: "short",
-      }).format(new Date(value)),
-    );
+    setLabel(formatDateTime(value));
   }, [value]);
 
   return <time dateTime={date.toISOString()}>{label}</time>;

@@ -15,6 +15,36 @@ import { dnfRun, passRun } from "./helpers/runFixtures";
 
 const NOW = 2_000_000_000_000;
 
+test("database indexes passed runs by completion time", async () => {
+  await withNotablePassDatabase(async ({ sqlite }) => {
+    const columns = sqlite.pragma("index_info(runs_passed_completed_idx)") as Array<{
+      seqno: number;
+      name: string;
+    }>;
+
+    assert.deepEqual(
+      columns
+        .sort((left, right) => left.seqno - right.seqno)
+        .map((column) => column.name),
+      ["passed", "completed_at"],
+    );
+
+    const queryPlan = sqlite
+      .prepare(
+        `EXPLAIN QUERY PLAN
+         SELECT id
+         FROM runs
+         WHERE passed = 1
+           AND completed_at >= ?`,
+      )
+      .all(NOW - NOTABLE_PASS_WINDOW_MS) as Array<{ detail: string }>;
+    assert.match(
+      queryPlan.map((step) => step.detail).join("\n"),
+      /USING INDEX runs_passed_completed_idx/,
+    );
+  });
+});
+
 test("listNotablePasses includes the 30-day boundary and excludes older passes", async () => {
   await withNotablePassDatabase(async ({ db, sqlite, featuredCourse }) => {
     featureCourse(sqlite, featuredCourse.id);
