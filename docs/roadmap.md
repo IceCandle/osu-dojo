@@ -12,6 +12,8 @@ osu!dojo의 주 기능은 자동으로 진행되는 단위인정 로비 flow입�
 - 스테이블 std 멀티 점수 수집 및 판정
 - `/`, `/dan`, `/dan/[systemNameKey]?course=<courseNameKey>`의 읽기 전용 코스/결과 카탈로그
 - 전역 검색과 `/players/[userId]` 읽기 전용 플레이어 프로필
+- osu! OAuth 로그인과 server-side session
+- `/settings` 프로필 상세 공개 설정과 course 상세 페이지의 대표 클리어 지정
 
 ## Phase 2: Near-Term Hardening
 

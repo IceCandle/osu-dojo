@@ -77,6 +77,12 @@ CourseRun (id, userId, courseId, passed, timestamp, matchId?)
 - `/api/search?q=` — 전역 헤더 검색 dialog가 조회하는 읽기 전용 JSON endpoint
 - `/dan/[systemNameKey]?course=<courseNameKey>` — playable system 상세 페이지. draft는 exact key로만 접근됩니다.
 - `/players/[userId]` — 로컬 `users` 정보를 기준으로 만든 읽기 전용 페이지. 숫자가 아닌 `userId`나 `users` 행이 없는 ID는 404이고, `users` 행은 있지만 run이 없으면 각 영역의 빈 상태를 보여줍니다.
+- `/settings` — 로그인 사용자가 프로필 상세 공개 여부를 바꾸는 설정 페이지
+- `GET /api/auth/osu/login` — osu! OAuth 로그인을 시작하고 authorization 화면으로 이동
+- `GET /api/auth/osu/callback` — osu! OAuth 응답을 확인하고 로컬 session을 생성
+- `POST /api/auth/logout` — 현재 server session을 폐기하고 session cookie를 제거
+- `POST /api/settings/pinned` — 로그인 사용자의 course 대표 클리어를 지정·교체·해제
+- `POST /api/settings/visibility` — 로그인 사용자의 프로필 상세 공개 여부를 저장
 
 ## Acceptance Criteria
 
