@@ -1256,7 +1256,7 @@ test("bot uses the confirmed-finish score fetch policy and completes the run", a
     const seededBeatmapIds = await getSeededBeatmapIds(db);
     const calls: Array<{
       beatmapId: number;
-      totalBudgetMs: number;
+      deadlineDurationMs: number;
       perCallTimeoutMs: number;
       retryDelayMs: number;
     }> = [];
@@ -1272,7 +1272,7 @@ test("bot uses the confirmed-finish score fetch policy and completes the run", a
       fetchScore: async (options) => {
         calls.push({
           beatmapId: options.beatmapId,
-          totalBudgetMs: options.totalBudgetMs,
+          deadlineDurationMs: options.deadlineDurationMs,
           perCallTimeoutMs: options.perCallTimeoutMs,
           retryDelayMs: options.retryDelayMs,
         });
@@ -1335,13 +1335,13 @@ test("bot uses the confirmed-finish score fetch policy and completes the run", a
     assert.deepEqual(calls, [
       {
         beatmapId: seededBeatmapIds[0],
-        totalBudgetMs: 45_000,
+        deadlineDurationMs: 45_000,
         perCallTimeoutMs: 4_000,
         retryDelayMs: 2_500,
       },
       {
         beatmapId: seededBeatmapIds[1],
-        totalBudgetMs: 4_000,
+        deadlineDurationMs: 10_000,
         perCallTimeoutMs: 3_000,
         retryDelayMs: 1_000,
       },

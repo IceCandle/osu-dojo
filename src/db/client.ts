@@ -3,7 +3,6 @@ import Database from "better-sqlite3";
 import { drizzle, type BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import * as schema from "@/db/schema";
 import { seedDatabase, type SeedOptions } from "@/db/seed";
-import { fetchBeatmapMetadata } from "@/lib/beatmapMetadata";
 
 type BetterSqliteConnection = InstanceType<typeof Database>;
 
@@ -18,6 +17,7 @@ interface DatabaseBundle {
 
 declare global {
   var __osuDojoDatabaseBundle: DatabaseBundle | undefined;
+  var __osuDojoDatabaseBundlePromise: Promise<DatabaseBundle> | undefined;
 }
 
 const CREATE_TABLES_SQL = `
@@ -197,7 +197,7 @@ function resolveDatabaseSource(url: string): string {
 
 async function initializeDatabaseBundle(
   url = process.env["DATABASE_URL"] ?? "file:./dojo.db",
-  seedOptions = getSeedOptionsFromEnvironment(),
+  seedOptions: SeedOptions = {},
 ): Promise<DatabaseBundle> {
   const source = resolveDatabaseSource(url);
   const sqlite = new Database(source);
@@ -216,11 +216,25 @@ async function initializeDatabaseBundle(
 }
 
 export async function getDatabase(): Promise<AppDatabase> {
-  if (!globalThis.__osuDojoDatabaseBundle) {
-    globalThis.__osuDojoDatabaseBundle = await initializeDatabaseBundle();
+  if (globalThis.__osuDojoDatabaseBundle) {
+    return globalThis.__osuDojoDatabaseBundle.db;
   }
 
-  return globalThis.__osuDojoDatabaseBundle.db;
+  if (!globalThis.__osuDojoDatabaseBundlePromise) {
+    const initialization = initializeDatabaseBundle().then((bundle) => {
+      globalThis.__osuDojoDatabaseBundle = bundle;
+      return bundle;
+    });
+    globalThis.__osuDojoDatabaseBundlePromise = initialization;
+    const clearInitialization = () => {
+      if (globalThis.__osuDojoDatabaseBundlePromise === initialization) {
+        globalThis.__osuDojoDatabaseBundlePromise = undefined;
+      }
+    };
+    void initialization.then(clearInitialization, clearInitialization);
+  }
+
+  return (await globalThis.__osuDojoDatabaseBundlePromise).db;
 }
 
 export async function createTestDatabase(url: string): Promise<DatabaseBundle> {
@@ -832,14 +846,4 @@ function addColumnIfMissing(
     sqlite.exec(`ALTER TABLE ${table} ADD COLUMN ${definition}`);
     columns.push(column);
   }
-}
-
-function getSeedOptionsFromEnvironment(): SeedOptions {
-  const apiKey = process.env["OSU_API_KEY"];
-
-  return apiKey
-    ? {
-        resolveMetadata: (beatmapId) => fetchBeatmapMetadata(apiKey, beatmapId),
-      }
-    : {};
 }

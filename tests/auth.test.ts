@@ -164,6 +164,35 @@ test("OAuth provider exchange is form encoded and validates response shapes", as
   });
 });
 
+test("interactive OAuth calls fail 429 immediately without retrying", async () => {
+  await withNormalAuthEnv(async () => {
+    let tokenCalls = 0;
+    let userCalls = 0;
+    const throttled = () =>
+      new Response(JSON.stringify({ error: "rate limited" }), {
+        status: 429,
+        headers: { "Retry-After": "60" },
+      });
+
+    await assert.rejects(
+      exchangeCodeForToken("code-value", (async () => {
+        tokenCalls += 1;
+        return throttled();
+      }) as typeof fetch),
+      /token response/,
+    );
+    await assert.rejects(
+      fetchOsuUser("token", (async () => {
+        userCalls += 1;
+        return throttled();
+      }) as typeof fetch),
+      /user response/,
+    );
+    assert.equal(tokenCalls, 1);
+    assert.equal(userCalls, 1);
+  });
+});
+
 test("dummy OAuth completes the real state flow and logout revokes a copied cookie", async () => {
   await withAuthDatabase(async (db) => {
     const loginResponse = await login(

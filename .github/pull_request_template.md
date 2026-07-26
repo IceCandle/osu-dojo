@@ -8,10 +8,6 @@
 
 ## Scope
 
-영향을 받는 area:
-
-- Bot / DB / Web / Docs 중 해당 항목만 남기거나 쉼표로 적어주세요.
-
 관련 issue (한 개 또는 여러 개):
 
 여러 issue를 포함하면 What Changed와 Verification을 #번호별로 나눠 적어주세요.

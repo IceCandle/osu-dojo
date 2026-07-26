@@ -12,7 +12,7 @@ osu! dan course를 자동 멀티플레이어 방에서 진행하는 IRC bot, pas
 - **Framework:** Next.js 14+ App Router
 - **Bot process:** `src/bot/`의 별도 상시 구동 Node process. osu! IRC/멀티플레이어는 `bancho.js` 사용
 - **Database:** SQLite + Drizzle ORM. 현재 범위에서는 단일 파일, 별도 운영 불필요
-- **Credentials:** `.env`에 osu! IRC username, IRC password, legacy API key 저장
+- **Credentials:** `.env`에 osu! IRC username/password와 OAuth client ID/secret 저장. 공개 bot 데이터는 client credentials token으로 osu! API v2에서 조회
 
 ## Domain Model
 

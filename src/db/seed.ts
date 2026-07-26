@@ -12,19 +12,14 @@ import {
   mapResults,
   runs,
 } from "@/db/schema";
-import type { BeatmapMetadata, BeatmapResolutionResult } from "@/lib/beatmapMetadata";
+import type { BeatmapMetadata } from "@/lib/osu/beatmaps";
 import { systemCapabilities, type DanSystemStatus } from "@/lib/domain";
 import { kebabizeName } from "@/lib/format";
-import { sleep } from "@/lib/sleep";
 
 type SeedDatabase = BetterSQLite3Database<typeof schema>;
 
 const COURSE_DATA_DIR = path.join(process.cwd(), "data/courses");
-const DEFAULT_METADATA_REQUEST_DELAY_MS = 200;
-
 export interface SeedOptions {
-  resolveMetadata?: (beatmapId: number) => Promise<BeatmapResolutionResult>;
-  metadataRequestDelayMs?: number;
   suppressMissingObjectCountWarnings?: boolean;
 }
 
@@ -43,7 +38,6 @@ export async function seedDatabase(
   systems = loadCoursesFromDir(COURSE_DATA_DIR),
   options: SeedOptions = {},
 ) {
-  const metadataResolutionState = { requestCount: 0 };
   let missingObjectCountWithoutResolver = 0;
 
   for (const system of systems) {
@@ -144,14 +138,12 @@ export async function seedDatabase(
       const beatmapValues = [];
 
       for (const beatmap of course.beatmaps) {
-        const beatmapData = await resolveSeedBeatmapData(
+        const beatmapData = resolveSeedBeatmapData(
           beatmap,
           existingMetadataById.get(beatmap.beatmapId),
-          options,
-          metadataResolutionState,
         );
 
-        if (!options.resolveMetadata && beatmapData.totalObjects === null) {
+        if (beatmapData.totalObjects === null) {
           missingObjectCountWithoutResolver += 1;
         }
 
@@ -201,11 +193,10 @@ export async function seedDatabase(
 
   if (
     !options.suppressMissingObjectCountWarnings &&
-    !options.resolveMetadata &&
     missingObjectCountWithoutResolver > 0
   ) {
     console.warn(
-      `Unable to resolve object counts for ${missingObjectCountWithoutResolver} beatmap(s): no osu! API metadata resolver is configured.`,
+      `Metadata is missing object counts for ${missingObjectCountWithoutResolver} beatmap(s). Run "pnpm metadata:backfill" to fill them.`,
     );
   }
 }
@@ -412,12 +403,10 @@ function compareBeatmapSignatures(
   return left.ordinal - right.ordinal || left.id.localeCompare(right.id);
 }
 
-async function resolveSeedBeatmapData(
+function resolveSeedBeatmapData(
   beatmap: DanSystemSeed["courses"][number]["beatmaps"][number],
   existing: ExistingBeatmapMetadata | undefined,
-  options: SeedOptions,
-  metadataResolutionState: { requestCount: number },
-): Promise<SeedBeatmapData> {
+): SeedBeatmapData {
   const seededMetadata = normalizeMetadata(beatmap);
   let metadata = hasCompleteMetadata(seededMetadata) ? seededMetadata : null;
   let totalObjects = hasReusableExistingTotalObjects(beatmap, existing)
@@ -427,52 +416,6 @@ async function resolveSeedBeatmapData(
   if (metadata === null && hasReusableExistingMetadata(beatmap, existing)) {
     metadata = normalizeMetadata(existing);
   }
-
-  const needsMetadata = metadata === null;
-  const needsTotalObjects = totalObjects === null;
-
-  if (!options.resolveMetadata || (!needsMetadata && !needsTotalObjects)) {
-    return {
-      metadata: metadata ?? emptyMetadata(),
-      totalObjects,
-    };
-  }
-
-  const delayMs = options.metadataRequestDelayMs ?? DEFAULT_METADATA_REQUEST_DELAY_MS;
-
-  if (metadataResolutionState.requestCount > 0 && delayMs > 0) {
-    await sleep(delayMs);
-  }
-
-  metadataResolutionState.requestCount += 1;
-  const result = await options.resolveMetadata(beatmap.beatmapId);
-
-  if (result.ok) {
-    if (metadata === null && result.data.metadata !== null) {
-      metadata = result.data.metadata;
-    }
-    if (totalObjects === null && result.data.totalObjects !== null) {
-      totalObjects = result.data.totalObjects;
-    }
-  }
-
-  warnIfUnresolved({
-    needed: needsMetadata,
-    resolved: result.ok && result.data.metadata !== null,
-    beatmapId: beatmap.beatmapId,
-    label: "metadata",
-    missingFieldsMessage: "osu! API metadata did not include display fields",
-    result,
-  });
-
-  warnIfUnresolved({
-    needed: needsTotalObjects && !options.suppressMissingObjectCountWarnings,
-    resolved: result.ok && result.data.totalObjects !== null,
-    beatmapId: beatmap.beatmapId,
-    label: "object counts",
-    missingFieldsMessage: "osu! API metadata did not include object counts",
-    result,
-  });
 
   return {
     metadata: metadata ?? emptyMetadata(),
@@ -528,20 +471,4 @@ function emptyMetadata(): BeatmapMetadata {
     mapper: "",
     coverUrl: "",
   };
-}
-
-function warnIfUnresolved(args: {
-  needed: boolean;
-  resolved: boolean;
-  beatmapId: number;
-  label: string;
-  missingFieldsMessage: string;
-  result: BeatmapResolutionResult;
-}) {
-  if (!args.needed || args.resolved) {
-    return;
-  }
-
-  const reason = args.result.ok ? args.missingFieldsMessage : args.result.reason;
-  console.warn(`Unable to resolve ${args.label} for beatmap ${args.beatmapId}: ${reason}`);
 }

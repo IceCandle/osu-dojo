@@ -1,0 +1,84 @@
+{
+  "_fixture_source": "GET https://osu.ppy.sh/api/v2/matches/121570463?limit=101 captured 2026-07-24",
+  "match": {
+    "id": 121570463,
+    "start_time": "2026-07-24T13:06:26+00:00",
+    "end_time": "2026-07-24T13:12:18+00:00",
+    "name": "NWC3 Ro16 Sightread; Fasara15; NM1 - HD2"
+  },
+  "events": [
+    {
+      "id": 2508649047,
+      "detail": {
+        "type": "other",
+        "text": "NWC3 Ro16 Sightread; Fasara15; NM1 - HD2"
+      },
+      "timestamp": "2026-07-24T13:06:54+00:00",
+      "user_id": null,
+      "game": {
+        "beatmap_id": 3981606,
+        "id": 640032714,
+        "start_time": "2026-07-24T13:06:54Z",
+        "end_time": "2026-07-24T13:10:52Z",
+        "match_id": 121570463,
+        "mode": "osu",
+        "mode_int": 0,
+        "scoring_type": "scorev2",
+        "team_type": "head-to-head",
+        "mods": [
+          "NF"
+        ],
+        "scores": [
+          {
+            "maximum_statistics": {
+              "miss": 0
+            },
+            "mods": [
+              {
+                "acronym": "NF"
+              }
+            ],
+            "statistics": {
+              "miss": 3,
+              "great": 649,
+              "ok": 74,
+              "meh": 7
+            },
+            "beatmap_id": 3981606,
+            "best_id": null,
+            "id": null,
+            "rank": "B",
+            "type": "legacy_match_score",
+            "user_id": 35035867,
+            "accuracy": 0.9206457480673034,
+            "build_id": null,
+            "ended_at": "2026-07-24T13:06:54Z",
+            "has_replay": false,
+            "is_perfect_combo": false,
+            "legacy_perfect": false,
+            "legacy_score_id": null,
+            "legacy_total_score": 385013,
+            "max_combo": 570,
+            "passed": true,
+            "pp": null,
+            "ruleset_id": 0,
+            "started_at": null,
+            "total_score": 385013,
+            "replay": false,
+            "current_user_attributes": {
+              "pin": null
+            },
+            "match": {
+              "slot": 0,
+              "team": "none",
+              "pass": true
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "latest_event_id": 2508649497,
+  "current_game_id": null,
+  "first_event_id": 2508649018
+}

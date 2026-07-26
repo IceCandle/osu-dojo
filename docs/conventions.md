@@ -7,7 +7,7 @@
 - Bot: `src/bot/`, 멀티플레이어 생명주기, 점수 수집, timeout, 실제 연결 확인 스크립트. GitHub label: `area:bot`
 - Web: `src/app/`, 라우트 렌더링, 카탈로그 페이지, 리더보드 표시, 브라우저 동작 확인. GitHub label: `area:web`
 - DB: `src/db/`, `data/courses/`, course loader, seed 동작, course data 유효성 검사, 결과 저장. GitHub label: `area:db`
-- Docs: `docs/product-contract.md`, `README.md`, `docs/onboarding.md`, `docs/course-authoring.md`, `docs/roadmap.md`, `.github/pull_request_template.md`, `.github/ISSUE_TEMPLATE/`, `.github/workflows/`. GitHub label: `documentation`
+- Docs: `docs/product-contract.md`, `README.md`, `docs/onboarding.md`, `docs/course-authoring.md`, `docs/osu-api-policy.md`, `docs/roadmap.md`, `.github/pull_request_template.md`, `.github/ISSUE_TEMPLATE/`, `.github/workflows/`. GitHub label: `documentation`
 
 `src/lib/accuracy.ts`, `src/lib/judging.ts` 같은 판정 로직은 별도 area가 아니라 shared logic입니다. 판정 변경은 PR description의 What Changed와 verifier에 명확히 적고, issue가 있으면 title에 `[Judgment]`를 씁니다.
 
