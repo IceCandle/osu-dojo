@@ -1,7 +1,5 @@
 import { EventEmitter } from "node:events";
-import { existsSync, readFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
-import { loadEnvFile } from "node:process";
 import {
   BanchoClient,
   BanchoLobbyPlayerStates,
@@ -64,6 +62,7 @@ import { computeAdjustedScore, rawTargetForAdjustedRemaining } from "@/lib/score
 import { systemCapabilities } from "@/lib/domain";
 import type { CourseDefinition, DanSystemDefinition, JudgedMapResult } from "@/lib/domain";
 import { sleep as defaultSleep } from "@/lib/sleep";
+import { loadRepositoryEnv } from "@/lib/env";
 import {
   fetchMatchEventWindow,
 } from "@/lib/osu/matches";
@@ -74,13 +73,7 @@ import {
 
 export type { ActiveRun } from "@/bot/runRegistry";
 
-if (existsSync(".env")) {
-  if (typeof loadEnvFile === "function") {
-    loadEnvFile();
-  } else {
-    loadEnvFallback(".env");
-  }
-}
+loadRepositoryEnv();
 
 export interface BotUserLike {
   id?: number;
@@ -159,7 +152,10 @@ interface PlayerIdentity {
 }
 
 type FetchScore = (
-  options: Omit<FetchScoreOptions, "fetchMatchWindow"> & { lobbyId: number },
+  options: Omit<FetchScoreOptions, "fetchMatchWindow"> & {
+    lobbyId: number;
+    perCallTimeoutMs: number;
+  },
 ) => Promise<NormalizedPlayerMapScore>;
 
 export interface CreateDojoBotOptions {
@@ -201,7 +197,7 @@ export type RunEndedEvent =
       reason: RunEndedReason;
     };
 
-const DEFAULT_REST_DURATION_MS = 60_000;
+const DEFAULT_REST_DURATION_MS = 30_000;
 const DEFAULT_FIRST_MAP_COUNTDOWN_SECONDS = 120;
 const DEFAULT_INACTIVITY_TIMEOUT_MS = 20 * 60 * 1000;
 const DEFAULT_FINAL_GRACE_PERIOD_MS = 60_000;
@@ -340,7 +336,7 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
     }
 
     logger.warn(
-      "dojo unknown mod bitmask token",
+      "dojo unknown mod token",
       getRunLogFields(run, {
         beatmapId,
         unknownMods: unknown,
@@ -1029,8 +1025,18 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
     const playedObjects = totalHitObjects(fetchedScore);
     const isPartialPlay =
       beatmap.totalObjects !== null && playedObjects < beatmap.totalObjects;
-    const globalTokens = parseModBitmask(fetchedScore.globalGameMods);
-    const playerTokens = parseModBitmask(fetchedScore.playerEnabledMods);
+    const globalTokens = uniqueTokens([
+      ...parseModBitmask(fetchedScore.globalGameMods),
+      ...(fetchedScore.unknownModAcronyms?.global ?? []).map(
+        (acronym) => `UNKNOWN:${acronym}`,
+      ),
+    ]);
+    const playerTokens = uniqueTokens([
+      ...parseModBitmask(fetchedScore.playerEnabledMods),
+      ...(fetchedScore.unknownModAcronyms?.player ?? []).map(
+        (acronym) => `UNKNOWN:${acronym}`,
+      ),
+    ]);
     const playedTokenList = uniqueTokens([...globalTokens, ...playerTokens]);
     const playedMods = formatModsCanonical(playedTokenList);
     logUnknownModTokens(run, beatmap.beatmapId, playedTokenList);
@@ -2071,36 +2077,6 @@ function getLobbyTitle(
   course: CourseDefinition,
 ) {
   return `(osu!dojo): (${playerUsername}) vs (${system.name} ${course.name})`;
-}
-
-function loadEnvFallback(filePath: string) {
-  const envFile = readFileSync(filePath, "utf8");
-
-  for (const rawLine of envFile.split(/\r?\n/)) {
-    const line = rawLine.trim();
-    if (!line || line.startsWith("#")) {
-      continue;
-    }
-
-    const separatorIndex = line.indexOf("=");
-    if (separatorIndex <= 0) {
-      continue;
-    }
-
-    const key = line.slice(0, separatorIndex).trim();
-    let value = line.slice(separatorIndex + 1).trim();
-
-    if (
-      (value.startsWith('"') && value.endsWith('"')) ||
-      (value.startsWith("'") && value.endsWith("'"))
-    ) {
-      value = value.slice(1, -1);
-    }
-
-    if (process.env[key] === undefined) {
-      process.env[key] = value;
-    }
-  }
 }
 
 const CONNECT_TIMEOUT_MS = 15_000;

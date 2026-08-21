@@ -5,31 +5,14 @@ import {
   attachBanchoOsuApiAdapter,
   createBanchoOsuApiAdapter,
 } from "@/bot/banchoOsuApiAdapter";
-import {
-  FetchTransportError,
-  type OsuApiClient,
-} from "@/lib/osu/client";
+import type { OsuApiClient } from "@/lib/osu/client";
 
-function fakeClient(): OsuApiClient {
+function fakeClient(paths: string[] = []): OsuApiClient {
   return {
     async requestJson<T>(path: string) {
+      paths.push(path);
       if (path.includes("/users/")) {
         return { id: 42, username: "PlayerOne" } as T;
-      }
-      if (path.includes("/beatmaps?")) {
-        return {
-          beatmaps: [
-            {
-              id: 259,
-              beatmapset_id: 1000,
-              version: "Insane",
-              count_circles: 1,
-              count_sliders: 1,
-              count_spinners: 0,
-              beatmapset: { title: "Song", artist: "Artist", creator: "Mapper" },
-            },
-          ],
-        } as T;
       }
       return {
         match: { id: 123 },
@@ -42,12 +25,14 @@ function fakeClient(): OsuApiClient {
 }
 
 test("bancho adapter implements the three nodesu surfaces used by bancho.js", async () => {
-  const adapter = createBanchoOsuApiAdapter({ client: fakeClient(), now: () => 0 });
+  const paths: string[] = [];
+  const adapter = createBanchoOsuApiAdapter({ client: fakeClient(paths), now: () => 0 });
   assert.deepEqual(await adapter.user.get("PlayerOne"), {
     id: 42,
     username: "PlayerOne",
   });
   assert.deepEqual(await adapter.beatmaps.getByBeatmapId(259), [{ id: 259 }]);
+  assert.equal(paths.some((path) => path.includes("/beatmaps")), false);
   assert.deepEqual(await adapter.multi.getMatch(123), {
     match: { id: 123 },
     first_event_id: 1,
@@ -69,18 +54,18 @@ test("attaching the adapter promotes #mp channels without an API key", () => {
   assert.equal(client.getChannel("#mp_123").constructor.name, "BanchoMultiplayerChannel");
 });
 
-test("bancho beatmap lookup preserves transport failures", async () => {
+test("bancho beatmap lookup is a local shim that never calls HTTP", async () => {
+  let requests = 0;
   const adapter = createBanchoOsuApiAdapter({
     client: {
       async requestJson() {
-        throw new FetchTransportError("temporary failure", true);
+        requests += 1;
+        throw new Error("HTTP must not be called");
       },
     },
     now: () => 0,
   });
 
-  await assert.rejects(
-    adapter.beatmaps.getByBeatmapId(259),
-    /temporary failure/,
-  );
+  assert.deepEqual(await adapter.beatmaps.getByBeatmapId(259), [{ id: 259 }]);
+  assert.equal(requests, 0);
 });

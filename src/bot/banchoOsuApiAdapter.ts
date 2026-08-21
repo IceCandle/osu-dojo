@@ -1,8 +1,5 @@
 import type { BanchoClient } from "bancho.js";
 import {
-  fetchBeatmapMetadataBatch,
-} from "@/lib/osu/beatmaps";
-import {
   fetchMatchEventWindow,
 } from "@/lib/osu/matches";
 import {
@@ -58,16 +55,7 @@ export function createBanchoOsuApiAdapter(
     }),
     beatmaps: strictSurface("osuApi.beatmaps", {
       async getByBeatmapId(beatmapId: number) {
-        const results = await fetchBeatmapMetadataBatch([beatmapId], {
-          client,
-          deadline: now() + ADAPTER_DEADLINE_MS,
-          perCallTimeoutMs: ADAPTER_CALL_TIMEOUT_MS,
-          rateLimit: "runCritical",
-          now,
-          throwOnRequestError: true,
-        });
-        const result = results.get(beatmapId);
-        return result?.ok ? [{ id: beatmapId }] : [];
+        return [{ id: beatmapId }];
       },
     }),
     multi: strictSurface("osuApi.multi", {

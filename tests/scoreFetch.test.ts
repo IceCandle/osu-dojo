@@ -8,7 +8,11 @@ import {
   ScoreApiTimeoutError,
 } from "@/bot/osuApi";
 import { OsuApiDeadlineError } from "@/lib/osu/client";
-import type { MatchWindowFetcher } from "@/lib/osu/matches";
+import {
+  parseMatchEventWindow,
+  type MatchWindowFetcher,
+} from "@/lib/osu/matches";
+import { OsuTokenError } from "@/lib/osu/token";
 
 function createClock() {
   let currentTime = 0;
@@ -43,15 +47,15 @@ function createGame(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function createMatchPayload(games: unknown[]) {
-  return {
+function createMatchWindow(games: unknown[]) {
+  return parseMatchEventWindow({
     first_event_id: 1,
     latest_event_id: Math.max(1, games.length),
     events: games.map((game, index) => ({
       id: index + 1,
       game,
     })),
-  };
+  });
 }
 
 function createOptions(
@@ -68,7 +72,6 @@ function createOptions(
     userId: 42,
     processedGameIds: new Set<number>(),
     deadlineDurationMs: overrides.deadlineDurationMs ?? 1_500,
-    perCallTimeoutMs: 100,
     retryDelayMs: overrides.retryDelayMs ?? 10,
     retryDelayMinMs: overrides.retryDelayMinMs ?? 1_000,
     fetchMatchWindow,
@@ -82,7 +85,7 @@ test("score fetcher preserves the existing normalized score contract", async () 
   const clock = createClock();
   const result = await fetchLatestPlayerMapScore(
     createOptions(clock, async () =>
-      createMatchPayload([
+      createMatchWindow([
         createGame({
           mods: [{ acronym: "HR" }],
           scores: [
@@ -130,7 +133,7 @@ test("score fetcher preserves the existing normalized score contract", async () 
 test("score fetcher ignores processed games", async () => {
   const clock = createClock();
   const options = createOptions(clock, async () =>
-    createMatchPayload([createGame()]),
+    createMatchWindow([createGame()]),
   );
   options.processedGameIds.add(2);
 
@@ -146,7 +149,7 @@ test("score fetcher can recover after one transient transport error", async () =
       if (calls === 1) {
         throw new FetchTransportError("temporary 500", true);
       }
-      return createMatchPayload([createGame()]);
+      return createMatchWindow([createGame()]);
     }),
   );
 
@@ -169,11 +172,48 @@ test("score fetcher does not retry non-retryable transport errors", async () => 
   assert.equal(calls, 1);
 });
 
+test("score fetcher does not retry non-retryable token errors", async () => {
+  const clock = createClock();
+  let calls = 0;
+  await assert.rejects(
+    fetchLatestPlayerMapScore(
+      createOptions(clock, async () => {
+        calls += 1;
+        throw new OsuTokenError("invalid credentials", { retryable: false });
+      }),
+    ),
+    OsuTokenError,
+  );
+  assert.equal(calls, 1);
+});
+
+test("score fetcher preserves an unmappable mod without aborting", async () => {
+  const clock = createClock();
+  let calls = 0;
+  const result = await fetchLatestPlayerMapScore(
+    createOptions(clock, async () => {
+      calls += 1;
+      return createMatchWindow([
+        createGame({
+          scores: [createScore({ mods: [{ acronym: "FUTURE" }] })],
+        }),
+      ]);
+    }),
+  );
+
+  assert.equal(calls, 1);
+  assert.equal(result.playerEnabledMods, 0);
+  assert.deepEqual(result.unknownModAcronyms, {
+    global: [],
+    player: ["FUTURE"],
+  });
+});
+
 test("score fetcher throws NoGameInApiError when the game never appears", async () => {
   const clock = createClock();
   await assert.rejects(
     fetchLatestPlayerMapScore(
-      createOptions(clock, async () => createMatchPayload([])),
+      createOptions(clock, async () => createMatchWindow([])),
     ),
     (error) => {
       assert.ok(error instanceof NoGameInApiError);
@@ -189,7 +229,7 @@ test("score fetcher keeps game-without-player as the strongest evidence", async 
   await assert.rejects(
     fetchLatestPlayerMapScore(
       createOptions(clock, async () =>
-        createMatchPayload([
+        createMatchWindow([
           createGame({
             end_time: null,
             scores: [createScore({ user_id: 99 })],
@@ -214,7 +254,7 @@ test("score fetcher revisits a published game while its player score is missing"
     ...createOptions(clock, async (cursor) => {
       cursors.push(cursor);
       calls += 1;
-      return createMatchPayload([
+      return createMatchWindow([
         createGame({
           scores: [
             createScore({ user_id: calls === 1 ? 99 : 42 }),
@@ -237,9 +277,9 @@ test("score fetcher revisits an in-progress event after it completes", async () 
       cursors.push(cursor);
       calls += 1;
       if (cursor.after !== undefined) {
-        return createMatchPayload([]);
+        return createMatchWindow([]);
       }
-      return createMatchPayload([
+      return createMatchWindow([
         createGame(
           calls === 1
             ? { end_time: null, scores: [] }
@@ -266,5 +306,53 @@ test("score fetcher maps an exhausted request deadline to ScoreApiTimeoutError",
       assert.ok(error.lastUnderlyingError instanceof OsuApiDeadlineError);
       return true;
     },
+  );
+});
+
+test("a request deadline outranks earlier no-game evidence", async () => {
+  const clock = createClock();
+  let calls = 0;
+  await assert.rejects(
+    fetchLatestPlayerMapScore(
+      createOptions(clock, async () => {
+        calls += 1;
+        if (calls === 1) {
+          return createMatchWindow([]);
+        }
+        throw new OsuApiDeadlineError();
+      }),
+    ),
+    ScoreApiTimeoutError,
+  );
+});
+
+test("a request deadline outranks earlier game-without-player evidence", async () => {
+  const clock = createClock();
+  let calls = 0;
+  await assert.rejects(
+    fetchLatestPlayerMapScore(
+      createOptions(clock, async () => {
+        calls += 1;
+        if (calls === 1) {
+          return createMatchWindow([
+            createGame({ scores: [createScore({ user_id: 99 })] }),
+          ]);
+        }
+        throw new OsuApiDeadlineError();
+      }),
+    ),
+    ScoreApiTimeoutError,
+  );
+});
+
+test("score fetcher rejects a retry maximum below its minimum", async () => {
+  const clock = createClock();
+  await assert.rejects(
+    fetchLatestPlayerMapScore({
+      ...createOptions(clock, async () => createMatchWindow([])),
+      retryDelayMinMs: 1_000,
+      retryDelayMaxMs: 999,
+    }),
+    /retryDelayMaxMs must be greater than or equal to retryDelayMinMs/i,
   );
 });

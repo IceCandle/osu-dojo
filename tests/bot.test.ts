@@ -1016,7 +1016,7 @@ test("bot announces unreachable courseAccuracy mid-course", async () => {
   }
 });
 
-test("bot rejects disallowed freemod selections and persists a failed audit row", async () => {
+test("bot rejects known and unknown freemod selections without aborting the course", async () => {
   const temp = createTempDatabaseUrl();
 
   try {
@@ -1034,6 +1034,7 @@ test("bot rejects disallowed freemod selections and persists a failed audit row"
         score: 500_000,
         playerEnabledMods: 2,
         globalGameMods: 0,
+        unknownModAcronyms: { global: [], player: ["FUTURE"] },
         accuracy: 96.3,
         maxCombo: 800,
         count300: 1000,
@@ -1089,7 +1090,9 @@ test("bot rejects disallowed freemod selections and persists a failed audit row"
     await waitForTimer(20);
 
     assert.ok(
-      client.lobby.channelMessages.some((message) => /Disallowed mods: EZ/.test(message)),
+      client.lobby.channelMessages.some(
+        (message) => /Disallowed mods: EZ, UNKNOWN:FUTURE/.test(message),
+      ),
     );
     assert.ok(
       client.lobby.channelMessages.some(
@@ -1112,7 +1115,7 @@ test("bot rejects disallowed freemod selections and persists a failed audit row"
     assert.equal(firstMap?.passed, false);
     assert.equal(firstMap?.rawScore, 500_000);
     assert.equal(firstMap?.score, 1_000_000);
-    assert.equal(firstMap?.playedMods, "EZ");
+    assert.equal(firstMap?.playedMods, "EZUNKNOWN:FUTURE");
   } finally {
     temp.cleanup();
   }
@@ -1876,7 +1879,7 @@ test("lobby chat !dojo skip no longer starts the match", async () => {
   }
 });
 
-test("bot aborts immediately when the target player leaves between maps", async () => {
+test("bot uses the 30 second default rest and aborts when the player leaves", async () => {
   const temp = createTempDatabaseUrl();
 
   try {
@@ -1888,7 +1891,6 @@ test("bot aborts immediately when the target player leaves between maps", async 
       client,
       db,
       connectOnStart: false,
-      restDurationMs: 20_000,
       firstMapCountdownSeconds: 0,
       fetchScore: async () => ({
         gameId: 1,
@@ -1918,7 +1920,7 @@ test("bot aborts immediately when the target player leaves between maps", async 
     await flushAsyncWork(6);
 
     assert.equal(client.lobby.startHistory.length, 1);
-    assert.ok(client.lobby.channelMessages.includes("!mp timer 20"));
+    assert.ok(client.lobby.channelMessages.includes("!mp timer 30"));
     client.lobby.emit("playerLeft", player);
     await flushAsyncWork(6);
 

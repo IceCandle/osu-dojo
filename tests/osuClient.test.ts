@@ -48,6 +48,7 @@ test("v2 client pins the response version and retries one 401 with a fresh token
       requests += 1;
       const headers = new Headers(init?.headers);
       authorizations.push(headers.get("authorization") ?? "");
+      assert.equal(headers.get("x-extra"), "kept");
       assert.equal(
         headers.get("x-api-version"),
         String(OSU_API_RESPONSE_VERSION),
@@ -63,6 +64,11 @@ test("v2 client pins the response version and retries one 401 with a fresh token
       rateLimit: "runCritical",
       deadline: 10_000,
       perCallTimeoutMs: 1_000,
+      headers: new Headers({
+        Authorization: "Bearer caller-owned",
+        "x-api-version": "1",
+        "x-extra": "kept",
+      }),
     }),
     { ok: true },
   );
@@ -75,6 +81,11 @@ test("v2 client honors numeric and HTTP-date Retry-After values", async () => {
   assert.equal(
     parseRetryAfter("Thu, 01 Jan 1970 00:00:03 GMT", 1_000),
     2_000,
+  );
+  assert.equal(parseRetryAfter("0", 1_000), 0);
+  assert.equal(
+    parseRetryAfter("Thu, 01 Jan 1970 00:00:00 GMT", 1_000),
+    0,
   );
 
   const clock = createClock();
@@ -98,6 +109,39 @@ test("v2 client honors numeric and HTTP-date Retry-After values", async () => {
     perCallTimeoutMs: 1_000,
   });
   assert.deepEqual(clock.sleeps, [2_000]);
+});
+
+test("zero Retry-After values fall back to exponential backoff", async () => {
+  for (const retryAfter of [
+    "0",
+    "Thu, 01 Jan 1970 00:00:00 GMT",
+  ]) {
+    const clock = createClock(1_000);
+    let calls = 0;
+    const client = createOsuApiClient({
+      now: clock.now,
+      sleep: clock.sleep,
+      rateLimiters: limiters(),
+      random: () => 0.5,
+      tokenProvider: { async getAccessToken() { return "token"; } },
+      fetchImpl: async () => {
+        calls += 1;
+        return calls === 1
+          ? new Response("", {
+              status: 429,
+              headers: { "Retry-After": retryAfter },
+            })
+          : new Response(JSON.stringify({ ok: true }));
+      },
+    });
+
+    await client.requestJson("/api/v2/test", {
+      rateLimit: "runCritical",
+      deadline: 5_000,
+      perCallTimeoutMs: 1_000,
+    });
+    assert.deepEqual(clock.sleeps, [500]);
+  }
 });
 
 test("v2 client refuses Retry-After and limiter waits beyond the deadline", async () => {
@@ -168,6 +212,43 @@ test("rate limiter queue time is bounded by each caller deadline", async () => {
   releaseBlockedSleep();
   await blocked;
   await limiter.acquire({ deadline: now() + 5_000, now, sleep });
+});
+
+test("a cancelled limiter turn does not consume a slot after its sleep ends", async () => {
+  const limiter = new InProcessRateLimiter(30);
+  await limiter.acquire({
+    deadline: Date.now() + 500,
+    now: Date.now,
+    sleep: async (milliseconds) => {
+      await new Promise((resolve) => setTimeout(resolve, milliseconds));
+    },
+  });
+
+  let releaseSleep: (() => void) | undefined;
+  const cancelled = limiter.acquire({
+    deadline: Date.now() + 50,
+    now: Date.now,
+    sleep: async () => {
+      await new Promise<void>((resolve) => {
+        releaseSleep = resolve;
+      });
+    },
+  });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.ok(releaseSleep);
+  await assert.rejects(cancelled, OsuApiDeadlineError);
+  releaseSleep();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  const waits: number[] = [];
+  await limiter.acquire({
+    deadline: Date.now() + 500,
+    now: Date.now,
+    sleep: async (milliseconds) => {
+      waits.push(milliseconds);
+    },
+  });
+  assert.deepEqual(waits, []);
 });
 
 test("clients created with different clocks do not share implicit limiters", async () => {
@@ -259,4 +340,31 @@ test("v2 client aborts a timed-out request and does not retry permanent 4xx", as
     },
   );
   assert.equal(calls, 1);
+});
+
+test("v2 client timeout covers reading a successful JSON response body", async () => {
+  let aborted = false;
+  const client = createOsuApiClient({
+    rateLimiters: limiters(),
+    random: () => 1,
+    tokenProvider: { async getAccessToken() { return "token"; } },
+    fetchImpl: async (_input, init) => {
+      init?.signal?.addEventListener("abort", () => {
+        aborted = true;
+      });
+      const response = new Response();
+      response.json = async () => new Promise<never>(() => {});
+      return response;
+    },
+  });
+
+  await assert.rejects(
+    client.requestJson("/api/v2/test", {
+      rateLimit: "runCritical",
+      deadline: Date.now() + 50,
+      perCallTimeoutMs: 5,
+    }),
+    OsuApiDeadlineError,
+  );
+  assert.equal(aborted, true);
 });

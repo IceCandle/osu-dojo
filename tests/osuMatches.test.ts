@@ -3,11 +3,13 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import {
-  findLatestCompletedGame,
+  fetchMatchEventWindow,
+  findLatestGame,
   MATCH_EVENT_LIMIT,
   normalizeModernPlayerScore,
   parseMatchEventWindow,
 } from "@/lib/osu/matches";
+import type { OsuApiClient } from "@/lib/osu/client";
 
 function game(id: number, beatmapId: number, scores: unknown[] = []) {
   return {
@@ -45,7 +47,7 @@ test("match parser accepts the pinned public v2 match fixture", () => {
 
 test("match parser defaults omitted zero-valued statistics to zero", () => {
   const parsed = parseMatchEventWindow(
-    window([
+    rawWindow([
       {
         id: 1,
         game: game(2, 259, [
@@ -77,7 +79,7 @@ function score(userId = 42, overrides: Record<string, unknown> = {}) {
   };
 }
 
-function window(
+function rawWindow(
   events: Array<{ id: number; game: unknown | null }>,
   firstEventId = 1,
   latestEventId = events.at(-1)?.id ?? firstEventId,
@@ -89,8 +91,16 @@ function window(
   };
 }
 
-test("match lookup chooses the last completed unprocessed target game", async () => {
-  const result = await findLatestCompletedGame({
+function window(
+  events: Array<{ id: number; game: unknown | null }>,
+  firstEventId = 1,
+  latestEventId = events.at(-1)?.id ?? firstEventId,
+) {
+  return parseMatchEventWindow(rawWindow(events, firstEventId, latestEventId));
+}
+
+test("match lookup chooses the latest unprocessed target game", async () => {
+  const result = await findLatestGame({
     beatmapId: 259,
     processedGameIds: new Set([1]),
     fetchWindow: async () =>
@@ -102,8 +112,31 @@ test("match lookup chooses the last completed unprocessed target game", async ()
   assert.equal(result.game?.id, 2);
 });
 
+test("match transport composes with lookup without reparsing", async () => {
+  const client: OsuApiClient = {
+    async requestJson<T>() {
+      return rawWindow([
+        { id: 1, game: game(2, 259, [score()]) },
+      ]) as T;
+    },
+  };
+
+  const result = await findLatestGame({
+    beatmapId: 259,
+    processedGameIds: new Set(),
+    fetchWindow: (cursor) =>
+      fetchMatchEventWindow(client, 123, {
+        cursor,
+        deadline: Date.now() + 1_000,
+        perCallTimeoutMs: 100,
+      }),
+  });
+
+  assert.equal(result.game?.id, 2);
+});
+
 test("match lookup preserves an in-progress target game", async () => {
-  const result = await findLatestCompletedGame({
+  const result = await findLatestGame({
     beatmapId: 259,
     processedGameIds: new Set(),
     fetchWindow: async () =>
@@ -121,7 +154,7 @@ test("match lookup preserves an in-progress target game", async () => {
 
 test("match parser isolates malformed unrelated events and scores", () => {
   const parsed = parseMatchEventWindow(
-    window([
+    rawWindow([
       { id: 1, game: { id: "bad" } },
       {
         id: 2,
@@ -151,7 +184,7 @@ test("match parser isolates malformed unrelated events and scores", () => {
 
 test("match lookup walks backward until a target several windows in the past", async () => {
   const cursors: Array<number | undefined> = [];
-  const result = await findLatestCompletedGame({
+  const result = await findLatestGame({
     beatmapId: 259,
     processedGameIds: new Set(),
     fetchWindow: async (cursor) => {
@@ -176,7 +209,7 @@ test("match lookup terminates on first event, empty page, and stalled cursor", a
     window([{ id: 1, game: null }], 1, 100),
   ]) {
     let calls = 0;
-    const result = await findLatestCompletedGame({
+    const result = await findLatestGame({
       beatmapId: 259,
       processedGameIds: new Set(),
       fetchWindow: async (cursor) => {
@@ -197,7 +230,7 @@ test("incremental match lookup continues forward while a window is full", async 
     game: null,
   }));
   const afterValues: number[] = [];
-  const result = await findLatestCompletedGame({
+  const result = await findLatestGame({
     beatmapId: 259,
     processedGameIds: new Set(),
     afterEventId: 10,
@@ -213,9 +246,37 @@ test("incremental match lookup continues forward while a window is full", async 
   assert.equal(result.latestEventId, 500);
 });
 
+test("incremental lookup uses raw event count when one event is malformed", async () => {
+  const rawEvents: unknown[] = Array.from(
+    { length: MATCH_EVENT_LIMIT },
+    (_, index) => ({ id: index + 11, game: null }),
+  );
+  rawEvents[50] = null;
+  const afterValues: Array<number | undefined> = [];
+
+  const result = await findLatestGame({
+    beatmapId: 259,
+    processedGameIds: new Set(),
+    afterEventId: 10,
+    fetchWindow: async (cursor) => {
+      afterValues.push(cursor.after);
+      return cursor.after === 10
+        ? parseMatchEventWindow({
+            first_event_id: 1,
+            latest_event_id: 500,
+            events: rawEvents,
+          })
+        : window([{ id: 112, game: game(12, 259, [score()]) }], 1, 500);
+    },
+  });
+
+  assert.equal(result.game?.id, 12);
+  assert.deepEqual(afterValues, [10, 111]);
+});
+
 test("modern score adapter subtracts game mods from player mods", () => {
   const parsed = parseMatchEventWindow(
-    window([{ id: 1, game: game(2, 259, [score()]) }]),
+    rawWindow([{ id: 1, game: game(2, 259, [score()]) }]),
   );
   const parsedGame = parsed.events[0]?.game;
   assert.ok(parsedGame);

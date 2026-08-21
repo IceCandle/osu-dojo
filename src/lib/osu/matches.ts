@@ -1,5 +1,5 @@
 import { calculateAccuracy } from "@/lib/accuracy";
-import { modAcronymsToBitmask } from "@/lib/mods";
+import { convertOsuApiModAcronyms } from "@/lib/mods";
 import type { OsuApiClient } from "@/lib/osu/client";
 
 export const MATCH_EVENT_LIMIT = 101;
@@ -42,6 +42,7 @@ export interface MatchEvent {
 
 export interface MatchEventWindow {
   events: MatchEvent[];
+  rawEventCount: number;
   firstEventId: number;
   latestEventId: number;
   raw: unknown;
@@ -54,6 +55,10 @@ export interface NormalizedPlayerMapScore {
   score: number;
   playerEnabledMods: number;
   globalGameMods: number;
+  unknownModAcronyms?: {
+    global: string[];
+    player: string[];
+  };
   accuracy: number;
   maxCombo: number;
   count300: number;
@@ -65,8 +70,7 @@ export interface NormalizedPlayerMapScore {
 
 export type MatchWindowFetcher = (
   cursor: MatchWindowCursor,
-  signal?: AbortSignal,
-) => Promise<unknown>;
+) => Promise<MatchEventWindow>;
 
 export interface MatchGameLookupResult {
   game: ModernMatchGame | null;
@@ -101,7 +105,7 @@ export async function fetchMatchEventWindow(
   return parseMatchEventWindow(payload);
 }
 
-export async function findLatestCompletedGame(
+export async function findLatestGame(
   options: {
     beatmapId: number;
     processedGameIds: ReadonlySet<number>;
@@ -113,7 +117,7 @@ export async function findLatestCompletedGame(
     return findForward(options, options.afterEventId);
   }
 
-  const latest = parseMatchEventWindow(await options.fetchWindow({}));
+  const latest = await options.fetchWindow({});
   const latestGame = findGameInWindow(
     latest,
     options.beatmapId,
@@ -135,9 +139,7 @@ export async function findLatestCompletedGame(
     before !== previousCursor
   ) {
     previousCursor = before;
-    const window = parseMatchEventWindow(
-      await options.fetchWindow({ before }),
-    );
+    const window = await options.fetchWindow({ before });
     const game = findGameInWindow(
       window,
       options.beatmapId,
@@ -150,7 +152,7 @@ export async function findLatestCompletedGame(
         raw: window.raw,
       };
     }
-    if (window.events.length === 0) {
+    if (window.rawEventCount === 0) {
       break;
     }
     const nextBefore = window.events[0]?.id;
@@ -180,6 +182,8 @@ export function normalizeModernPlayerScore(
   const playerAcronyms = playerScore.mods
     .map((mod) => mod.acronym.toUpperCase())
     .filter((acronym) => !globalSet.has(acronym));
+  const globalMods = convertOsuApiModAcronyms(globalAcronyms);
+  const playerMods = convertOsuApiModAcronyms(playerAcronyms);
   const count300 = playerScore.statistics.great;
   const count100 = playerScore.statistics.ok;
   const count50 = playerScore.statistics.meh;
@@ -190,8 +194,12 @@ export function normalizeModernPlayerScore(
     beatmapId: game.beatmapId,
     userId: playerScore.userId,
     score: playerScore.legacyTotalScore,
-    playerEnabledMods: modAcronymsToBitmask(playerAcronyms),
-    globalGameMods: modAcronymsToBitmask(globalAcronyms),
+    playerEnabledMods: playerMods.bitmask,
+    globalGameMods: globalMods.bitmask,
+    unknownModAcronyms: {
+      global: globalMods.unknownAcronyms,
+      player: playerMods.unknownAcronyms,
+    },
     accuracy: calculateAccuracy({ count300, count100, count50, countMiss }),
     maxCombo: playerScore.maxCombo,
     count300,
@@ -219,6 +227,7 @@ export function parseMatchEventWindow(payload: unknown): MatchEventWindow {
       const event = parseEvent(value);
       return event === null ? [] : [event];
     }),
+    rawEventCount: payload["events"].length,
     firstEventId: payload["first_event_id"],
     latestEventId: payload["latest_event_id"],
     raw: payload,
@@ -238,9 +247,7 @@ async function findForward(
   let raw: unknown = null;
 
   while (true) {
-    const window = parseMatchEventWindow(
-      await options.fetchWindow({ after }),
-    );
+    const window = await options.fetchWindow({ after });
     raw = window.raw;
     const game = findGameInWindow(
       window,
@@ -252,7 +259,7 @@ async function findForward(
       return { game, latestEventId, raw };
     }
     if (
-      window.events.length < MATCH_EVENT_LIMIT ||
+      window.rawEventCount < MATCH_EVENT_LIMIT ||
       window.latestEventId <= after
     ) {
       return { game: null, latestEventId, raw };

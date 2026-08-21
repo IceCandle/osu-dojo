@@ -111,7 +111,7 @@ CourseRun (id, userId, courseId, passed, timestamp, matchId?)
 - ScoreV2 고정 mod map의 score target은 player가 osu!에서 보는 값과 비교할 수 있도록 `raw score >= Y`로 표시합니다. FreeMod map의 pre-map score target은 `adjusted score >= X`로 표시하고, `Raw score by choice`가 허용된 mod 조합별 raw 값을 나열합니다.
 - 마지막 ScoreV2 map에서 bot은 map-level `score` threshold와 course-level `totalScore` remaining을 하나의 effective adjusted target으로 합칩니다. effective 값은 `max(map score threshold, totalScore remaining, 0)`입니다. 고정 mod이면 `Targets:` 안에 `raw score >= N`을 합쳐 표시합니다. FreeMod이면 `Targets:` 안에 `adjusted score >= N`을 표시하고, target이 있을 때만 `Raw score by choice: ...` support line을 추가합니다. map `score` 조건이 있으면 그 위치를 유지하고, 없으면 마지막 segment로 추가합니다. 이미 `Course cannot pass:`를 표시한 run에서는 이후 final-map `totalScore` remaining을 pre-map target에 다시 합치지 않습니다.
 - 각 completed full map 뒤에는 `Course targets:`를 한 줄 표시합니다. Segment는 course condition 순서대로 `courseAccuracy X / Y`, `adjusted total score X / Y` 또는 `total score X / Y`, `totalMissCount X / Y` 형식입니다. Partial play는 해당 map에서 이 줄을 즉시 표시하지 않지만, partial 결과의 score와 miss는 이후 진행도 totals에 포함됩니다.
-- 각 map이 끝나면 pass/fail과 관계없이 휴식 시간 이후 다음 map으로 자동 진행합니다. 기본 휴식 시간은 60초입니다.
+- 각 map이 끝나면 pass/fail과 관계없이 휴식 시간 이후 다음 map으로 자동 진행합니다. 기본 휴식 시간은 30초입니다.
 - run이 더 이상 course를 통과할 수 없음이 확인되면 bot은 `Course cannot pass:` 안내를 한 번만 표시하고 남은 map을 계속 진행합니다. 확인 대상은 `map N threshold failed`, `totalMissCount threshold exceeded`, `courseAccuracy threshold unreachable`입니다. `totalScore`는 증명된 상한 규칙이 없어 위 트리거 목록에서 제외합니다.
 - Human-facing map announcement에서는 score 제출 안정성을 위해 강제로 넣는 `NF`를 숨깁니다. 실제 lobby 설정에는 계속 `!mp mods`로 `NF`를 포함해 보냅니다.
 - 마지막 map 이후 course가 완료됩니다.

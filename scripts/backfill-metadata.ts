@@ -1,8 +1,10 @@
+import process from "node:process";
 import { pathToFileURL } from "node:url";
 import { asc, eq, isNull, or } from "drizzle-orm";
 import { getDatabase, type AppDatabase } from "@/db/client";
 import { beatmapMetadata, beatmaps } from "@/db/schema";
 import { fetchBeatmapMetadataBatch } from "@/lib/osu/beatmaps";
+import { loadRepositoryEnv } from "@/lib/env";
 
 export async function backfillBeatmapMetadata(
   db: AppDatabase,
@@ -73,6 +75,13 @@ export async function backfillBeatmapMetadata(
         target: beatmapMetadata.beatmapId,
         set: values,
       });
+    if (!hasCompleteMetadata(values)) {
+      failures.push({
+        beatmapId,
+        reason: `Metadata remained incomplete for beatmap ${beatmapId}.`,
+      });
+      continue;
+    }
     updated += 1;
   }
 
@@ -80,6 +89,7 @@ export async function backfillBeatmapMetadata(
 }
 
 async function main() {
+  loadRepositoryEnv();
   const db = await getDatabase();
   const result = await backfillBeatmapMetadata(db);
   console.log(
@@ -91,6 +101,24 @@ async function main() {
   if (result.failures.length > 0) {
     process.exitCode = 1;
   }
+}
+
+function hasCompleteMetadata(values: {
+  title: string;
+  artist: string;
+  difficultyName: string;
+  mapper: string;
+  coverUrl: string;
+  totalObjects: number | null;
+}) {
+  return (
+    values.title.trim() !== "" &&
+    values.artist.trim() !== "" &&
+    values.difficultyName.trim() !== "" &&
+    values.mapper.trim() !== "" &&
+    values.coverUrl.trim() !== "" &&
+    values.totalObjects !== null
+  );
 }
 
 if (

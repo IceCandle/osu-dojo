@@ -117,3 +117,54 @@ test("token provider classifies endpoint failures", async () => {
     return true;
   });
 });
+
+test("token fetch timeout clears in-flight state for the next attempt", async () => {
+  let calls = 0;
+  const provider = createOsuTokenProvider({
+    clientId: "1",
+    clientSecret: "secret",
+    requestTimeoutMs: 5,
+    fetchImpl: async (_input, init) => {
+      calls += 1;
+      if (calls === 1) {
+        return new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () => {
+            reject(new DOMException("Aborted", "AbortError"));
+          });
+        });
+      }
+      return tokenResponse("recovered");
+    },
+  });
+
+  await assert.rejects(provider.getAccessToken(), (error) => {
+    assert.ok(error instanceof OsuTokenError);
+    assert.equal(error.retryable, true);
+    assert.match(error.message, /timed out/i);
+    return true;
+  });
+  assert.equal(await provider.getAccessToken(), "recovered");
+  assert.equal(calls, 2);
+});
+
+test("token timeout also bounds reading the JSON response body", async () => {
+  let calls = 0;
+  const provider = createOsuTokenProvider({
+    clientId: "1",
+    clientSecret: "secret",
+    requestTimeoutMs: 5,
+    fetchImpl: async () => {
+      calls += 1;
+      if (calls === 1) {
+        const response = new Response();
+        response.json = async () => new Promise<never>(() => {});
+        return response;
+      }
+      return tokenResponse("after-body-timeout");
+    },
+  });
+
+  await assert.rejects(provider.getAccessToken(), OsuTokenError);
+  assert.equal(await provider.getAccessToken(), "after-body-timeout");
+  assert.equal(calls, 2);
+});

@@ -105,6 +105,8 @@ object count 같은 값은 빈 상태로 시작할 수 있습니다. OAuth 환�
 pnpm metadata:backfill
 ```
 
+이 명령은 저장소 루트의 `.env`를 읽으며, shell에 이미 설정된 값은 덮어쓰지 않습니다.
+
 일부 beatmap을 가져오지 못하면 성공한 값은 저장하고 명령은 실패 상태로 끝납니다.
 실패한 beatmap ID와 이유를 확인한 뒤 다시 실행할 수 있습니다.
 

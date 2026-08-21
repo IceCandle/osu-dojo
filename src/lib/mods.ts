@@ -125,6 +125,8 @@ const OSU_API_ACRONYM_ALIASES: Readonly<Record<string, string>> = {
   "9K": "K9",
 };
 
+const LEGACY_EQUIVALENT_ZERO_BIT_MODS = new Set(["CL"]);
+
 export const FREEMOD_PLAYER_ALLOWED: ReadonlySet<string> = new Set(["HD", "HR"]);
 
 export function normalizeCourseMods(mods: string): string {
@@ -232,13 +234,28 @@ export function parseModBitmask(value: number | null | undefined): string[] {
 }
 
 export function modAcronymsToBitmask(acronyms: readonly string[]): number {
-  let bitmask = 0;
+  return convertOsuApiModAcronyms(acronyms).bitmask;
+}
 
-  for (const rawAcronym of new Set(acronyms)) {
-    const wireAcronym = rawAcronym.toUpperCase();
+export function convertOsuApiModAcronyms(acronyms: readonly string[]): {
+  bitmask: number;
+  unknownAcronyms: string[];
+} {
+  let bitmask = 0;
+  const unknownAcronyms: string[] = [];
+
+  const wireAcronyms = new Set(
+    acronyms.map((rawAcronym) => rawAcronym.toUpperCase()),
+  );
+
+  for (const wireAcronym of wireAcronyms) {
     const acronym = OSU_API_ACRONYM_ALIASES[wireAcronym] ?? wireAcronym;
     const bit = MOD_BITS_BY_ACRONYM.get(acronym);
     if (bit === undefined) {
+      if (LEGACY_EQUIVALENT_ZERO_BIT_MODS.has(acronym)) {
+        continue;
+      }
+      unknownAcronyms.push(wireAcronym);
       continue;
     }
     bitmask |= bit;
@@ -250,7 +267,7 @@ export function modAcronymsToBitmask(acronyms: readonly string[]): number {
     }
   }
 
-  return bitmask;
+  return { bitmask, unknownAcronyms };
 }
 
 export function validateFreemodPlayerSelection(

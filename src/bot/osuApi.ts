@@ -1,6 +1,6 @@
 import { sleep as defaultSleep } from "@/lib/sleep";
 import {
-  findLatestCompletedGame,
+  findLatestGame,
   normalizeModernPlayerScore,
   type MatchWindowFetcher,
   type NormalizedPlayerMapScore,
@@ -9,6 +9,7 @@ import {
   FetchTransportError,
   OsuApiDeadlineError,
 } from "@/lib/osu/client";
+import { OsuTokenError } from "@/lib/osu/token";
 
 export type { NormalizedPlayerMapScore } from "@/lib/osu/matches";
 export { FetchTransportError } from "@/lib/osu/client";
@@ -18,7 +19,6 @@ export interface FetchScoreOptions {
   userId: number;
   processedGameIds: Set<number>;
   deadlineDurationMs: number;
-  perCallTimeoutMs: number;
   retryDelayMs: number;
   retryDelayMinMs?: number;
   retryBackoffFactor?: number;
@@ -93,6 +93,11 @@ export async function fetchLatestPlayerMapScore(
   const retryBackoffFactor = options.retryBackoffFactor ?? 2;
   const retryDelayMaxMs = options.retryDelayMaxMs ?? 8_000;
   const retryDelayMinMs = options.retryDelayMinMs ?? 1_000;
+  if (retryDelayMaxMs < retryDelayMinMs) {
+    throw new RangeError(
+      "retryDelayMaxMs must be greater than or equal to retryDelayMinMs.",
+    );
+  }
   let attempts = 0;
   let afterEventId: number | undefined;
   let lastUnderlyingError: Error | null = null;
@@ -112,7 +117,7 @@ export async function fetchLatestPlayerMapScore(
         fetchWindow: options.fetchMatchWindow,
         ...(afterEventId === undefined ? {} : { afterEventId }),
       };
-      const result = await findLatestCompletedGame(lookupOptions);
+      const result = await findLatestGame(lookupOptions);
 
       if (result.game) {
         const playerScore = result.game.scores.find(
@@ -130,7 +135,10 @@ export async function fetchLatestPlayerMapScore(
         sawNoGame = true;
       }
     } catch (error) {
-      if (error instanceof FetchTransportError && !error.retryable) {
+      if (
+        (error instanceof FetchTransportError && !error.retryable) ||
+        (error instanceof OsuTokenError && !error.retryable)
+      ) {
         throw error;
       }
       if (error instanceof OsuApiDeadlineError) {

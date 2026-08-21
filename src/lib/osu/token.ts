@@ -1,5 +1,6 @@
 const TOKEN_URL = "https://osu.ppy.sh/oauth/token";
 const DEFAULT_REFRESH_SKEW_MS = 60_000;
+const DEFAULT_REQUEST_TIMEOUT_MS = 10_000;
 
 export interface OsuAccessTokenProvider {
   getAccessToken(options?: { forceRefresh?: boolean }): Promise<string>;
@@ -28,6 +29,7 @@ export interface CreateOsuTokenProviderOptions {
   fetchImpl?: typeof fetch;
   now?: () => number;
   refreshSkewMs?: number;
+  requestTimeoutMs?: number;
   tokenUrl?: string;
 }
 
@@ -37,6 +39,7 @@ export function createOsuTokenProvider(
   const fetchImpl = options.fetchImpl ?? fetch;
   const now = options.now ?? Date.now;
   const refreshSkewMs = options.refreshSkewMs ?? DEFAULT_REFRESH_SKEW_MS;
+  const requestTimeoutMs = options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
   const tokenUrl = options.tokenUrl ?? TOKEN_URL;
   let cachedToken: CachedToken | undefined;
   let inFlight: Promise<string> | undefined;
@@ -96,6 +99,7 @@ export function createOsuTokenProvider(
       clientSecret: options.clientSecret,
       fetchImpl,
       now,
+      requestTimeoutMs,
       tokenUrl,
     }).then((token) => {
       cachedToken = token;
@@ -128,41 +132,82 @@ async function requestToken(options: {
   clientSecret: string;
   fetchImpl: typeof fetch;
   now: () => number;
+  requestTimeoutMs: number;
   tokenUrl: string;
 }): Promise<CachedToken> {
+  const timeoutMs = Math.max(0, options.requestTimeoutMs);
+  const controller = new AbortController();
+  const timeoutError = () =>
+    new OsuTokenError(
+      `osu! token request timed out after ${timeoutMs}ms.`,
+      { retryable: true },
+    );
+  let timeout: ReturnType<typeof setTimeout> | undefined;
   let response: Response;
+  let payload: unknown;
 
   try {
-    response = await options.fetchImpl(options.tokenUrl, {
-      method: "POST",
-      headers: {
-        Accept: "application/json",
-        "Content-Type": "application/x-www-form-urlencoded",
-      },
-      body: new URLSearchParams({
-        client_id: options.clientId,
-        client_secret: options.clientSecret,
-        grant_type: "client_credentials",
-        scope: "public",
+    const operation = (async () => {
+      let tokenResponse: Response;
+      try {
+        tokenResponse = await options.fetchImpl(options.tokenUrl, {
+          method: "POST",
+          headers: {
+            Accept: "application/json",
+            "Content-Type": "application/x-www-form-urlencoded",
+          },
+          body: new URLSearchParams({
+            client_id: options.clientId,
+            client_secret: options.clientSecret,
+            grant_type: "client_credentials",
+            scope: "public",
+          }),
+          signal: controller.signal,
+        });
+      } catch (error) {
+        if (controller.signal.aborted) {
+          throw timeoutError();
+        }
+        throw new OsuTokenError(toErrorMessage(error), { retryable: true });
+      }
+
+      if (!tokenResponse.ok) {
+        return { response: tokenResponse };
+      }
+
+      try {
+        return { response: tokenResponse, payload: await tokenResponse.json() };
+      } catch (error) {
+        if (controller.signal.aborted) {
+          throw timeoutError();
+        }
+        throw new OsuTokenError("osu! token endpoint returned malformed JSON.", {
+          retryable: false,
+          status: tokenResponse.status,
+        });
+      }
+    })();
+
+    const result = await Promise.race([
+      operation,
+      new Promise<never>((_resolve, reject) => {
+        timeout = setTimeout(() => {
+          controller.abort();
+          reject(timeoutError());
+        }, timeoutMs);
       }),
-    });
-  } catch (error) {
-    throw new OsuTokenError(toErrorMessage(error), { retryable: true });
+    ]);
+    response = result.response;
+    payload = result.payload;
+  } finally {
+    if (timeout !== undefined) {
+      clearTimeout(timeout);
+    }
   }
 
   if (!response.ok) {
     throw new OsuTokenError(`osu! token endpoint returned HTTP ${response.status}.`, {
       retryable: response.status === 429 || response.status >= 500,
-      status: response.status,
-    });
-  }
-
-  let payload: unknown;
-  try {
-    payload = await response.json();
-  } catch {
-    throw new OsuTokenError("osu! token endpoint returned malformed JSON.", {
-      retryable: false,
       status: response.status,
     });
   }

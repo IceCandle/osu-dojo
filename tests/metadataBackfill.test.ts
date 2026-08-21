@@ -87,3 +87,61 @@ test("metadata backfill updates only incomplete rows through the batch boundary"
     sqlite.close();
   }
 });
+
+test("metadata backfill reports rows that remain incomplete after a partial update", async () => {
+  const { db, sqlite } = await createTestDatabase(":memory:");
+
+  try {
+    sqlite.exec(
+      `UPDATE beatmap_metadata
+       SET title = 'Existing title', artist = 'Existing artist',
+           difficulty_name = 'Existing difficulty', mapper = 'Existing mapper',
+           cover_url = 'https://example.test/existing.jpg', total_objects = 1`,
+    );
+    const target = sqlite
+      .prepare(
+        "SELECT beatmap_id AS beatmapId FROM beatmap_metadata ORDER BY beatmap_id LIMIT 1",
+      )
+      .get() as { beatmapId: number };
+    sqlite
+      .prepare(
+        `UPDATE beatmap_metadata
+         SET title = '', artist = '', difficulty_name = '', mapper = '',
+             cover_url = '', total_objects = NULL
+         WHERE beatmap_id = ?`,
+      )
+      .run(target.beatmapId);
+
+    const result = await backfillBeatmapMetadata(db, {
+      fetchBatch: async () =>
+        new Map([
+          [
+            target.beatmapId,
+            {
+              ok: true as const,
+              data: { metadata: null, totalObjects: 500 },
+            },
+          ],
+        ]),
+    });
+
+    assert.equal(result.requested, 1);
+    assert.equal(result.updated, 0);
+    assert.deepEqual(result.failures, [
+      {
+        beatmapId: target.beatmapId,
+        reason: `Metadata remained incomplete for beatmap ${target.beatmapId}.`,
+      },
+    ]);
+    assert.equal(
+      (sqlite
+        .prepare(
+          "SELECT total_objects AS totalObjects FROM beatmap_metadata WHERE beatmap_id = ?",
+        )
+        .get(target.beatmapId) as { totalObjects: number }).totalObjects,
+      500,
+    );
+  } finally {
+    sqlite.close();
+  }
+});

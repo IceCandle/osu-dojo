@@ -65,7 +65,9 @@ issue 또는 task마다 변경 범위가 분명하게 나뉜 commit을 만듭니
 
 별도 branch는 선택 사항입니다. 작업을 곧바로 commit할 때는 branch를 따로 만들지 않아도 됩니다. PR을 열 때는 PR용 작업 branch가 필요합니다. branch를 쓸 때는 `bot/abort-reasons`, `web/dan-search`, `docs/course-edit-policy`처럼 짧고 설명이 되는 이름을 권장합니다.
 
-한 PR에 여러 issue를 담을 수 있습니다. 여러 issue를 담을 때는 서로 의존하거나 하나의 결과로 함께 검토할 수 있어야 합니다. PR 설명에는 issue별 변경 내용과 검증 결과를 구분해서 적습니다. 
+한 PR에 여러 issue를 담을 수 있습니다. 여러 issue를 담을 때는 서로 의존하거나 하나의 결과로 함께 검토할 수 있어야 합니다. PR 설명에는 issue별 변경 내용과 검증 결과를 구분해서 적습니다.
+
+area는 issue label로 표시하고 PR 본문에는 별도 area 항목을 적지 않습니다.
 
 `pnpm typecheck && pnpm build && pnpm test`와 필요한 수동 확인은 branch나 PR 유무와 관계없이 각 issue 또는 task에 적용합니다.
 

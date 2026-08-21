@@ -6,8 +6,8 @@ import {
 } from "@/lib/osu/token";
 
 // When this pin changes, review every api_version() gate in osu-web for the
-// endpoints below. The currently relevant 20220705 gate only changes fields
-// outside the match, beatmap, and user fields consumed by this application.
+// endpoints below. This pin intentionally includes the 20220705 gate that
+// exposes the modern Score shape consumed by the match parser.
 export const OSU_API_RESPONSE_VERSION = 20260724;
 
 export type OsuRateLimit = "runCritical" | "metadata";
@@ -80,6 +80,9 @@ export class InProcessRateLimiter {
       if (waitMs > 0) {
         await options.sleep(waitMs);
       }
+      if (cancelled) {
+        return;
+      }
       this.nextAvailableAt = options.now() + this.intervalMs;
     });
     this.queue = turn.catch(() => {});
@@ -150,14 +153,14 @@ export function createOsuApiClient(
         });
 
         let response: Response;
+        let payload: unknown;
         try {
+          const headers = new Headers(requestOptions.headers);
+          headers.set("Accept", "application/json");
+          headers.set("Authorization", `Bearer ${accessToken}`);
+          headers.set("x-api-version", String(OSU_API_RESPONSE_VERSION));
           const init: RequestInit = {
-            headers: {
-              Accept: "application/json",
-              Authorization: `Bearer ${accessToken}`,
-              "x-api-version": String(OSU_API_RESPONSE_VERSION),
-              ...requestOptions.headers,
-            },
+            headers,
             ...(requestOptions.method === undefined
               ? {}
               : { method: requestOptions.method }),
@@ -165,7 +168,7 @@ export function createOsuApiClient(
               ? {}
               : { body: requestOptions.body }),
           };
-          response = await fetchWithTimeout(
+          const result = await fetchWithTimeout(
             new URL(path, baseUrl),
             init,
             {
@@ -175,6 +178,8 @@ export function createOsuApiClient(
               now,
             },
           );
+          response = result.response;
+          payload = result.payload;
         } catch (error) {
           if (error instanceof OsuApiDeadlineError) {
             throw error;
@@ -230,11 +235,7 @@ export function createOsuApiClient(
           continue;
         }
 
-        try {
-          return (await response.json()) as T;
-        } catch {
-          throw new FetchTransportError("osu! API returned malformed JSON.", false);
-        }
+        return payload as T;
       }
 
       throw new OsuApiDeadlineError();
@@ -258,27 +259,65 @@ async function fetchWithTimeout(
     fetchImpl: typeof fetch;
     now: () => number;
   },
-) {
+): Promise<{ response: Response; payload?: unknown }> {
   const remainingMs = options.deadline - options.now();
   if (remainingMs <= 0) {
     throw new OsuApiDeadlineError();
   }
   const timeoutMs = Math.max(0, Math.min(options.timeoutMs, remainingMs));
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  const timeoutError = () =>
+    new FetchTransportError(
+      `osu! API request timed out after ${timeoutMs}ms.`,
+      true,
+    );
+  let timeout: ReturnType<typeof setTimeout> | undefined;
 
   try {
-    return await options.fetchImpl(input, { ...init, signal: controller.signal });
-  } catch (error) {
-    if (controller.signal.aborted) {
-      throw new FetchTransportError(
-        `osu! API request timed out after ${timeoutMs}ms.`,
-        true,
-      );
-    }
-    throw new FetchTransportError(toErrorMessage(error), true);
+    const operation = (async () => {
+      let response: Response;
+      try {
+        response = await options.fetchImpl(input, {
+          ...init,
+          signal: controller.signal,
+        });
+      } catch (error) {
+        if (controller.signal.aborted) {
+          throw timeoutError();
+        }
+        throw new FetchTransportError(toErrorMessage(error), true);
+      }
+
+      if (!response.ok) {
+        return { response };
+      }
+
+      try {
+        return { response, payload: await response.json() };
+      } catch (error) {
+        if (controller.signal.aborted) {
+          throw timeoutError();
+        }
+        throw new FetchTransportError(
+          "osu! API returned malformed JSON.",
+          false,
+        );
+      }
+    })();
+
+    return await Promise.race([
+      operation,
+      new Promise<never>((_resolve, reject) => {
+        timeout = setTimeout(() => {
+          controller.abort();
+          reject(timeoutError());
+        }, timeoutMs);
+      }),
+    ]);
   } finally {
-    clearTimeout(timeout);
+    if (timeout !== undefined) {
+      clearTimeout(timeout);
+    }
   }
 }
 
@@ -295,7 +334,11 @@ async function waitForRetry(options: {
     1_000 * 2 ** Math.max(0, options.attempt - 1),
   );
   const jitter = Math.max(0, Math.min(1, options.random()));
-  const waitMs = options.retryAfterMs ?? Math.floor(exponentialCap * jitter);
+  const exponentialWaitMs = Math.floor(exponentialCap * jitter);
+  const waitMs =
+    options.retryAfterMs !== undefined && options.retryAfterMs > 0
+      ? options.retryAfterMs
+      : exponentialWaitMs;
   assertWaitFitsDeadline(waitMs, options.deadline, options.now);
   if (waitMs > 0) {
     await options.sleep(waitMs);

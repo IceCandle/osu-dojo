@@ -41,7 +41,6 @@ export interface FetchBeatmapsOptions {
   perCallTimeoutMs?: number;
   rateLimit?: OsuRateLimit;
   now?: () => number;
-  throwOnRequestError?: boolean;
 }
 
 export async function fetchBeatmapMetadataBatch(
@@ -74,9 +73,6 @@ export async function fetchBeatmapMetadataBatch(
         },
       );
     } catch (error) {
-      if (options.throwOnRequestError) {
-        throw error;
-      }
       const reason = error instanceof Error ? error.message : String(error);
       for (const beatmapId of chunk) {
         results.set(beatmapId, { ok: false, reason });
