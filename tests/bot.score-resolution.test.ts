@@ -75,7 +75,7 @@ test("bot aborts with score-not-yet-published when confirmed-finish score resolu
       reason?: string;
     }> = [];
     const fetchCalls: Array<{
-      totalBudgetMs: number;
+      deadlineDurationMs: number;
       perCallTimeoutMs: number;
       retryDelayMs: number;
     }> = [];
@@ -86,7 +86,7 @@ test("bot aborts with score-not-yet-published when confirmed-finish score resolu
       connectOnStart: false,
       fetchScore: async (options) => {
         fetchCalls.push({
-          totalBudgetMs: options.totalBudgetMs,
+          deadlineDurationMs: options.deadlineDurationMs,
           perCallTimeoutMs: options.perCallTimeoutMs,
           retryDelayMs: options.retryDelayMs,
         });
@@ -118,7 +118,7 @@ test("bot aborts with score-not-yet-published when confirmed-finish score resolu
     await flushAsyncWork(6);
 
     assert.deepEqual(fetchCalls, [
-      { totalBudgetMs: 45_000, perCallTimeoutMs: 4_000, retryDelayMs: 2_500 },
+      { deadlineDurationMs: 45_000, perCallTimeoutMs: 4_000, retryDelayMs: 2_500 },
     ]);
     assert.match(
       latestMeaningfulLobbyMessage(client.lobby),
@@ -469,4 +469,3 @@ test("bot treats API timeout without confirmed finish as an interrupted run", as
     temp.cleanup();
   }
 });
-

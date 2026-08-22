@@ -1,9 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  convertOsuApiModAcronyms,
   formatModsCanonical,
   formatVisibleCourseMods,
   formatVisibleCourseModTokens,
+  modAcronymsToBitmask,
   parseModBitmask,
   validateFreemodPlayerSelection,
 } from "@/lib/mods";
@@ -23,6 +25,19 @@ test("parseModBitmask maps known bits to canonical tokens", () => {
 
 test("parseModBitmask surfaces future unknown bits", () => {
   assert.deepEqual(parseModBitmask(2147483648), ["UNKNOWN:2147483648"]);
+});
+
+test("modAcronymsToBitmask preserves legacy implied bits", () => {
+  assert.equal(modAcronymsToBitmask(["HD", "HR"]), 24);
+  assert.equal(modAcronymsToBitmask(["NC"]), 576);
+  assert.equal(modAcronymsToBitmask(["PF"]), 16416);
+  assert.equal(modAcronymsToBitmask(["RD", "CN", "4K"]), 6324224);
+  assert.equal(modAcronymsToBitmask(["CL"]), 0);
+  assert.equal(modAcronymsToBitmask(["FUTURE"]), 0);
+  assert.deepEqual(convertOsuApiModAcronyms(["HD", "FUTURE"]), {
+    bitmask: 8,
+    unknownAcronyms: ["FUTURE"],
+  });
 });
 
 test("formatModsCanonical sorts and dedupes atomic tokens", () => {

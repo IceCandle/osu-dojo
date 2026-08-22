@@ -7,7 +7,7 @@
 - Bot: `src/bot/`, 멀티플레이어 생명주기, 점수 수집, timeout, 실제 연결 확인 스크립트. GitHub label: `area:bot`
 - Web: `src/app/`, 라우트 렌더링, 카탈로그 페이지, 리더보드 표시, 브라우저 동작 확인. GitHub label: `area:web`
 - DB: `src/db/`, `data/courses/`, course loader, seed 동작, course data 유효성 검사, 결과 저장. GitHub label: `area:db`
-- Docs: `docs/product-contract.md`, `README.md`, `docs/onboarding.md`, `docs/course-authoring.md`, `docs/roadmap.md`, `.github/pull_request_template.md`, `.github/ISSUE_TEMPLATE/`, `.github/workflows/`. GitHub label: `documentation`
+- Docs: `docs/product-contract.md`, `README.md`, `docs/onboarding.md`, `docs/course-authoring.md`, `docs/osu-api-policy.md`, `docs/roadmap.md`, `.github/pull_request_template.md`, `.github/ISSUE_TEMPLATE/`, `.github/workflows/`. GitHub label: `documentation`
 
 `src/lib/accuracy.ts`, `src/lib/judging.ts` 같은 판정 로직은 별도 area가 아니라 shared logic입니다. 판정 변경은 PR description의 What Changed와 verifier에 명확히 적고, issue가 있으면 title에 `[Judgment]`를 씁니다.
 
@@ -65,7 +65,9 @@ issue 또는 task마다 변경 범위가 분명하게 나뉜 commit을 만듭니
 
 별도 branch는 선택 사항입니다. 작업을 곧바로 commit할 때는 branch를 따로 만들지 않아도 됩니다. PR을 열 때는 PR용 작업 branch가 필요합니다. branch를 쓸 때는 `bot/abort-reasons`, `web/dan-search`, `docs/course-edit-policy`처럼 짧고 설명이 되는 이름을 권장합니다.
 
-한 PR에 여러 issue를 담을 수 있습니다. 여러 issue를 담을 때는 서로 의존하거나 하나의 결과로 함께 검토할 수 있어야 합니다. PR 설명에는 issue별 변경 내용과 검증 결과를 구분해서 적습니다. 
+한 PR에 여러 issue를 담을 수 있습니다. 여러 issue를 담을 때는 서로 의존하거나 하나의 결과로 함께 검토할 수 있어야 합니다. PR 설명에는 issue별 변경 내용과 검증 결과를 구분해서 적습니다.
+
+area는 issue label로 표시하고 PR 본문에는 별도 area 항목을 적지 않습니다.
 
 `pnpm typecheck && pnpm build && pnpm test`와 필요한 수동 확인은 branch나 PR 유무와 관계없이 각 issue 또는 task에 적용합니다.
 

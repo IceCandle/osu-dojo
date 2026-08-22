@@ -29,7 +29,7 @@ osu!dojo의 주 기능은 자동으로 진행되는 단위인정 로비 flow입�
 
 ## Phase 4: Product Expansion
 
-- API/lazer 기반 확장 가능성 조사
+- API v2 이전 뒤 lazer가 현재 Bancho course를 완주할 수 있는지 확인하고, 필요할 때만 native multiplayer driver 검토
 - Catalog discovery와 운영 도구 확장
 - Proof semantics가 정리된 뒤 public sharing surface 검토
 - Auth, ownership, moderation이 정리된 뒤 user-generated course flow 검토

@@ -6,7 +6,8 @@
 
 - Node.js 20+
 - pnpm 10.6+
-- osu! legacy API key와 IRC credential for live bot checks
+- live bot 확인에 쓸 osu! IRC 계정 정보
+- live bot과 실제 로그인에 쓸 osu! OAuth application
 
 ## Local Run
 
@@ -27,7 +28,6 @@
    ```env
    OSU_IRC_USERNAME=
    OSU_IRC_PASSWORD=
-   OSU_API_KEY=
    DATABASE_URL=file:./dojo.db
    DOJO_SITE_URL=http://localhost:3000
    SESSION_SECRET=
@@ -39,7 +39,8 @@
    경로나 query가 없는 현재 사이트 origin입니다. osu! account settings에서 OAuth
    application을 만들고 callback URL을
    `http://localhost:3000/api/auth/osu/callback`으로 정확히 등록한 뒤 client ID와
-   secret을 입력합니다.
+   secret을 입력합니다. 같은 client ID와 secret을 bot의 공개 데이터 조회에도
+   사용합니다.
 
 4. Run checks and site.
 
@@ -64,7 +65,8 @@
 웹 서버는 시작할 때 인증 환경 변수를 검사합니다. Next.js 14의
 `instrumentation.ts`와 `experimental.instrumentationHook`을 사용하므로 잘못된 값이
 있으면 첫 인증 요청까지 기다리지 않고 서버 시작이 실패합니다. Bot 실행에는 이 웹
-인증 환경 변수가 필요하지 않습니다.
+인증 환경 변수 중 `DOJO_SITE_URL`과 `SESSION_SECRET`은 필요하지 않지만,
+`OSU_OAUTH_CLIENT_ID`와 `OSU_OAUTH_CLIENT_SECRET`은 필요합니다.
 
 ### 로컬 dummy 로그인
 
@@ -93,6 +95,21 @@ dummy mode에서도 `SESSION_SECRET`은 UTF-8 기준 32 byte 이상이어야 합
 
 `pnpm bot:dev test 1st`는 본인 계정으로 Bancho에 연결해서 `!dojo start test 1st`를 주입한 뒤 `!dojo` 명령을 직접 입력할 수 있는 REPL을 엽니다. `pnpm bot:dev`처럼 인자 없이 실행하면 시작 명령 주입 없이 REPL만 엽니다. 오프라인 테스트가 아니며, 방이 생성되면 터미널에 멀티방 링크가 출력됩니다.
 
+## Beatmap metadata 채우기
+
+DB 시작과 seed는 외부 API를 호출하지 않습니다. 코스 파일과 DB에 없는 제목, mapper,
+object count 같은 값은 빈 상태로 시작할 수 있습니다. OAuth 환경 변수를 채운 뒤 아래
+명령을 별도로 실행하면 부족한 값만 osu! API v2에서 받아 저장합니다.
+
+```bash
+pnpm metadata:backfill
+```
+
+이 명령은 저장소 루트의 `.env`를 읽으며, shell에 이미 설정된 값은 덮어쓰지 않습니다.
+
+일부 beatmap을 가져오지 못하면 성공한 값은 저장하고 명령은 실패 상태로 끝납니다.
+실패한 beatmap ID와 이유를 확인한 뒤 다시 실행할 수 있습니다.
+
 ## 주요 위치
 
 - 웹사이트: `src/app/`
@@ -101,6 +118,7 @@ dummy mode에서도 `SESSION_SECRET`은 UTF-8 기준 32 byte 이상이어야 합
 - 코스 데이터: `data/courses/`
 - 코스 작성 가이드: `docs/course-authoring.md`
 - 도메인과 판정 로직: `src/lib/`
+- osu! API 호출 정책: `docs/osu-api-policy.md`
 
 ## Next Docs
 

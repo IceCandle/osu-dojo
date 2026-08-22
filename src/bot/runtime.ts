@@ -1,7 +1,5 @@
 import { EventEmitter } from "node:events";
-import { existsSync, readFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
-import { loadEnvFile } from "node:process";
 import {
   BanchoClient,
   BanchoLobbyPlayerStates,
@@ -27,13 +25,16 @@ import {
 } from "@/bot/runRegistry";
 import {
   type FetchScoreOptions,
-  fetchMatchText,
   fetchLatestPlayerMapScore,
   NoGameInApiError,
   NoPlayerScoreInGameError,
   type NormalizedPlayerMapScore,
   ScoreApiTimeoutError,
 } from "@/bot/osuApi";
+import {
+  attachBanchoOsuApiAdapter,
+  createBanchoOsuApiAdapter,
+} from "@/bot/banchoOsuApiAdapter";
 import { totalHitObjects } from "@/lib/accuracy";
 import {
   assessCoursePassability,
@@ -61,16 +62,18 @@ import { computeAdjustedScore, rawTargetForAdjustedRemaining } from "@/lib/score
 import { systemCapabilities } from "@/lib/domain";
 import type { CourseDefinition, DanSystemDefinition, JudgedMapResult } from "@/lib/domain";
 import { sleep as defaultSleep } from "@/lib/sleep";
+import { loadRepositoryEnv } from "@/lib/env";
+import {
+  fetchMatchEventWindow,
+} from "@/lib/osu/matches";
+import {
+  getDefaultOsuApiClient,
+  type OsuApiClient,
+} from "@/lib/osu/client";
 
 export type { ActiveRun } from "@/bot/runRegistry";
 
-if (existsSync(".env")) {
-  if (typeof loadEnvFile === "function") {
-    loadEnvFile();
-  } else {
-    loadEnvFallback(".env");
-  }
-}
+loadRepositoryEnv();
 
 export interface BotUserLike {
   id?: number;
@@ -149,7 +152,10 @@ interface PlayerIdentity {
 }
 
 type FetchScore = (
-  options: Omit<FetchScoreOptions, "fetchMatch"> & { lobbyId: number },
+  options: Omit<FetchScoreOptions, "fetchMatchWindow"> & {
+    lobbyId: number;
+    perCallTimeoutMs: number;
+  },
 ) => Promise<NormalizedPlayerMapScore>;
 
 export interface CreateDojoBotOptions {
@@ -191,14 +197,14 @@ export type RunEndedEvent =
       reason: RunEndedReason;
     };
 
-const DEFAULT_REST_DURATION_MS = 60_000;
+const DEFAULT_REST_DURATION_MS = 30_000;
 const DEFAULT_FIRST_MAP_COUNTDOWN_SECONDS = 120;
 const DEFAULT_INACTIVITY_TIMEOUT_MS = 20 * 60 * 1000;
 const DEFAULT_FINAL_GRACE_PERIOD_MS = 60_000;
-const STANDARD_SCORE_FETCH_TOTAL_BUDGET_MS = 4_000;
+const STANDARD_SCORE_FETCH_DEADLINE_MS = 10_000;
 const STANDARD_SCORE_FETCH_CALL_TIMEOUT_MS = 3_000;
 const STANDARD_SCORE_FETCH_RETRY_DELAY_MS = 1_000;
-const CONFIRMED_FINISH_SCORE_FETCH_TOTAL_BUDGET_MS = 45_000;
+const CONFIRMED_FINISH_SCORE_FETCH_DEADLINE_MS = 45_000;
 const CONFIRMED_FINISH_SCORE_FETCH_CALL_TIMEOUT_MS = 4_000;
 const CONFIRMED_FINISH_SCORE_FETCH_RETRY_DELAY_MS = 2_500;
 const PARTIAL_PLAY_REFETCH_DELAY_MS = 2_500;
@@ -228,44 +234,47 @@ class SetupAbortedError extends Error {
   }
 }
 
-export function createLiveBanchoClient() {
-  return new BanchoClient({
-    username: requiredEnv("OSU_IRC_USERNAME"),
-    password: requiredEnv("OSU_IRC_PASSWORD"),
-    apiKey: requiredEnv("OSU_API_KEY"),
-  });
-}
-
 export function createLiveBotDependencies(): {
   client: BanchoClient;
   fetchScore: FetchScore;
 } {
-  const apiKey = requiredEnv("OSU_API_KEY");
   const client = new BanchoClient({
     username: requiredEnv("OSU_IRC_USERNAME"),
     password: requiredEnv("OSU_IRC_PASSWORD"),
-    apiKey,
   });
+  const apiClient = getDefaultOsuApiClient();
+  attachBanchoOsuApiAdapter(
+    client,
+    createBanchoOsuApiAdapter({ client: apiClient }),
+  );
 
   return {
     client,
-    fetchScore: createLiveFetchScore(apiKey),
+    fetchScore: createLiveFetchScore(apiClient),
   };
 }
 
-function createLiveFetchScore(apiKey: string): FetchScore {
-  return (options) =>
-    fetchLatestPlayerMapScore({
+function createLiveFetchScore(client: OsuApiClient): FetchScore {
+  return (options) => {
+    const now = options.now ?? Date.now;
+    const deadline = now() + options.deadlineDurationMs;
+    return fetchLatestPlayerMapScore({
       ...options,
-      fetchMatch: (signal) => fetchMatchText(apiKey, options.lobbyId, signal),
+      fetchMatchWindow: (cursor) =>
+        fetchMatchEventWindow(client, options.lobbyId, {
+          cursor,
+          deadline,
+          perCallTimeoutMs: options.perCallTimeoutMs,
+        }),
     });
+  };
 }
 
 function createLazyLiveFetchScore(): FetchScore {
   let fetchScore: FetchScore | undefined;
 
   return (options) => {
-    fetchScore ??= createLiveFetchScore(requiredEnv("OSU_API_KEY"));
+    fetchScore ??= createLiveFetchScore(getDefaultOsuApiClient());
     return fetchScore(options);
   };
 }
@@ -327,7 +336,7 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
     }
 
     logger.warn(
-      "dojo unknown mod bitmask token",
+      "dojo unknown mod token",
       getRunLogFields(run, {
         beatmapId,
         unknownMods: unknown,
@@ -904,14 +913,16 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
     const hasConfirmedFinish = run.targetPlayerFinishedCurrentMap !== null;
     const scoreFetchOptions = hasConfirmedFinish
       ? {
-          totalBudgetMs: CONFIRMED_FINISH_SCORE_FETCH_TOTAL_BUDGET_MS,
+          deadlineDurationMs: CONFIRMED_FINISH_SCORE_FETCH_DEADLINE_MS,
           perCallTimeoutMs: CONFIRMED_FINISH_SCORE_FETCH_CALL_TIMEOUT_MS,
           retryDelayMs: CONFIRMED_FINISH_SCORE_FETCH_RETRY_DELAY_MS,
+          retryDelayMinMs: 1_000,
         }
       : {
-          totalBudgetMs: STANDARD_SCORE_FETCH_TOTAL_BUDGET_MS,
+          deadlineDurationMs: STANDARD_SCORE_FETCH_DEADLINE_MS,
           perCallTimeoutMs: STANDARD_SCORE_FETCH_CALL_TIMEOUT_MS,
           retryDelayMs: STANDARD_SCORE_FETCH_RETRY_DELAY_MS,
+          retryDelayMinMs: 1_000,
         };
     let fetchedScore: NormalizedPlayerMapScore;
 
@@ -1014,8 +1025,18 @@ export function createDojoBot(options: CreateDojoBotOptions = {}) {
     const playedObjects = totalHitObjects(fetchedScore);
     const isPartialPlay =
       beatmap.totalObjects !== null && playedObjects < beatmap.totalObjects;
-    const globalTokens = parseModBitmask(fetchedScore.globalGameMods);
-    const playerTokens = parseModBitmask(fetchedScore.playerEnabledMods);
+    const globalTokens = uniqueTokens([
+      ...parseModBitmask(fetchedScore.globalGameMods),
+      ...(fetchedScore.unknownModAcronyms?.global ?? []).map(
+        (acronym) => `UNKNOWN:${acronym}`,
+      ),
+    ]);
+    const playerTokens = uniqueTokens([
+      ...parseModBitmask(fetchedScore.playerEnabledMods),
+      ...(fetchedScore.unknownModAcronyms?.player ?? []).map(
+        (acronym) => `UNKNOWN:${acronym}`,
+      ),
+    ]);
     const playedTokenList = uniqueTokens([...globalTokens, ...playerTokens]);
     const playedMods = formatModsCanonical(playedTokenList);
     logUnknownModTokens(run, beatmap.beatmapId, playedTokenList);
@@ -2056,36 +2077,6 @@ function getLobbyTitle(
   course: CourseDefinition,
 ) {
   return `(osu!dojo): (${playerUsername}) vs (${system.name} ${course.name})`;
-}
-
-function loadEnvFallback(filePath: string) {
-  const envFile = readFileSync(filePath, "utf8");
-
-  for (const rawLine of envFile.split(/\r?\n/)) {
-    const line = rawLine.trim();
-    if (!line || line.startsWith("#")) {
-      continue;
-    }
-
-    const separatorIndex = line.indexOf("=");
-    if (separatorIndex <= 0) {
-      continue;
-    }
-
-    const key = line.slice(0, separatorIndex).trim();
-    let value = line.slice(separatorIndex + 1).trim();
-
-    if (
-      (value.startsWith('"') && value.endsWith('"')) ||
-      (value.startsWith("'") && value.endsWith("'"))
-    ) {
-      value = value.slice(1, -1);
-    }
-
-    if (process.env[key] === undefined) {
-      process.env[key] = value;
-    }
-  }
 }
 
 const CONNECT_TIMEOUT_MS = 15_000;
